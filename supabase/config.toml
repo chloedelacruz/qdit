@@ -1,0 +1,68 @@
+# Supabase local development config for the qdit project.
+#
+# This file only affects `supabase start` / `supabase db reset` on your machine.
+# It is intentionally minimal — the CLI fills in defaults for everything that is
+# not listed here. Run `supabase init --force` if you want the fully annotated
+# version for your installed CLI release.
+#
+# No project is linked yet: `supabase link --project-ref <ref>` writes the ref
+# into supabase/.temp/, not into this file.
+
+project_id = "qdit"
+
+[api]
+enabled = true
+port = 54321
+# Schemas exposed over PostgREST. `public` only — auth internals stay private.
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Keep this in step with the Postgres major version of the hosted project.
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1:54321"
+
+# Local mail catcher. Confirmation links show up here instead of a real inbox.
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# Local only: skip the confirmation round-trip so seeded logins work instantly.
+enable_confirmations = false
+secure_password_change = false
+
+[analytics]
+enabled = false
