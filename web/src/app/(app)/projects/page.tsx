@@ -1,63 +1,76 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Plus } from "lucide-react";
 
-import { HashLink } from "@/components/hash-link";
+import { CreateProjectDialog } from "@/components/create-dialogs";
+import { DataList } from "@/components/data-list";
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { DEPLOYMENT_STATUS, PROJECT_STATUS } from "@/lib/constants";
+import { ProjectListRow } from "@/components/rows";
+import { PROJECT_STATUS } from "@/lib/constants";
+import { ICON } from "@/lib/icons";
+import { parseFilters, type SearchParams } from "@/lib/filters";
+import { listProjects } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
-import { DEMO_PROJECTS } from "@/lib/placeholder-data";
 
 export const metadata: Metadata = { title: "Projects" };
 
-export default function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const filters = parseFilters(await searchParams);
+  const page = await listProjects(filters);
+
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Projects"
         description="Every build, with its milestones, deployment state and on-chain proof."
-        actions={
-          <Button>
-            <Plus data-icon="inline-start" />
-            New project
-          </Button>
-        }
+        actions={<CreateProjectDialog />}
       />
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {DEMO_PROJECTS.map((project) => (
-          <Card key={project.id} className="hover-lift">
-            <CardContent className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <Link href={`/projects/${project.slug}`} className="font-medium hover:underline">
-                  {project.name}
-                </Link>
-                <StatusBadge state={PROJECT_STATUS[project.status]} />
-              </div>
+      <FilterBar
+        filters={filters}
+        placeholder="Search projects or paste a contract ID…"
+        sorts={["updated", "name", "progress"]}
+        facets={[
+          {
+            key: "status",
+            label: "Status",
+            options: Object.entries(PROJECT_STATUS).map(([value, meta]) => ({
+              value,
+              label: meta.label,
+            })),
+          },
+          {
+            key: "network",
+            label: "Network",
+            options: Object.entries(NETWORK_LABELS).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+        ]}
+      />
 
-              <p className="text-sm text-muted-foreground">{project.description}</p>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} />
-                <span className="text-xs text-muted-foreground">
-                  {NETWORK_LABELS[project.network]}
-                </span>
-              </div>
-
-              {project.contractId ? (
-                <HashLink value={project.contractId} kind="contract" network={project.network} />
-              ) : null}
-
-              <p className="text-xs text-muted-foreground tabular-nums">
-                {project.doneCount}/{project.taskCount} tasks · {project.milestoneCount} milestones
-              </p>
-            </CardContent>
-          </Card>
+      <DataList
+        filters={filters}
+        total={page.total}
+        matched={page.matched}
+        shown={page.rows.length}
+        noun="projects"
+        empty={{
+          icon: ICON.project,
+          title: "No projects yet",
+          description:
+            "A project holds your tasks, milestones and the proof trail you will hand to a grant reviewer.",
+          action: <CreateProjectDialog label="Create your first project" />,
+        }}
+      >
+        {page.rows.map((project) => (
+          <ProjectListRow key={project.id} project={project} />
         ))}
-      </div>
+      </DataList>
     </div>
   );
 }

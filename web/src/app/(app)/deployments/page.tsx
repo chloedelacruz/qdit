@@ -1,89 +1,85 @@
 import type { Metadata } from "next";
-import { GitBranch } from "lucide-react";
 
-import { EmptyState, PageHeader } from "@/components/page-header";
-import { HashLink } from "@/components/hash-link";
-import { StatusBadge } from "@/components/status-badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { DEPLOYMENT_STATUS, DEPLOYMENT_STATUS_ORDER } from "@/lib/constants";
+import { DataList } from "@/components/data-list";
+import { FilterBar } from "@/components/filter-bar";
+import { PageHeader } from "@/components/page-header";
+import { DeploymentListRow } from "@/components/rows";
+import { DEPLOYMENT_STATUS } from "@/lib/constants";
+import { ICON } from "@/lib/icons";
+import { parseFilters, type SearchParams } from "@/lib/filters";
+import { listDeployments, listProjectOptions } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
-import { DEMO_PROJECTS } from "@/lib/placeholder-data";
-import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Deployments" };
+export const metadata: Metadata = { title: "All deployments" };
 
-export default function DeploymentsPage() {
-  const deployed = DEMO_PROJECTS.filter((project) => project.contractId !== null);
+export default async function AllDeploymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const filters = parseFilters(await searchParams);
+  // Unscoped: current state per project. Full history lives on the project.
+  const [page, projects] = await Promise.all([
+    listDeployments({}, filters),
+    listProjectOptions(),
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
-        title="Deployments"
-        description="Where each contract stands on the road from Testnet to Mainnet."
+        title="All deployments"
+        description="Where every contract stands on the road from Testnet to Mainnet."
       />
 
-      {deployed.length === 0 ? (
-        <EmptyState
-          icon={GitBranch}
-          title="No deployments yet"
-          description="Once a contract is deployed, record its ID and transaction hash here."
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {deployed.map((project) => {
-            const stageIndex = DEPLOYMENT_STATUS_ORDER.indexOf(project.deployment);
+      <FilterBar
+        filters={filters}
+        placeholder="Search release notes or paste a tx hash…"
+        sorts={["updated"]}
+        facets={[
+          {
+            key: "project",
+            label: "Project",
+            options: projects.map((project) => ({
+              value: project.id,
+              label: project.name,
+            })),
+          },
+          {
+            key: "status",
+            label: "Stage",
+            options: Object.entries(DEPLOYMENT_STATUS).map(([value, meta]) => ({
+              value,
+              label: meta.label,
+            })),
+          },
+          {
+            key: "network",
+            label: "Network",
+            options: Object.entries(NETWORK_LABELS).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+        ]}
+      />
 
-            return (
-              <Card key={project.id}>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{project.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {NETWORK_LABELS[project.network]}
-                      </p>
-                    </div>
-                    <StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} />
-                  </div>
-
-                  {/* Pipeline: not started → testnet → ready for mainnet → live. */}
-                  <ol
-                    data-slot="deploy-pipeline"
-                    aria-label={`${project.name} deployment pipeline`}
-                    className="flex items-center gap-1.5"
-                  >
-                    {DEPLOYMENT_STATUS_ORDER.map((stage, index) => (
-                      <li
-                        key={stage}
-                        data-slot="deploy-stage"
-                        data-reached={index <= stageIndex}
-                        className="flex-1"
-                      >
-                        <span className="sr-only">{DEPLOYMENT_STATUS[stage].label}</span>
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "block h-1 rounded-full",
-                            index <= stageIndex ? "bg-primary" : "bg-muted",
-                          )}
-                        />
-                      </li>
-                    ))}
-                  </ol>
-
-                  {project.contractId ? (
-                    <HashLink
-                      value={project.contractId}
-                      kind="contract"
-                      network={project.network}
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      <DataList
+        filters={filters}
+        total={page.total}
+        matched={page.matched}
+        shown={page.rows.length}
+        noun="deployments"
+        empty={{
+          icon: ICON.deployment,
+          title: "No deployments yet",
+          description:
+            "Once a contract is deployed, record its ID and transaction hash on its project.",
+        }}
+      >
+        {page.rows.map((deployment) => (
+          <DeploymentListRow key={deployment.id} deployment={deployment} showProject />
+        ))}
+      </DataList>
     </div>
   );
 }
