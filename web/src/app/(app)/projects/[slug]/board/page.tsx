@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { CreateTaskDialog } from "@/components/create-dialogs";
+import { CreateTaskDialog } from "@/components/entity-dialogs";
 import { FilterBar } from "@/components/filter-bar";
 import { MemberChip, RowMeta } from "@/components/data-list";
 import { PageHeader } from "@/components/page-header";

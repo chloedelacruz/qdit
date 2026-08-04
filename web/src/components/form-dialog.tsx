@@ -39,18 +39,31 @@ export function FormDialog({
   successMessage,
   action,
   className,
+  open: controlledOpen,
+  onOpenChange,
   children,
 }: {
-  trigger: React.ReactNode;
+  /** Omit when driving the dialog from outside, e.g. a row's overflow menu. */
+  trigger?: React.ReactNode;
   title: string;
   description?: string;
   submitLabel: string;
   successMessage: string;
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   className?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: (state: ActionState) => React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  /**
+   * Uncontrolled by default — a create dialog owns its own trigger and state.
+   * Edit dialogs live behind a dropdown item, which has already closed by the
+   * time the dialog should appear, so those pass `open` in from the row.
+   */
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
+
   const formRef = useRef<HTMLFormElement>(null);
 
   /**
@@ -76,7 +89,7 @@ export function FormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
 
       <DialogContent className={cn("sm:max-w-md", className)}>
         <DialogHeader>

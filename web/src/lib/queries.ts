@@ -11,7 +11,7 @@
  * yet" apart from "your filter matched nothing" without a second round trip.
  */
 
-import { TASK_STATUS_ORDER, type TaskStatus } from "@/lib/constants";
+import { TASK_STATUS_ORDER, type MemberRole, type TaskStatus } from "@/lib/constants";
 import type { Filters } from "@/lib/filters";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
@@ -107,12 +107,96 @@ export async function getCurrentUserId(): Promise<string | null> {
   return (await getUser())?.id ?? null;
 }
 
+/**
+ * The caller's role in one project, or null if they are not a member.
+ *
+ * Needed because the RLS layer is not uniform: tasks and milestones are
+ * editable by any member, projects and deployments only by an admin or the
+ * owner, proofs by their creator or an admin. Without this the UI would offer
+ * controls that fail at submit time with a 42501 — which `friendly()` does
+ * translate, but late and after the user filled in a form.
+ *
+ * This gates the UI only. The server actions re-check and RLS is the actual
+ * boundary; a hidden button is courtesy, not security.
+ */
+export async function getProjectRole(projectId: string): Promise<MemberRole | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return data?.role ?? null;
+}
+
+/**
+ * Every project the caller belongs to, mapped to their role in it.
+ *
+ * The cross-project lists (/tasks, /milestones, /proofs) show rows from many
+ * projects at once, and the caller can hold a different role in each. One
+ * request for the whole membership set, rather than `getProjectRole` per row.
+ */
+export async function listProjectRoles(): Promise<Map<string, MemberRole>> {
+  const userId = await getCurrentUserId();
+  if (!userId) return new Map();
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("project_members")
+    .select("project_id, role")
+    .eq("user_id", userId);
+
+  return new Map((data ?? []).map((row) => [row.project_id, row.role as MemberRole]));
+}
+
+/**
+ * Project id → owner id, for the cross-project views.
+ *
+ * Approving a milestone is the owner's alone — the contract checks
+ * `approver == owner`, so the UI has to know who that is before offering the
+ * control. Scoped views read `project.ownerId` directly and do not need this.
+ */
+export async function listProjectOwners(): Promise<Map<string, string>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("projects").select("id, owner_id");
+
+  return new Map((data ?? []).map((row) => [row.id, row.owner_id]));
+}
+
+/** Manage the project itself, its deployments and its members. */
+export function canAdminister(role: MemberRole | null): boolean {
+  return role === "owner" || role === "admin";
+}
+
+/** Create and edit tasks, milestones and proofs. Viewers cannot. */
+export function canContribute(role: MemberRole | null): boolean {
+  return role === "owner" || role === "admin" || role === "member";
+}
+
+/**
+ * A proof is editable by whoever recorded it, or by an admin — mirroring the
+ * `stellar_proofs: update own or as admin` policy.
+ */
+export function canEditProof(
+  role: MemberRole | null,
+  authorId: string | null,
+  userId: string | null,
+): boolean {
+  return canAdminister(role) || (authorId !== null && authorId === userId);
+}
+
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 
 export type ProjectRow = {
   id: string;
+  ownerId: string;
   slug: string;
   name: string;
   description: string | null;
@@ -122,6 +206,7 @@ export type ProjectRow = {
   contractId: string | null;
   repoUrl: string | null;
   demoUrl: string | null;
+  docsUrl: string | null;
   updatedAt: string;
   taskCount: number;
   doneCount: number;
@@ -136,7 +221,7 @@ export type ProjectRow = {
  * still appear.
  */
 const PROJECT_SELECT = `
-  id, slug, name, description, status, repo_url, demo_url, updated_at,
+  id, owner_id, slug, name, description, status, repo_url, demo_url, docs_url, updated_at,
   tasks(count),
   done:tasks(count),
   milestones(count),
@@ -146,12 +231,14 @@ const PROJECT_SELECT = `
 
 type ProjectRecord = {
   id: string;
+  owner_id: string;
   slug: string;
   name: string;
   description: string | null;
   status: ProjectRow["status"];
   repo_url: string | null;
   demo_url: string | null;
+  docs_url: string | null;
   updated_at: string;
   tasks: EmbeddedCount;
   done: EmbeddedCount;
@@ -178,6 +265,7 @@ function toProject(row: ProjectRecord): ProjectRow {
 
   return {
     id: row.id,
+    ownerId: row.owner_id,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -187,6 +275,7 @@ function toProject(row: ProjectRecord): ProjectRow {
     contractId: latest?.contract_id ?? null,
     repoUrl: row.repo_url,
     demoUrl: row.demo_url,
+    docsUrl: row.docs_url,
     updatedAt: row.updated_at,
     taskCount,
     doneCount,
@@ -266,6 +355,7 @@ export type TaskRow = {
   projectId: string;
   milestoneId: string | null;
   title: string;
+  description: string | null;
   status: TaskStatus;
   assigneeId: string | null;
   dueDate: string | null;
@@ -277,7 +367,7 @@ export type TaskRow = {
 };
 
 const TASK_SELECT = `
-  id, project_id, milestone_id, title, status, assignee_id, due_date,
+  id, project_id, milestone_id, title, description, status, assignee_id, due_date,
   projects!inner(name, slug),
   milestones(title)
 `;
@@ -287,6 +377,7 @@ type TaskRecord = {
   project_id: string;
   milestone_id: string | null;
   title: string;
+  description: string | null;
   status: TaskStatus;
   assignee_id: string | null;
   due_date: string | null;
@@ -301,6 +392,7 @@ function toTask(row: TaskRecord, members: MemberMap): TaskRow {
     projectId: row.project_id,
     milestoneId: row.milestone_id,
     title: row.title,
+    description: row.description,
     status: row.status,
     assigneeId: row.assignee_id,
     dueDate: row.due_date,
@@ -415,6 +507,7 @@ export type MilestoneRow = {
   id: string;
   projectId: string;
   title: string;
+  description: string | null;
   status: "proposed" | "submitted" | "approved" | "rejected";
   dueDate: string | null;
   orderIndex: number;
@@ -428,7 +521,7 @@ export type MilestoneRow = {
 };
 
 const MILESTONE_SELECT = `
-  id, project_id, title, status, due_date, order_index,
+  id, project_id, title, description, status, due_date, order_index,
   projects!inner(name, slug),
   tasks(count),
   done:tasks(count),
@@ -439,6 +532,7 @@ type MilestoneRecord = {
   id: string;
   project_id: string;
   title: string;
+  description: string | null;
   status: MilestoneRow["status"];
   due_date: string | null;
   order_index: number;
@@ -456,6 +550,7 @@ function toMilestone(row: MilestoneRecord): MilestoneRow {
     id: row.id,
     projectId: row.project_id,
     title: row.title,
+    description: row.description,
     status: row.status,
     dueDate: row.due_date,
     orderIndex: row.order_index,
@@ -514,6 +609,32 @@ export async function listMilestoneOptions(
   return data ?? [];
 }
 
+/**
+ * Milestone options for every visible project, keyed by project id.
+ *
+ * The cross-project lists let a row be edited in place, and a task's milestone
+ * select may only offer milestones from that task's own project. One request
+ * for all of them beats one per project — `milestones` is small and RLS-scoped.
+ */
+export async function listMilestoneOptionsByProject(): Promise<
+  Map<string, { id: string; title: string }[]>
+> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("milestones")
+    .select("id, title, project_id")
+    .order("order_index");
+
+  const byProject = new Map<string, { id: string; title: string }[]>();
+  for (const row of data ?? []) {
+    const list = byProject.get(row.project_id) ?? [];
+    list.push({ id: row.id, title: row.title });
+    byProject.set(row.project_id, list);
+  }
+
+  return byProject;
+}
+
 // ---------------------------------------------------------------------------
 // Proofs
 // ---------------------------------------------------------------------------
@@ -529,6 +650,7 @@ export type ProofRow = {
   proofUrl: string | null;
   notes: string | null;
   createdAt: string;
+  createdBy: string | null;
   projectName: string;
   projectSlug: string;
   milestoneTitle: string | null;
@@ -570,6 +692,7 @@ function toProof(row: ProofRecord, members: MemberMap): ProofRow {
     proofUrl: row.proof_url,
     notes: row.notes,
     createdAt: row.created_at,
+    createdBy: row.created_by,
     projectName: row.projects.name,
     projectSlug: row.projects.slug,
     milestoneTitle: row.milestones?.title ?? null,

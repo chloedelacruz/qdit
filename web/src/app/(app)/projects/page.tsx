@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 
-import { CreateProjectDialog } from "@/components/create-dialogs";
+import { CreateProjectDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
+import { ProjectRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { ProjectListRow } from "@/components/rows";
 import { PROJECT_STATUS } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { listProjects } from "@/lib/queries";
+import { canAdminister, listProjects, listProjectRoles } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
 export const metadata: Metadata = { title: "Projects" };
@@ -19,7 +20,7 @@ export default async function ProjectsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const filters = parseFilters(await searchParams);
-  const page = await listProjects(filters);
+  const [page, roles] = await Promise.all([listProjects(filters), listProjectRoles()]);
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -68,7 +69,16 @@ export default async function ProjectsPage({
         }}
       >
         {page.rows.map((project) => (
-          <ProjectListRow key={project.id} project={project} />
+          <ProjectListRow
+            key={project.id}
+            project={project}
+            actions={
+              <ProjectRowActions
+                project={project}
+                canAdminister={canAdminister(roles.get(project.id) ?? null)}
+              />
+            }
+          />
         ))}
       </DataList>
     </div>

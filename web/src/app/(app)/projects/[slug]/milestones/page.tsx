@@ -1,15 +1,23 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { CreateMilestoneDialog } from "@/components/create-dialogs";
+import { CreateMilestoneDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
+import { MilestoneRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
+import { MilestoneStatusMenu } from "@/components/milestone-status-menu";
 import { PageHeader } from "@/components/page-header";
 import { MilestoneListRow } from "@/components/rows";
 import { MILESTONE_STATUS } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { getProject, listMilestones } from "@/lib/queries";
+import {
+  canContribute,
+  getCurrentUserId,
+  getProject,
+  getProjectRole,
+  listMilestones,
+} from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Milestones" };
 
@@ -25,7 +33,15 @@ export default async function ProjectMilestonesPage({
   if (!project) notFound();
 
   const filters = parseFilters(await searchParams);
-  const page = await listMilestones({ projectId: project.id }, filters);
+  const [page, role, userId] = await Promise.all([
+    listMilestones({ projectId: project.id }, filters),
+    getProjectRole(project.id),
+    getCurrentUserId(),
+  ]);
+
+  // Approve and reject are the owner's, matching the contract's auth check.
+  const canEdit = canContribute(role);
+  const isOwner = project.ownerId === userId;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -75,7 +91,19 @@ export default async function ProjectMilestonesPage({
         }}
       >
         {page.rows.map((milestone) => (
-          <MilestoneListRow key={milestone.id} milestone={milestone} />
+          <MilestoneListRow
+            key={milestone.id}
+            milestone={milestone}
+            statusControl={
+              <MilestoneStatusMenu
+                milestoneId={milestone.id}
+                status={milestone.status}
+                isOwner={isOwner}
+                canEdit={canEdit}
+              />
+            }
+            actions={<MilestoneRowActions milestone={milestone} canEdit={canEdit} />}
+          />
         ))}
       </DataList>
     </div>

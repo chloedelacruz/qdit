@@ -46,7 +46,16 @@ export const projectSchema = z.object({
   status: z.enum(["active", "paused", "completed", "archived"]).default("active"),
   repoUrl: z.url("Enter a valid URL.").optional().or(z.literal("")),
   demoUrl: z.url("Enter a valid URL.").optional().or(z.literal("")),
+  docsUrl: z.url("Enter a valid URL.").optional().or(z.literal("")),
 });
+
+/**
+ * The slug is fixed after creation. It is `unique` and appears in every project
+ * URL, so editing it would silently break links people have already shared.
+ * Omitted from the schema rather than merely disabled in the form, so a
+ * hand-made POST cannot set it either.
+ */
+export const projectUpdateSchema = projectSchema.omit({ slug: true });
 
 export const taskSchema = z.object({
   projectId: z.guid(),
@@ -89,6 +98,14 @@ export const proofSchema = z
       .optional()
       .or(z.literal("")),
     network: z.enum(["testnet", "mainnet"]).default("testnet"),
+    // Account strkeys: 56 chars starting with G. Same shape isWalletAddress()
+    // enforces in stellar.ts — stated here so the form reports it inline.
+    walletAddress: z
+      .string()
+      .trim()
+      .regex(/^G[A-Z2-7]{55}$/, "Wallet addresses start with G and are 56 characters.")
+      .optional()
+      .or(z.literal("")),
     proofUrl: z.url("Enter a valid URL.").optional().or(z.literal("")),
     notes: z.string().trim().max(2000).optional().or(z.literal("")),
   })
@@ -100,10 +117,63 @@ export const proofSchema = z
     },
   );
 
+/**
+ * Mirrors the `deployments_network_required` CHECK: anything past 'not_started'
+ * happened on some network, so it has to say which. Stated here as well so the
+ * form reports it on the network field instead of surfacing a 23514.
+ */
+export const deploymentSchema = z
+  .object({
+    projectId: z.guid(),
+    status: z
+      .enum(["not_started", "testnet", "ready_for_mainnet", "mainnet_live"])
+      .default("not_started"),
+    network: z.enum(["testnet", "mainnet"]).optional().or(z.literal("")),
+    contractId: z
+      .string()
+      .trim()
+      .regex(/^C[A-Z2-7]{55}$/, "Contract IDs start with C and are 56 characters.")
+      .optional()
+      .or(z.literal("")),
+    txHash: z
+      .string()
+      .trim()
+      .regex(/^[0-9a-f]{64}$/i, "A transaction hash is 64 hex characters.")
+      .optional()
+      .or(z.literal("")),
+    releaseNotes: z.string().trim().max(4000).optional().or(z.literal("")),
+  })
+  .refine((value) => value.status === "not_started" || Boolean(value.network), {
+    message: "Pick the network this was deployed to.",
+    path: ["network"],
+  });
+
+/**
+ * `profiles.display_name` and `profiles.wallet_address`. The wallet address is
+ * the join between a Supabase user and a Stellar account — the contract
+ * authenticates an `Address`, the app authenticates a user, and this is what
+ * connects them.
+ */
+export const profileSchema = z.object({
+  displayName: z
+    .string()
+    .trim()
+    .min(1, "Required.")
+    .max(120, "Keep it under 120 characters."),
+  walletAddress: z
+    .string()
+    .trim()
+    .regex(/^G[A-Z2-7]{55}$/, "Wallet addresses start with G and are 56 characters.")
+    .optional()
+    .or(z.literal("")),
+});
+
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
 export type ProofInput = z.infer<typeof proofSchema>;
+export type DeploymentInput = z.infer<typeof deploymentSchema>;
+export type ProfileInput = z.infer<typeof profileSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
 export function slugify(value: string): string {

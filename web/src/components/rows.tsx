@@ -37,7 +37,13 @@ import type {
  */
 const LINE = "flex items-center gap-3";
 
-export function ProjectListRow({ project }: { project: ProjectRow }) {
+export function ProjectListRow({
+  project,
+  actions,
+}: {
+  project: ProjectRow;
+  actions?: React.ReactNode;
+}) {
   return (
     <ListRow href={`/projects/${project.slug}`}>
       <div className={LINE}>
@@ -65,6 +71,8 @@ export function ProjectListRow({ project }: { project: ProjectRow }) {
           <StatusBadge state={PROJECT_STATUS[project.status]} dot={false} />
           <StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} dot={false} />
         </span>
+
+        {actions}
       </div>
     </ListRow>
   );
@@ -73,9 +81,11 @@ export function ProjectListRow({ project }: { project: ProjectRow }) {
 export function TaskListRow({
   task,
   showProject = false,
+  actions,
 }: {
   task: TaskRow;
   showProject?: boolean;
+  actions?: React.ReactNode;
 }) {
   return (
     <ListRow href={`/projects/${task.projectSlug}/board`}>
@@ -103,6 +113,8 @@ export function TaskListRow({
         ) : null}
 
         <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
+
+        {actions}
       </div>
     </ListRow>
   );
@@ -111,9 +123,14 @@ export function TaskListRow({
 export function MilestoneListRow({
   milestone,
   showProject = false,
+  statusControl,
+  actions,
 }: {
   milestone: MilestoneRow;
   showProject?: boolean;
+  /** The approval-flow control. Falls back to a plain badge when read-only. */
+  statusControl?: React.ReactNode;
+  actions?: React.ReactNode;
 }) {
   return (
     <ListRow href={`/projects/${milestone.projectSlug}/milestones`}>
@@ -135,8 +152,12 @@ export function MilestoneListRow({
         <ProgressPip value={milestone.progress} />
 
         <span className="flex w-24 shrink-0 justify-end">
-          <StatusBadge state={MILESTONE_STATUS[milestone.status]} dot={false} />
+          {statusControl ?? (
+            <StatusBadge state={MILESTONE_STATUS[milestone.status]} dot={false} />
+          )}
         </span>
+
+        {actions}
       </div>
     </ListRow>
   );
@@ -145,9 +166,11 @@ export function MilestoneListRow({
 export function ProofListRow({
   proof,
   showProject = false,
+  actions,
 }: {
   proof: ProofRow;
   showProject?: boolean;
+  actions?: React.ReactNode;
 }) {
   return (
     <ListRow>
@@ -171,6 +194,8 @@ export function ProofListRow({
         <span className="shrink-0 text-xs text-muted-foreground">
           {NETWORK_LABELS[proof.network]}
         </span>
+
+        {actions}
       </div>
     </ListRow>
   );
@@ -179,9 +204,11 @@ export function ProofListRow({
 export function DeploymentListRow({
   deployment,
   showProject = false,
+  actions,
 }: {
   deployment: DeploymentRow;
   showProject?: boolean;
+  actions?: React.ReactNode;
 }) {
   return (
     <ListRow>
@@ -213,6 +240,8 @@ export function DeploymentListRow({
         <span className="flex w-36 shrink-0 justify-end">
           <StatusBadge state={DEPLOYMENT_STATUS[deployment.status]} dot={false} />
         </span>
+
+        {actions}
       </div>
     </ListRow>
   );

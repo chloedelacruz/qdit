@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { DataList } from "@/components/data-list";
+import { CreateDeploymentDialog } from "@/components/entity-dialogs";
+import { DeploymentRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { DeploymentListRow } from "@/components/rows";
@@ -9,7 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { DEPLOYMENT_STATUS, DEPLOYMENT_STATUS_ORDER } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { getProject, listDeployments } from "@/lib/queries";
+import { canAdminister, getProject, getProjectRole, listDeployments } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +30,15 @@ export default async function ProjectDeploymentsPage({
 
   const filters = parseFilters(await searchParams);
   // Project scope returns the full append-only history, not just current state.
-  const page = await listDeployments({ projectId: project.id }, filters);
+  const [page, role] = await Promise.all([
+    listDeployments({ projectId: project.id }, filters),
+    getProjectRole(project.id),
+  ]);
+
+  // "deployments: insert as member", but update/delete are admin-only. Recording
+  // a release is the only write here, so membership is the bar for the button.
+  const canRecord = role !== null && role !== "viewer";
+  const canRemove = canAdminister(role);
   const stageIndex = DEPLOYMENT_STATUS_ORDER.indexOf(project.deployment);
 
   return (
@@ -41,6 +51,7 @@ export default async function ProjectDeploymentsPage({
         title="Deployments"
         description="The full release history, newest first."
         meta={<StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} dot={false} />}
+        actions={canRecord ? <CreateDeploymentDialog projectId={project.id} /> : undefined}
       />
 
       {/* Pipeline: not started → testnet → ready for mainnet → live. */}
@@ -103,10 +114,22 @@ export default async function ProjectDeploymentsPage({
           title: "Not deployed yet",
           description:
             "Once this contract reaches Testnet, record its ID and transaction hash to start the history.",
+          action: canRecord ? (
+            <CreateDeploymentDialog
+              projectId={project.id}
+              label="Record the first deployment"
+            />
+          ) : undefined,
         }}
       >
         {page.rows.map((deployment) => (
-          <DeploymentListRow key={deployment.id} deployment={deployment} />
+          <DeploymentListRow
+            key={deployment.id}
+            deployment={deployment}
+            actions={
+              <DeploymentRowActions deployment={deployment} canAdminister={canRemove} />
+            }
+          />
         ))}
       </DataList>
     </div>
