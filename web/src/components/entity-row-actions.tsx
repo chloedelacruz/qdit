@@ -149,15 +149,18 @@ export function ProofRowActions({
 export function ProjectRowActions({
   project,
   canAdminister,
+  persistent = false,
 }: {
   project: ProjectRow;
   canAdminister: boolean;
+  persistent?: boolean;
 }) {
   return (
     <RowActions
       label="project"
       canEdit={canAdminister}
       canDelete={canAdminister}
+      persistent={persistent}
       deleteTitle="Delete this project?"
       deleteDescription={`"${project.name}" and every task, milestone, deployment and proof inside it will be removed. This cannot be undone.`}
       onDelete={deleteProject.bind(null, project.id)}

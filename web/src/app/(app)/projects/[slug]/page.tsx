@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { ProjectRowActions } from "@/components/entity-row-actions";
 import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -13,7 +14,13 @@ import { Button } from "@/components/ui/button";
 import { DEPLOYMENT_STATUS, PROJECT_STATUS } from "@/lib/constants";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import { ICON } from "@/lib/icons";
-import { getProject, listMilestones, listProofs } from "@/lib/queries";
+import {
+  canAdminister,
+  getProject,
+  getProjectRole,
+  listMilestones,
+  listProofs,
+} from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
 export async function generateMetadata({
@@ -36,9 +43,10 @@ export default async function ProjectOverviewPage({
 
   // Capped deliberately: an overview that grows without bound stops being one.
   const preview = { ...EMPTY_FILTERS, limit: 4 };
-  const [milestones, proofs] = await Promise.all([
+  const [milestones, proofs, role] = await Promise.all([
     listMilestones({ projectId: project.id }, preview),
     listProofs({ projectId: project.id }, preview),
+    getProjectRole(project.id),
   ]);
 
   return (
@@ -69,6 +77,13 @@ export default async function ProjectOverviewPage({
                 <ArrowRight data-icon="inline-end" />
               </Link>
             </Button>
+            {/* Editing and deleting the project itself live here rather than on
+                its row in the index — this page is the project. */}
+            <ProjectRowActions
+              project={project}
+              canAdminister={canAdminister(role)}
+              persistent
+            />
           </>
         }
       />

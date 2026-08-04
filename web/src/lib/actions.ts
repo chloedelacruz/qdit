@@ -176,6 +176,48 @@ export async function updateTaskStatus(taskId: string, status: string): Promise<
   return { ok: true };
 }
 
+/**
+ * A drag on the board: the task's new column, plus the order of every card in
+ * that column after the drop.
+ *
+ * Order is sent as the whole column rather than one index because a drop shifts
+ * everything below it — writing only the moved row would leave the rest holding
+ * stale positions that collide on the next read. `order_index` is what
+ * `listBoard` sorts by, so these writes are what make the arrangement stick.
+ */
+export async function moveTask(
+  taskId: string,
+  status: string,
+  orderedIds: string[],
+): Promise<ActionState> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ status: status as "todo" | "in_progress" | "done" })
+    .eq("id", taskId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  // Positions are a nicety: if one fails the card is still in the right column,
+  // so a failure here is reported but does not undo the move.
+  const results = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase.from("tasks").update({ order_index: index }).eq("id", id),
+    ),
+  );
+
+  const failed = results.find((result) => result.error);
+
+  revalidateAll();
+
+  if (failed?.error) {
+    return { error: friendly(failed.error.message, failed.error.code) };
+  }
+
+  return { ok: true };
+}
+
 export async function deleteTask(taskId: string): Promise<ActionState> {
   return deleteRow("tasks", taskId);
 }
