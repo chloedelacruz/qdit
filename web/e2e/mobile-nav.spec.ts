@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { PROJECT } from "./seed";
+
 /**
  * Runs only on the `mobile` project. Below `lg` the sidebar is replaced by a
  * sheet, so this is a different navigation path rather than the same one at a
@@ -20,16 +22,16 @@ test.describe("mobile navigation", () => {
     const sheet = page.getByRole("dialog");
     await expect(sheet).toBeVisible();
 
-    // Role-name matching is substring by default, so "Board" would also match
-    // "Dashboard". Every sheet lookup here is exact.
-    await sheet.getByRole("link", { name: "Board", exact: true }).click();
+    // Role-name matching is substring by default, so "Projects" would also
+    // match "All projects". Every sheet lookup here is exact.
+    await sheet.getByRole("link", { name: "All tasks", exact: true }).click();
 
-    await expect(page).toHaveURL(/\/board$/);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Board");
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("All tasks");
     await expect(sheet).toBeHidden();
   });
 
-  test("sheet exposes every nav destination", async ({ page }) => {
+  test("sheet exposes every workspace destination", async ({ page }) => {
     await page.goto("/dashboard");
     await page.getByRole("button", { name: "Open navigation" }).click();
 
@@ -37,9 +39,9 @@ test.describe("mobile navigation", () => {
     for (const label of [
       "Dashboard",
       "Projects",
-      "Board",
-      "Milestones",
-      "Deployments",
+      "All tasks",
+      "All milestones",
+      "All deployments",
       "Proof registry",
       "Settings",
     ]) {
@@ -47,8 +49,26 @@ test.describe("mobile navigation", () => {
     }
   });
 
+  test("the project switcher is reachable on mobile", async ({ page }) => {
+    await page.goto(`/projects/${PROJECT.slug}`);
+    await page.getByRole("button", { name: "Open navigation" }).click();
+
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByRole("button", { name: `Project: ${PROJECT.name}` })).toBeVisible();
+    await expect(sheet.getByRole("link", { name: "Board", exact: true })).toBeVisible();
+  });
+
   test("board columns stack without overflowing the viewport", async ({ page }) => {
-    await page.goto("/board");
+    await page.goto(`/projects/${PROJECT.slug}/board`);
+
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflows).toBe(false);
+  });
+
+  test("the filter bar wraps instead of overflowing", async ({ page }) => {
+    await page.goto("/tasks");
 
     const overflows = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,

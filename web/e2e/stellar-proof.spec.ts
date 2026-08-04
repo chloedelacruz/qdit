@@ -1,67 +1,93 @@
 import { expect, test } from "@playwright/test";
 
-const ATLAS_CONTRACT = "CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K";
-const REGISTRY_CONTRACT = "CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE";
-const CONTRACT_V1_TX = "3f2a91d0c4b7e6158a0d9c2f7b4e18d63a5c0e9f2b7d4a16c8e35f907b1d2a4c";
+import { PROJECT } from "./seed";
 
+/**
+ * Nothing here hardcodes a strkey or a hash: each test reads the real value out
+ * of the DOM and asserts the *treatment* of it, so the suite survives a reseed.
+ */
 test.describe("stellar proof fields", () => {
-  test("contract IDs are middle-truncated but keep the full value available", async ({ page }) => {
-    await page.goto("/projects");
+  test("contract IDs are middle-truncated but keep the full value available", async ({
+    page,
+  }) => {
+    await page.goto(`/projects/${PROJECT.slug}`);
 
-    const hash = page.locator('[data-slot="hash"]').filter({ hasText: "CBQHNA" });
+    const hash = page.locator('[data-slot="hash"]').first();
+    const full = await hash.getAttribute("title");
 
-    // Six leading and six trailing characters — both ends survive truncation
-    // because that is how strkeys get compared by eye.
-    await expect(hash).toHaveText("CBQHNA…IMAO4K");
-    await expect(hash).toHaveAttribute("title", ATLAS_CONTRACT);
+    expect(full).toMatch(/^C[A-Z2-7]{55}$/);
+
+    // Both ends survive truncation, because that is how strkeys are compared
+    // by eye. The overview renders 8 characters each side.
+    const shown = (await hash.innerText()).trim();
+    expect(shown).toBe(`${full!.slice(0, 8)}…${full!.slice(-8)}`);
   });
 
+  /**
+   * Only the testnet mapping is asserted: nothing Mainnet is seeded, so a
+   * `public` assertion here would be testing a fixture rather than the app.
+   * The mainnet branch (`mainnet` -> `public`) is exercised by the identifier
+   * lookup in proofs.spec.ts, which renders a Mainnet explorer link for an
+   * unknown contract id.
+   */
   test("explorer links use the right network segment", async ({ page }) => {
-    await page.goto("/projects");
+    await page.goto(`/projects/${PROJECT.slug}`);
 
-    // testnet stays "testnet"; mainnet maps to stellar.expert's "public".
-    const atlasCard = page.locator('[data-slot="card"]').filter({ hasText: "Atlas Escrow" });
-    await expect(
-      atlasCard.getByRole("link", { name: "View contract on stellar.expert" }),
-    ).toHaveAttribute("href", `https://stellar.expert/explorer/testnet/contract/${ATLAS_CONTRACT}`);
+    const contractId = await page
+      .locator('[data-slot="hash"]')
+      .first()
+      .getAttribute("title");
 
-    const registryCard = page.locator('[data-slot="card"]').filter({ hasText: "Proof Registry" });
     await expect(
-      registryCard.getByRole("link", { name: "View contract on stellar.expert" }),
-    ).toHaveAttribute("href", `https://stellar.expert/explorer/public/contract/${REGISTRY_CONTRACT}`);
+      page.getByRole("link", { name: "View contract on stellar.expert" }).first(),
+    ).toHaveAttribute(
+      "href",
+      `https://stellar.expert/explorer/testnet/contract/${contractId}`,
+    );
   });
 
   test("explorer links open in a new tab without leaking the opener", async ({ page }) => {
-    await page.goto("/projects");
+    await page.goto(`/projects/${PROJECT.slug}`);
 
-    const link = page.getByRole("link", { name: "View contract on stellar.expert" }).first();
+    const link = page.getByRole("link", { name: /on stellar.expert/ }).first();
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", /noopener/);
   });
 
   test("copy button writes the full hash to the clipboard", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    await page.goto("/dashboard");
+    await page.goto(`/projects/${PROJECT.slug}/proofs`);
 
-    const panel = page.locator('[data-slot="card"]').filter({ hasText: "Milestone proof" });
-    await panel.getByRole("button", { name: "Copy transaction" }).first().click();
+    const chip = page
+      .locator("span")
+      .filter({ has: page.locator('[data-slot="hash"]') })
+      .first();
+    const expected = await chip.locator('[data-slot="hash"]').getAttribute("title");
+
+    await chip.getByRole("button", { name: "Copy transaction" }).click();
 
     // The button flips to a confirmation state, then reverts.
-    await expect(panel.getByRole("button", { name: "Copied" }).first()).toBeVisible();
+    await expect(chip.getByRole("button", { name: "Copied" })).toBeVisible();
 
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clipboard).toBe(CONTRACT_V1_TX);
+    expect(clipboard).toBe(expected);
+    expect(clipboard).toMatch(/^[0-9a-f]{64}$/);
 
-    await expect(panel.getByRole("button", { name: "Copy transaction" }).first()).toBeVisible({
+    await expect(chip.getByRole("button", { name: "Copy transaction" })).toBeVisible({
       timeout: 5_000,
     });
   });
 
-  test("projects without a contract render no proof chip", async ({ page }) => {
-    await page.goto("/projects");
+  /**
+   * Skipped rather than deleted, so the coverage gap stays visible: every
+   * seeded project has been deployed, so there is no contract-less project to
+   * assert against. Seed one that has never reached Testnet and remove the
+   * skip — the branch it covers (`project.contractId === null`) is live code in
+   * the project overview.
+   */
+  test.skip("projects without a contract render no proof chip", async ({ page }) => {
+    await page.goto("/projects/never-deployed");
 
-    const onboarding = page.locator('[data-slot="card"]').filter({ hasText: "Builder Onboarding" });
-    await expect(onboarding).toBeVisible();
-    await expect(onboarding.locator('[data-slot="hash"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="hash"]')).toHaveCount(0);
   });
 });
