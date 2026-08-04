@@ -1,14 +1,22 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { CreateProofDialog } from "@/components/create-dialogs";
+import { CreateProofDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
+import { ProofRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { ProofListRow } from "@/components/rows";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { getProject, listMilestoneOptions, listProofs } from "@/lib/queries";
+import {
+  canEditProof,
+  getCurrentUserId,
+  getProject,
+  getProjectRole,
+  listMilestoneOptions,
+  listProofs,
+} from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
 export const metadata: Metadata = { title: "Proofs" };
@@ -25,9 +33,11 @@ export default async function ProjectProofsPage({
   if (!project) notFound();
 
   const filters = parseFilters(await searchParams);
-  const [page, milestones] = await Promise.all([
+  const [page, milestones, role, userId] = await Promise.all([
     listProofs({ projectId: project.id }, filters),
     listMilestoneOptions(project.id),
+    getProjectRole(project.id),
+    getCurrentUserId(),
   ]);
 
   return (
@@ -87,7 +97,18 @@ export default async function ProjectProofsPage({
         }}
       >
         {page.rows.map((proof) => (
-          <ProofListRow key={proof.id} proof={proof} />
+          <ProofListRow
+            key={proof.id}
+            proof={proof}
+            actions={
+              <ProofRowActions
+                proof={proof}
+                milestones={milestones}
+                // "update own or as admin" — the author keeps their own record.
+                canEdit={canEditProof(role, proof.createdBy, userId)}
+              />
+            }
+          />
         ))}
       </DataList>
     </div>

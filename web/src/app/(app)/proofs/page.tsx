@@ -3,13 +3,22 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { DataList } from "@/components/data-list";
+import { ProofRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
 import { ProofListRow } from "@/components/rows";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import { ICON } from "@/lib/icons";
-import { listProjectOptions, listProofs, resolveIdentifier } from "@/lib/queries";
+import {
+  canEditProof,
+  getCurrentUserId,
+  listMilestoneOptionsByProject,
+  listProjectOptions,
+  listProjectRoles,
+  listProofs,
+  resolveIdentifier,
+} from "@/lib/queries";
 import { isContractId, isTxHash, NETWORK_LABELS } from "@/lib/stellar";
 
 export const metadata: Metadata = { title: "Proof registry" };
@@ -25,10 +34,13 @@ export default async function ProofRegistryPage({
   // the user is asking "what is this?", so answer that above the list.
   const looksLikeIdentifier = isContractId(filters.q) || isTxHash(filters.q);
 
-  const [page, projects, hits] = await Promise.all([
+  const [page, projects, hits, roles, milestonesByProject, userId] = await Promise.all([
     listProofs({}, filters),
     listProjectOptions(),
     looksLikeIdentifier ? resolveIdentifier(filters.q) : Promise.resolve([]),
+    listProjectRoles(),
+    listMilestoneOptionsByProject(),
+    getCurrentUserId(),
   ]);
 
   return (
@@ -78,7 +90,22 @@ export default async function ProofRegistryPage({
         }}
       >
         {page.rows.map((proof) => (
-          <ProofListRow key={proof.id} proof={proof} showProject />
+          <ProofListRow
+            key={proof.id}
+            proof={proof}
+            showProject
+            actions={
+              <ProofRowActions
+                proof={proof}
+                milestones={milestonesByProject.get(proof.projectId) ?? []}
+                canEdit={canEditProof(
+                  roles.get(proof.projectId) ?? null,
+                  proof.createdBy,
+                  userId,
+                )}
+              />
+            }
+          />
         ))}
       </DataList>
     </div>

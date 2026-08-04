@@ -4,12 +4,21 @@ import { revalidatePath } from "next/cache";
 import type { ZodError } from "zod";
 
 import {
+  deploymentSchema,
   milestoneSchema,
+  profileSchema,
   projectSchema,
+  projectUpdateSchema,
   proofSchema,
   taskSchema,
   type ProjectInput,
 } from "@/lib/schemas";
+import {
+  MILESTONE_OWNER_ONLY,
+  MILESTONE_STATUS,
+  MILESTONE_TRANSITIONS,
+  type MilestoneStatus,
+} from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
 
@@ -56,6 +65,35 @@ function friendly(message: string, code?: string): string {
   return message;
 }
 
+/**
+ * Every mutation revalidates the same way.
+ *
+ * A row shows up on the board, the project overview, the dashboard rollup and
+ * the cross-project list at once, so scoping the path would just be guessing
+ * which of the four to leave stale.
+ */
+function revalidateAll(): void {
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Deletes are all the same shape — an id, one table, RLS deciding whether it
+ * lands. Returning `{ ok: true }` on a no-op row is deliberate: a delete whose
+ * target is already gone got what it asked for.
+ */
+async function deleteRow(
+  table: "tasks" | "projects" | "milestones" | "stellar_proofs" | "deployments",
+  id: string,
+): Promise<ActionState> {
+  const supabase = await createClient();
+  const { error } = await supabase.from(table).delete().eq("id", id);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 
 export async function createTask(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -84,9 +122,44 @@ export async function createTask(_prev: ActionState, formData: FormData): Promis
 
   if (error) return { error: friendly(error.message, error.code) };
 
-  // The task appears on the board, the project overview, the dashboard rollup
-  // and /tasks — revalidate the whole tree rather than guessing.
-  revalidatePath("/", "layout");
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function updateTask(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const taskId = String(formData.get("taskId") ?? "");
+  if (!taskId) return { error: "Missing task." };
+
+  const parsed = taskSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    title: String(formData.get("title") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    status: String(formData.get("status") || "todo"),
+    milestoneId: String(formData.get("milestoneId") ?? ""),
+    assigneeId: String(formData.get("assigneeId") ?? ""),
+    dueDate: String(formData.get("dueDate") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  // project_id is not updatable: moving a task between projects would strand
+  // its milestone, which belongs to the old one.
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: parsed.data.title,
+      description: orNull(formData.get("description")),
+      status: parsed.data.status,
+      milestone_id: orNull(formData.get("milestoneId")),
+      assignee_id: orNull(formData.get("assigneeId")),
+      due_date: orNull(formData.get("dueDate")),
+    })
+    .eq("id", taskId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
   return { ok: true };
 }
 
@@ -99,8 +172,12 @@ export async function updateTaskStatus(taskId: string, status: string): Promise<
 
   if (error) return { error: friendly(error.message, error.code) };
 
-  revalidatePath("/", "layout");
+  revalidateAll();
   return { ok: true };
+}
+
+export async function deleteTask(taskId: string): Promise<ActionState> {
+  return deleteRow("tasks", taskId);
 }
 
 export async function createProject(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -111,6 +188,7 @@ export async function createProject(_prev: ActionState, formData: FormData): Pro
     status: String(formData.get("status") || "active"),
     repoUrl: String(formData.get("repoUrl") ?? ""),
     demoUrl: String(formData.get("demoUrl") ?? ""),
+    docsUrl: String(formData.get("docsUrl") ?? ""),
   } satisfies Record<keyof ProjectInput, string>);
 
   if (!parsed.success) return toFieldErrors(parsed.error);
@@ -130,12 +208,57 @@ export async function createProject(_prev: ActionState, formData: FormData): Pro
     status: parsed.data.status,
     repo_url: orNull(formData.get("repoUrl")),
     demo_url: orNull(formData.get("demoUrl")),
+    docs_url: orNull(formData.get("docsUrl")),
   });
 
   if (error) return { error: friendly(error.message, error.code) };
 
-  revalidatePath("/", "layout");
+  revalidateAll();
   return { ok: true };
+}
+
+export async function updateProject(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const projectId = String(formData.get("projectId") ?? "");
+  if (!projectId) return { error: "Missing project." };
+
+  // projectUpdateSchema, not projectSchema: the slug is fixed after creation.
+  const parsed = projectUpdateSchema.safeParse({
+    name: String(formData.get("name") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    status: String(formData.get("status") || "active"),
+    repoUrl: String(formData.get("repoUrl") ?? ""),
+    demoUrl: String(formData.get("demoUrl") ?? ""),
+    docsUrl: String(formData.get("docsUrl") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  // Neither owner_id nor slug is in this payload. Transferring ownership is a
+  // separate operation, and the slug is in every URL for this project.
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      name: parsed.data.name,
+      description: orNull(formData.get("description")),
+      status: parsed.data.status,
+      repo_url: orNull(formData.get("repoUrl")),
+      demo_url: orNull(formData.get("demoUrl")),
+      docs_url: orNull(formData.get("docsUrl")),
+    })
+    .eq("id", projectId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function deleteProject(projectId: string): Promise<ActionState> {
+  return deleteRow("projects", projectId);
 }
 
 export async function createMilestone(
@@ -163,8 +286,109 @@ export async function createMilestone(
 
   if (error) return { error: friendly(error.message, error.code) };
 
-  revalidatePath("/", "layout");
+  revalidateAll();
   return { ok: true };
+}
+
+/**
+ * Title, description and due date. Status is deliberately absent — it moves
+ * through `updateMilestoneStatus`, which enforces the contract's transitions.
+ */
+export async function updateMilestone(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const milestoneId = String(formData.get("milestoneId") ?? "");
+  if (!milestoneId) return { error: "Missing milestone." };
+
+  const parsed = milestoneSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    title: String(formData.get("title") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    status: String(formData.get("status") || "proposed"),
+    dueDate: String(formData.get("dueDate") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("milestones")
+    .update({
+      title: parsed.data.title,
+      description: orNull(formData.get("description")),
+      due_date: orNull(formData.get("dueDate")),
+    })
+    .eq("id", milestoneId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * Moves a milestone through the contract's state machine.
+ *
+ * Every rule checked here is one `milestone_proof` enforces on-chain: the
+ * transition must be legal (MILESTONE_TRANSITIONS), and approve/reject require
+ * the caller to be the project owner. Postgres enforces none of it, so this
+ * function is the only thing keeping the database in a state the contract can
+ * later reproduce. When the Soroban call is wired up it goes here, after these
+ * checks pass and before the row is written.
+ */
+export async function updateMilestoneStatus(
+  milestoneId: string,
+  next: MilestoneStatus,
+): Promise<ActionState> {
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  const { data: milestone, error: readError } = await supabase
+    .from("milestones")
+    .select("status, project_id, projects(owner_id)")
+    .eq("id", milestoneId)
+    .maybeSingle();
+
+  if (readError) return { error: friendly(readError.message, readError.code) };
+  if (!milestone) return { error: "That milestone no longer exists." };
+
+  const current = milestone.status as MilestoneStatus;
+  if (current === next) return { ok: true };
+
+  if (!MILESTONE_TRANSITIONS[current].includes(next)) {
+    return {
+      error:
+        current === "approved"
+          ? "An approved milestone is final and cannot be changed."
+          : `A ${MILESTONE_STATUS[current].label.toLowerCase()} milestone cannot become ${MILESTONE_STATUS[next].label.toLowerCase()}.`,
+    };
+  }
+
+  // `projects` embeds as an object here (many-to-one), but PostgREST's generated
+  // types describe it as an array for some shapes — normalise before reading.
+  const project = Array.isArray(milestone.projects)
+    ? milestone.projects[0]
+    : milestone.projects;
+
+  if (MILESTONE_OWNER_ONLY.includes(next) && project?.owner_id !== user.id) {
+    return { error: "Only the project owner can approve or reject a milestone." };
+  }
+
+  const { error } = await supabase
+    .from("milestones")
+    .update({ status: next })
+    .eq("id", milestoneId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function deleteMilestone(milestoneId: string): Promise<ActionState> {
+  return deleteRow("milestones", milestoneId);
 }
 
 export async function createProof(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -190,6 +414,7 @@ export async function createProof(_prev: ActionState, formData: FormData): Promi
     contract_id: orNull(formData.get("contractId")),
     tx_hash: orNull(formData.get("txHash")),
     network: parsed.data.network,
+    wallet_address: orNull(formData.get("walletAddress")),
     proof_url: orNull(formData.get("proofUrl")),
     notes: orNull(formData.get("notes")),
     created_by: user.id,
@@ -197,6 +422,131 @@ export async function createProof(_prev: ActionState, formData: FormData): Promi
 
   if (error) return { error: friendly(error.message, error.code) };
 
-  revalidatePath("/", "layout");
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function updateProof(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const proofId = String(formData.get("proofId") ?? "");
+  if (!proofId) return { error: "Missing proof." };
+
+  const parsed = proofSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    milestoneId: String(formData.get("milestoneId") ?? ""),
+    contractId: String(formData.get("contractId") ?? ""),
+    txHash: String(formData.get("txHash") ?? ""),
+    network: String(formData.get("network") || "testnet"),
+    walletAddress: String(formData.get("walletAddress") ?? ""),
+    proofUrl: String(formData.get("proofUrl") ?? ""),
+    notes: String(formData.get("notes") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  // created_by is left alone: it is who recorded the proof, not who last
+  // touched it, and the "update own or as admin" policy keys off it.
+  const { error } = await supabase
+    .from("stellar_proofs")
+    .update({
+      milestone_id: orNull(formData.get("milestoneId")),
+      contract_id: orNull(formData.get("contractId")),
+      tx_hash: orNull(formData.get("txHash")),
+      network: parsed.data.network,
+      wallet_address: orNull(formData.get("walletAddress")),
+      proof_url: orNull(formData.get("proofUrl")),
+      notes: orNull(formData.get("notes")),
+    })
+    .eq("id", proofId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function deleteProof(proofId: string): Promise<ActionState> {
+  return deleteRow("stellar_proofs", proofId);
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The deployment log is append-only by design: the latest row for a project is
+ * its current state, and the rows before it are the history. So this creates,
+ * and there is no update — correcting a release means recording the next one.
+ */
+export async function createDeployment(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = deploymentSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    status: String(formData.get("status") || "not_started"),
+    network: String(formData.get("network") ?? ""),
+    contractId: String(formData.get("contractId") ?? ""),
+    txHash: String(formData.get("txHash") ?? ""),
+    releaseNotes: String(formData.get("releaseNotes") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("deployments").insert({
+    project_id: parsed.data.projectId,
+    status: parsed.data.status,
+    network: (orNull(formData.get("network")) as "testnet" | "mainnet" | null) ?? null,
+    contract_id: orNull(formData.get("contractId")),
+    tx_hash: orNull(formData.get("txHash")),
+    release_notes: orNull(formData.get("releaseNotes")),
+    deployed_by: user.id,
+    deployed_at: new Date().toISOString(),
+  });
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function deleteDeployment(deploymentId: string): Promise<ActionState> {
+  return deleteRow("deployments", deploymentId);
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The caller's own profile. `profiles: update own` is the policy, so this needs
+ * no role check — RLS cannot be talked into writing anyone else's row.
+ */
+export async function updateProfile(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = profileSchema.safeParse({
+    displayName: String(formData.get("displayName") ?? ""),
+    walletAddress: String(formData.get("walletAddress") ?? ""),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      display_name: parsed.data.displayName,
+      wallet_address: orNull(formData.get("walletAddress")),
+    })
+    .eq("id", user.id);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
   return { ok: true };
 }

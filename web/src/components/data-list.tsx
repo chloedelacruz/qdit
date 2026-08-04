@@ -31,6 +31,10 @@ export function ListRow({
   const classes = cn(
     // ~34px at a single line of 13px text — spec §Density puts rows at 32–36px.
     "row focus-ring block border-b border-border/70 px-3 py-2 last:border-b-0",
+    // Named group so RowActions can stay invisible until the row is hovered or
+    // something inside it takes focus. Named, not bare `group`, because rows
+    // nest inside panels that already use one.
+    "group/row",
     className,
   );
 

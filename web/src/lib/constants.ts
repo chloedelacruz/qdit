@@ -41,6 +41,46 @@ export const MILESTONE_STATUS: StateMeta<MilestoneStatus> = {
   rejected: { label: "Rejected", tone: "destructive" },
 };
 
+/**
+ * The legal milestone transitions — and the reason this is a table rather than
+ * a free dropdown.
+ *
+ * `milestone_status` is the `milestone_proof` contract's state machine, named
+ * identically to `MilestoneStatus` in contracts/milestone_proof/src/lib.rs. The
+ * contract enforces these rules on-chain; Postgres does not. If the app let a
+ * milestone reach, say, `approved` directly from `proposed`, the database would
+ * be holding a state the contract will refuse to reproduce when the on-chain
+ * call is wired up — and the mismatch would only surface then.
+ *
+ * So the app enforces the contract's rules today, and the Soroban call later
+ * mirrors a transition that has already been validated here.
+ */
+export const MILESTONE_TRANSITIONS: Record<MilestoneStatus, MilestoneStatus[]> = {
+  proposed: ["submitted"],
+  submitted: ["approved", "rejected"],
+  // Terminal on-chain: approve_milestone is only valid from Submitted, and
+  // nothing transitions out of Approved.
+  approved: [],
+  // A rejected milestone may be re-submitted.
+  rejected: ["submitted"],
+};
+
+/**
+ * Transitions the contract gates on `approver == project owner`. Anyone with
+ * write access may submit; only the owner rules on it.
+ */
+export const MILESTONE_OWNER_ONLY: MilestoneStatus[] = ["approved", "rejected"];
+
+/** Verb for a transition, as it reads on a button. */
+export function milestoneActionLabel(
+  from: MilestoneStatus,
+  to: MilestoneStatus,
+): string {
+  if (to === "submitted") return from === "rejected" ? "Re-submit" : "Submit for approval";
+  if (to === "approved") return "Approve";
+  return "Reject";
+}
+
 export const PROJECT_STATUS: StateMeta<ProjectStatus> = {
   active: { label: "Active", tone: "accent" },
   paused: { label: "Paused", tone: "warning" },

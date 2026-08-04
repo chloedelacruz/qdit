@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
 
 import { DataList } from "@/components/data-list";
+import { TaskRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { TaskListRow } from "@/components/rows";
 import { TASK_STATUS } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { listMembers, listProjectOptions, listTasks } from "@/lib/queries";
+import {
+  canContribute,
+  listMembers,
+  listMilestoneOptionsByProject,
+  listProjectOptions,
+  listProjectRoles,
+  listTasks,
+} from "@/lib/queries";
 
 export const metadata: Metadata = { title: "All tasks" };
 
@@ -22,10 +30,13 @@ export default async function AllTasksPage({
   searchParams: Promise<SearchParams>;
 }) {
   const filters = parseFilters(await searchParams);
-  const [page, members, projects] = await Promise.all([
+  const [page, members, projects, roles, milestonesByProject] = await Promise.all([
     listTasks({}, filters),
     listMembers(),
     listProjectOptions(),
+    // Rows here span projects, and the caller's role can differ in each.
+    listProjectRoles(),
+    listMilestoneOptionsByProject(),
   ]);
 
   return (
@@ -77,7 +88,19 @@ export default async function AllTasksPage({
         }}
       >
         {page.rows.map((task) => (
-          <TaskListRow key={task.id} task={task} showProject />
+          <TaskListRow
+            key={task.id}
+            task={task}
+            showProject
+            actions={
+              <TaskRowActions
+                task={task}
+                milestones={milestonesByProject.get(task.projectId) ?? []}
+                members={members}
+                canEdit={canContribute(roles.get(task.projectId) ?? null)}
+              />
+            }
+          />
         ))}
       </DataList>
     </div>
