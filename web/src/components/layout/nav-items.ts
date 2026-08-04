@@ -1,36 +1,47 @@
-import {
-  Columns3,
-  Folder,
-  GitBranch,
-  LayoutGrid,
-  Link2,
-  Milestone,
-  Settings2,
-  type LucideIcon,
-} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+import { ICON } from "@/lib/icons";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** Match this href only, not its descendants. */
+  exact?: boolean;
 };
 
 /**
- * Icons stay geometric and abstract per the design spec — no literal
- * checklists, clipboards or crypto imagery.
+ * Glyphs come from `@/lib/icons` so a concept looks the same here as it does in
+ * a section heading or an empty state (spec §Iconography).
  */
-export const PRIMARY_NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
-  { href: "/projects", label: "Projects", icon: Folder },
-  { href: "/board", label: "Board", icon: Columns3 },
-  { href: "/milestones", label: "Milestones", icon: Milestone },
-];
 
-export const BUILD_NAV: NavItem[] = [
-  { href: "/deployments", label: "Deployments", icon: GitBranch },
-  { href: "/proofs", label: "Proof registry", icon: Link2 },
+/**
+ * Nav for the project a user is currently inside. Every destination is scoped
+ * to one project: at 40 projects an unscoped board is unusable, so scoping is
+ * the default and cross-project views are opt-in below.
+ */
+export function projectNav(slug: string): NavItem[] {
+  return [
+    // Exact: every other project route is a descendant of this one.
+    { href: `/projects/${slug}`, label: "Overview", icon: ICON.overview, exact: true },
+    { href: `/projects/${slug}/board`, label: "Board", icon: ICON.board },
+    { href: `/projects/${slug}/milestones`, label: "Milestones", icon: ICON.milestone },
+    { href: `/projects/${slug}/deployments`, label: "Deployments", icon: ICON.deployment },
+    { href: `/projects/${slug}/proofs`, label: "Proofs", icon: ICON.proof },
+  ];
+}
+
+/** Cross-project views. Explicitly labelled so the scope is never ambiguous. */
+export const WORKSPACE_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: ICON.dashboard },
+  // Exact: /projects/[slug] belongs to the project nav, not the index.
+  { href: "/projects", label: "Projects", icon: ICON.project, exact: true },
+  { href: "/tasks", label: "All tasks", icon: ICON.task },
+  { href: "/milestones", label: "All milestones", icon: ICON.milestone },
+  { href: "/deployments", label: "All deployments", icon: ICON.deployment },
+  { href: "/proofs", label: "Proof registry", icon: ICON.proof },
 ];
 
 export const FOOTER_NAV: NavItem[] = [
-  { href: "/settings", label: "Settings", icon: Settings2 },
+  { href: "/settings", label: "Settings", icon: ICON.settings },
 ];

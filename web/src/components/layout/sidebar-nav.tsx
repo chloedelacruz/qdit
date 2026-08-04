@@ -25,10 +25,13 @@ export function SidebarNav({
         </p>
       ) : null}
 
-      {items.map(({ href, label: text, icon: Icon }) => {
-        // `/projects` should stay active on `/projects/acme`, but `/` must not
-        // match everything.
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+      {items.map(({ href, label: text, icon: Icon, exact }) => {
+        // Descendants light up their parent by default, so `/projects/acme/board`
+        // keeps "Board" active. `exact` opts out where a route is the ancestor
+        // of a whole section (project Overview, the Projects index).
+        const active = exact
+          ? pathname === href
+          : pathname === href || pathname.startsWith(`${href}/`);
 
         return (
           <Link
@@ -37,13 +40,20 @@ export function SidebarNav({
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "transition-qdit group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium",
+              "transition-qdit focus-ring group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium",
+              // 2px brand rail on the leading edge (spec §Accent Application).
+              "before:absolute before:inset-y-1.5 before:-left-1 before:w-0.5 before:rounded-full before:bg-primary before:opacity-0 before:transition-opacity before:duration-200",
               active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-xs before:opacity-100"
+                : "text-muted-foreground hover:bg-sidebar-accent/45 hover:text-sidebar-foreground",
             )}
           >
-            <Icon className={cn("size-4 shrink-0", active && "text-sidebar-primary")} />
+            <Icon
+              className={cn(
+                "transition-qdit size-4 shrink-0",
+                active ? "text-sidebar-primary" : "group-hover:text-sidebar-foreground",
+              )}
+            />
             {text}
           </Link>
         );
