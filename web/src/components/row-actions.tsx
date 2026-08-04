@@ -44,12 +44,18 @@ export function RowActions({
   deleteTitle,
   deleteDescription,
   onDelete,
+  persistent = false,
   className,
 }: {
   /** Names the entity in the menu's accessible label, e.g. "task". */
   label: string;
   canEdit?: boolean;
   canDelete?: boolean;
+  /**
+   * Always visible. For places with no row to hover — a page header, where the
+   * hover-to-reveal trick would leave the control undiscoverable.
+   */
+  persistent?: boolean;
   renderEdit?: (props: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -100,8 +106,9 @@ export function RowActions({
           aria-label={`Actions for this ${label}`}
           className={cn(
             "focus-ring transition-qdit grid size-6 place-items-center rounded-md text-muted-foreground",
-            "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
             "hover:bg-muted hover:text-foreground",
+            !persistent &&
+              "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
           )}
         >
           <MoreHorizontal className="size-4" />

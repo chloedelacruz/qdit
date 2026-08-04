@@ -8,6 +8,7 @@ import { FilterBar } from "@/components/filter-bar";
 import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
 import { ProofListRow } from "@/components/rows";
+import { VerifyTx } from "@/components/verify-tx";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import { ICON } from "@/lib/icons";
 import {
@@ -49,6 +50,9 @@ export default async function ProofRegistryPage({
         title="Proof registry"
         description="Every contract ID, transaction hash and proof link recorded across the workspace."
       />
+
+      {/* The registry stores what was pasted; this asks the ledger. */}
+      <VerifyTx />
 
       <FilterBar
         filters={filters}
