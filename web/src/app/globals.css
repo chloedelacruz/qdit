@@ -23,6 +23,11 @@
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+
+  /* Surface ladder (spec §Depth). sunken < background < card < raised. */
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -59,6 +64,23 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
 
+  /* Spec §Density — small and tightly spaced. Redefining the scale here shifts
+     every `text-*` utility at once, so hierarchy comes from weight, colour and
+     space rather than size. `text-3xl` and above are untouched: the landing
+     page is a marketing surface and keeps its display sizes. */
+  --text-xs: 0.6875rem; /* 11px — meta, uppercase labels, counts */
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.8125rem; /* 13px — the default: body, rows, controls, nav */
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem; /* 14px — emphasis inside dense contexts */
+  --text-base--line-height: 1.5;
+  --text-lg: 1rem; /* 16px — page titles */
+  --text-lg--line-height: 1.45;
+  --text-xl: 1.125rem; /* 18px — largest thing in the app shell */
+  --text-xl--line-height: 1.35;
+  --text-2xl: 1.375rem; /* 22px — stat values only */
+  --text-2xl--line-height: 1.25;
+
   /* Spec: 12px cards, 10px buttons. shadcn maps button/input -> rounded-lg,
      card -> rounded-xl, so those two steps carry the spec values exactly. */
   --radius-sm: 0.25rem; /*  4px */
@@ -74,6 +96,28 @@
   --animate-duration-fast: 180ms;
   --animate-duration-base: 200ms;
   --animate-duration-slow: 220ms;
+
+  /* Elevation (spec §Depth). Declared here so the `shadow-*` utilities
+     resolve to the qdit ramp; the values themselves live in :root/.dark so
+     they can invert with the theme. */
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-xl);
+
+  --animate-rise: rise var(--animate-duration-slow) var(--ease-qdit) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 :root {
@@ -94,35 +138,44 @@
   );
 
   /* --- Light theme -------------------------------------------------------- */
-  --background: oklch(0.9842 0.0034 247.86); /* #F8FAFC */
-  --foreground: oklch(0.2077 0.0398 265.75); /* #0F172A */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2077 0.0398 265.75);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2077 0.0398 265.75);
+  /* Every neutral is tinted toward the brand hue (285°) so the accent reads as
+     emerging from the surface rather than sitting on it (spec §Depth).
+     No value is pure white or pure grey. */
+
+  /* Surface ladder — four rungs, each a real luminance step. */
+  --surface-sunken: oklch(0.955 0.006 285); /* wells, tracks, inset fills */
+  --background: oklch(0.974 0.0045 285); /* the page                    */
+  --card: oklch(0.995 0.002 285); /* panels, rows, tiles         */
+  --surface-raised: oklch(0.999 0.001 285); /* popovers, sheets, dialogs   */
+
+  --foreground: oklch(0.21 0.024 285);
+  --card-foreground: oklch(0.21 0.024 285);
+  --popover: oklch(0.999 0.001 285);
+  --popover-foreground: oklch(0.21 0.024 285);
 
   --primary: oklch(0.5847 0.2208 281.51);
-  --primary-foreground: oklch(0.9842 0.0034 247.86);
+  --primary-foreground: oklch(0.985 0.003 285);
 
-  --secondary: oklch(0.9683 0.0069 247.9); /* #F1F5F9 */
-  --secondary-foreground: oklch(0.3717 0.0392 257.29); /* #334155 */
+  --secondary: oklch(0.964 0.007 285);
+  --secondary-foreground: oklch(0.375 0.03 285);
 
-  --muted: oklch(0.9683 0.0069 247.9);
-  --muted-foreground: oklch(0.5544 0.0407 257.42); /* #64748B */
+  --muted: oklch(0.964 0.007 285);
+  --muted-foreground: oklch(0.55 0.025 285);
 
-  --accent: oklch(0.9348 0.0337 291.24); /* #E9E6FF */
+  --accent: oklch(0.935 0.033 288); /* #E9E6FF, retinted */
   --accent-foreground: oklch(0.46 0.19 281.51);
 
   --destructive: oklch(0.5771 0.2152 27.33); /* #DC2626 */
   --success: oklch(0.6271 0.1699 149.21); /* #16A34A */
-  --success-foreground: oklch(0.9842 0.0034 247.86);
+  --success-foreground: oklch(0.985 0.003 285);
   --warning: oklch(0.7686 0.1647 70.08); /* #F59E0B */
-  --warning-foreground: oklch(0.2077 0.0398 265.75);
+  --warning-foreground: oklch(0.21 0.024 285);
   --info: oklch(0.6847 0.1479 237.32); /* #0EA5E9 */
-  --info-foreground: oklch(0.9842 0.0034 247.86);
+  --info-foreground: oklch(0.985 0.003 285);
 
-  --border: oklch(0.9288 0.0126 255.51); /* #E2E8F0 */
-  --input: oklch(0.9288 0.0126 255.51);
+  --border: oklch(0.925 0.009 285);
+  --border-strong: oklch(0.885 0.013 285);
+  --input: oklch(0.925 0.009 285);
   --ring: oklch(0.5847 0.2208 281.51);
 
   /* Single-accent ramp: brand fading into neutral slate. */
@@ -132,23 +185,49 @@
   --chart-4: oklch(0.7107 0.0351 256.79);
   --chart-5: oklch(0.869 0.0198 252.89);
 
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.2077 0.0398 265.75);
+  /* One rung below the page, so content reads as raised — matches dark mode. */
+  --sidebar: oklch(0.9655 0.0055 285);
+  --sidebar-foreground: oklch(0.21 0.024 285);
   --sidebar-primary: oklch(0.5847 0.2208 281.51);
-  --sidebar-primary-foreground: oklch(0.9842 0.0034 247.86);
-  --sidebar-accent: oklch(0.9348 0.0337 291.24);
+  --sidebar-primary-foreground: oklch(0.985 0.003 285);
+  --sidebar-accent: oklch(0.935 0.033 288);
   --sidebar-accent-foreground: oklch(0.46 0.19 281.51);
-  --sidebar-border: oklch(0.9288 0.0126 255.51);
+  --sidebar-border: oklch(0.925 0.009 285);
   --sidebar-ring: oklch(0.5847 0.2208 281.51);
 
-  /* Spec: subtle shadows only. */
-  --shadow-xs: 0 1px 2px 0 oklch(0.2077 0.0398 265.75 / 0.04);
-  --shadow-sm:
-    0 1px 2px 0 oklch(0.2077 0.0398 265.75 / 0.05),
-    0 1px 3px 0 oklch(0.2077 0.0398 265.75 / 0.05);
-  --shadow-md:
-    0 2px 4px -1px oklch(0.2077 0.0398 265.75 / 0.05),
-    0 4px 12px -2px oklch(0.2077 0.0398 265.75 / 0.06);
+  /* --- Elevation (spec §Depth) --------------------------------------------
+     Layered: a tight contact shadow plus a wider ambient one. Tinted to hue
+     285 — never neutral black. Light falls from directly above. */
+  --shadow-color: 0.25 0.03 285;
+
+  --elevation-xs:
+    0 1px 1px 0 oklch(var(--shadow-color) / 0.05),
+    0 1px 2px -1px oklch(var(--shadow-color) / 0.06);
+  --elevation-sm:
+    0 1px 2px 0 oklch(var(--shadow-color) / 0.05),
+    0 2px 4px -1px oklch(var(--shadow-color) / 0.06),
+    0 4px 8px -4px oklch(var(--shadow-color) / 0.05);
+  --elevation-md:
+    0 1px 2px 0 oklch(var(--shadow-color) / 0.05),
+    0 4px 8px -2px oklch(var(--shadow-color) / 0.07),
+    0 10px 20px -6px oklch(var(--shadow-color) / 0.07);
+  --elevation-lg:
+    0 2px 4px -1px oklch(var(--shadow-color) / 0.06),
+    0 8px 16px -4px oklch(var(--shadow-color) / 0.08),
+    0 20px 32px -10px oklch(var(--shadow-color) / 0.1);
+  --elevation-xl:
+    0 4px 8px -2px oklch(var(--shadow-color) / 0.07),
+    0 16px 32px -8px oklch(var(--shadow-color) / 0.1),
+    0 32px 56px -16px oklch(var(--shadow-color) / 0.14);
+
+  /* 1px sheen along the top edge — the light source made visible. */
+  --highlight-top: inset 0 1px 0 0 oklch(1 0 0 / 0.9);
+  /* Inverse, for tracks and wells. */
+  --inset-well: inset 0 1px 2px 0 oklch(var(--shadow-color) / 0.07);
+
+  /* Focus: tight solid ring + soft outer glow (spec §Accent Application). */
+  --focus-ring:
+    0 0 0 1px var(--ring), 0 0 0 4px oklch(0.5847 0.2208 281.51 / 0.16);
 }
 
 .dark {
@@ -159,35 +238,41 @@
   --brand-surface: oklch(0.32 0.06 285);
   --brand-ink: oklch(0.7788 0.1231 292.27);
 
-  --background: oklch(0.2077 0.0398 265.75); /* #0F172A */
-  --foreground: oklch(0.9842 0.0034 247.86); /* #F8FAFC */
-  --card: oklch(0.2795 0.0368 260.03); /* #1E293B */
-  --card-foreground: oklch(0.9842 0.0034 247.86);
-  --popover: oklch(0.2795 0.0368 260.03);
-  --popover-foreground: oklch(0.9842 0.0034 247.86);
+  /* Surface ladder — wider steps than light mode, because shadow does far
+     less work on a dark ground; luminance has to carry it. */
+  --surface-sunken: oklch(0.165 0.016 285);
+  --background: oklch(0.19 0.018 285);
+  --card: oklch(0.228 0.019 285);
+  --surface-raised: oklch(0.262 0.021 285);
+
+  --foreground: oklch(0.972 0.006 285);
+  --card-foreground: oklch(0.972 0.006 285);
+  --popover: oklch(0.262 0.021 285);
+  --popover-foreground: oklch(0.972 0.006 285);
 
   --primary: oklch(0.6626 0.1876 285.27);
-  --primary-foreground: oklch(0.2077 0.0398 265.75);
+  --primary-foreground: oklch(0.19 0.018 285);
 
-  --secondary: oklch(0.2795 0.0368 260.03);
-  --secondary-foreground: oklch(0.9288 0.0126 255.51);
+  --secondary: oklch(0.262 0.021 285);
+  --secondary-foreground: oklch(0.925 0.012 285);
 
-  --muted: oklch(0.2795 0.0368 260.03);
-  --muted-foreground: oklch(0.7107 0.0351 256.79); /* #94A3B8 */
+  --muted: oklch(0.262 0.021 285);
+  --muted-foreground: oklch(0.715 0.024 285);
 
-  --accent: oklch(0.32 0.06 285);
-  --accent-foreground: oklch(0.7788 0.1231 292.27);
+  --accent: oklch(0.315 0.055 285);
+  --accent-foreground: oklch(0.82 0.1 288);
 
   --destructive: oklch(0.7106 0.1661 22.22); /* #F87171 */
   --success: oklch(0.8003 0.1821 151.71); /* #4ADE80 */
-  --success-foreground: oklch(0.2077 0.0398 265.75);
+  --success-foreground: oklch(0.19 0.018 285);
   --warning: oklch(0.8369 0.1644 84.43); /* #FBBF24 */
-  --warning-foreground: oklch(0.2077 0.0398 265.75);
+  --warning-foreground: oklch(0.19 0.018 285);
   --info: oklch(0.6847 0.1479 237.32);
-  --info-foreground: oklch(0.2077 0.0398 265.75);
+  --info-foreground: oklch(0.19 0.018 285);
 
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(1 0 0 / 9%);
+  --border-strong: oklch(1 0 0 / 16%);
+  --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.6626 0.1876 285.27);
 
   --chart-1: oklch(0.6626 0.1876 285.27);
@@ -196,20 +281,46 @@
   --chart-4: oklch(0.5544 0.0407 257.42);
   --chart-5: oklch(0.7107 0.0351 256.79);
 
-  --sidebar: oklch(0.2795 0.0368 260.03);
-  --sidebar-foreground: oklch(0.9842 0.0034 247.86);
+  /* The sidebar sits *below* the page plane, so content reads as raised. */
+  --sidebar: oklch(0.175 0.017 285);
+  --sidebar-foreground: oklch(0.972 0.006 285);
   --sidebar-primary: oklch(0.6626 0.1876 285.27);
-  --sidebar-primary-foreground: oklch(0.2077 0.0398 265.75);
-  --sidebar-accent: oklch(0.32 0.06 285);
-  --sidebar-accent-foreground: oklch(0.7788 0.1231 292.27);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-primary-foreground: oklch(0.19 0.018 285);
+  --sidebar-accent: oklch(0.315 0.055 285);
+  --sidebar-accent-foreground: oklch(0.82 0.1 288);
+  --sidebar-border: oklch(1 0 0 / 9%);
   --sidebar-ring: oklch(0.6626 0.1876 285.27);
 
-  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.24);
-  --shadow-sm:
-    0 1px 2px 0 oklch(0 0 0 / 0.28), 0 1px 3px 0 oklch(0 0 0 / 0.24);
-  --shadow-md:
-    0 2px 4px -1px oklch(0 0 0 / 0.3), 0 4px 12px -2px oklch(0 0 0 / 0.28);
+  /* Deeper and more opaque than light mode — on a dark ground a shadow has to
+     be committed to register at all. Still tinted, never pure black. */
+  --shadow-color: 0.08 0.02 285;
+
+  --elevation-xs:
+    0 1px 1px 0 oklch(var(--shadow-color) / 0.3),
+    0 1px 2px -1px oklch(var(--shadow-color) / 0.35);
+  --elevation-sm:
+    0 1px 2px 0 oklch(var(--shadow-color) / 0.32),
+    0 2px 4px -1px oklch(var(--shadow-color) / 0.36),
+    0 4px 8px -4px oklch(var(--shadow-color) / 0.34);
+  --elevation-md:
+    0 1px 2px 0 oklch(var(--shadow-color) / 0.34),
+    0 4px 8px -2px oklch(var(--shadow-color) / 0.4),
+    0 10px 20px -6px oklch(var(--shadow-color) / 0.42);
+  --elevation-lg:
+    0 2px 4px -1px oklch(var(--shadow-color) / 0.38),
+    0 8px 16px -4px oklch(var(--shadow-color) / 0.46),
+    0 20px 32px -10px oklch(var(--shadow-color) / 0.5);
+  --elevation-xl:
+    0 4px 8px -2px oklch(var(--shadow-color) / 0.42),
+    0 16px 32px -8px oklch(var(--shadow-color) / 0.52),
+    0 32px 56px -16px oklch(var(--shadow-color) / 0.6);
+
+  /* This is what stops dark surfaces reading as flat cut-outs. */
+  --highlight-top: inset 0 1px 0 0 oklch(1 0 0 / 0.06);
+  --inset-well: inset 0 1px 2px 0 oklch(var(--shadow-color) / 0.45);
+
+  --focus-ring:
+    0 0 0 1px var(--ring), 0 0 0 4px oklch(0.6626 0.1876 285.27 / 0.22);
 }
 
 @layer base {
@@ -218,9 +329,8 @@
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings:
-      "cv11", "ss01";
+    /* 13px is the app's baseline, not 16px (spec §Density). */
+    @apply bg-background text-sm text-foreground;
     font-variation-settings: "opsz" 32;
   }
 
@@ -260,7 +370,7 @@
     color: transparent;
   }
 
-  /* Spec §Motion — 180–220ms, ease-out, 1.02 scale. */
+  /* Spec §Motion — 180–220ms, exponential ease-out. */
   .transition-qdit {
     transition-property: color, background-color, border-color, opacity,
       box-shadow, transform;
@@ -268,15 +378,95 @@
     transition-timing-function: var(--ease-qdit);
   }
 
-  .hover-lift {
-    transition:
-      transform var(--animate-duration-base) var(--ease-qdit),
-      box-shadow var(--animate-duration-base) var(--ease-qdit);
+  /* --- Depth ------------------------------------------------------------ */
+
+  /* A lit surface: luminance step + contact shadow + top sheen. This is the
+     one class that turns an outlined rectangle into an object. */
+  .surface {
+    background-color: var(--card);
+    box-shadow: var(--highlight-top), var(--elevation-xs);
   }
 
-  .hover-lift:hover {
-    transform: scale(1.02);
-    box-shadow: var(--shadow-md);
+  /* The page's primary object (spec §Visual Priority). One per page — a second
+     one cancels the first out. */
+  .surface-primary {
+    background-color: var(--card);
+    box-shadow: var(--highlight-top), var(--elevation-sm);
+  }
+
+  .surface-raised {
+    background-color: var(--surface-raised);
+    box-shadow: var(--highlight-top), var(--elevation-lg);
+  }
+
+  /* Inverse of .surface — recedes instead of projecting. Progress tracks,
+     input wells, board column backgrounds. */
+  .well {
+    background-color: var(--surface-sunken);
+    box-shadow: var(--inset-well);
+  }
+
+  /* --- Interaction ------------------------------------------------------ */
+
+  /* Hover lifts 1px and gains one elevation level. Never scales — scaling
+     reflows text mid-transition and reads as a toy. */
+  .lift {
+    transition:
+      transform var(--animate-duration-base) var(--ease-qdit),
+      box-shadow var(--animate-duration-base) var(--ease-qdit),
+      border-color var(--animate-duration-base) var(--ease-qdit);
+  }
+
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--highlight-top), var(--elevation-md);
+  }
+
+  /* Press settles back down through its own rest elevation. */
+  .lift:active {
+    transform: translateY(0);
+    box-shadow: var(--highlight-top), var(--elevation-xs);
+    transition-duration: var(--animate-duration-fast);
+  }
+
+  /* Flush rows — no elevation, just a tint and a brand rail on the leading
+     edge (spec §Accent Application). */
+  .row {
+    position: relative;
+    transition:
+      background-color var(--animate-duration-base) var(--ease-qdit);
+  }
+
+  .row::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 2px;
+    background-color: var(--primary);
+    opacity: 0;
+    transition: opacity var(--animate-duration-base) var(--ease-qdit);
+  }
+
+  .row:hover {
+    background-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  }
+
+  .row:hover::before,
+  .row[data-active="true"]::before {
+    opacity: 1;
+  }
+
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  /* Staggered list entrance. Set --i on each child; capped at 8 so a long
+     list never crawls in. */
+  .stagger > * {
+    animation: var(--animate-rise);
+    animation-delay: calc(min(var(--i, 0), 8) * 24ms);
   }
 
   .truncate-hash {
@@ -294,7 +484,12 @@
     scroll-behavior: auto !important;
   }
 
-  .hover-lift:hover {
+  .lift:hover,
+  .lift:active {
     transform: none;
+  }
+
+  .stagger > * {
+    animation: none;
   }
 }
