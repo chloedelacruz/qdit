@@ -49,7 +49,9 @@ export default function Home() {
             Track the work. Keep the proof.
           </h1>
 
-          <p className="mt-5 max-w-xl text-base text-muted-foreground">
+          {/* Marketing surface — exempt from the app's density scale
+              (spec §Density), so the hero keeps a readable display size. */}
+          <p className="mt-5 max-w-xl text-lg text-muted-foreground">
             qdit is a task hub for Soroban teams. Projects, tasks and milestones on one side —
             contract IDs, transaction hashes and deployment status on the other. No spreadsheet
             reconciliation before a grant report.
@@ -63,15 +65,15 @@ export default function Home() {
               </Link>
             </Button>
             <Button asChild variant="ghost" size="lg">
-              <Link href="/board">See the board</Link>
+              <Link href="/projects">Browse projects</Link>
             </Button>
           </div>
         </section>
 
         <section className="grid gap-3 pb-20 sm:grid-cols-2">
           {PILLARS.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+            <div key={title} className="surface lift rounded-xl border border-border p-5">
+              <span className="well flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground">
                 <Icon className="size-4.5" />
               </span>
               <h2 className="mt-4 text-base font-semibold">{title}</h2>
