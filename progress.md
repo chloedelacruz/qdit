@@ -1,6 +1,6 @@
 # progress
 
-Handoff notes. Written 2026-08-05, with `main` at `a7a8ca7`.
+Handoff notes. Written 2026-08-05.
 
 Read this with [`README.md`](./README.md) (how the thing works) and
 [`stellar-builder-task-hub-spec.md`](./stellar-builder-task-hub-spec.md) (what it
@@ -8,8 +8,8 @@ is meant to do). This file is only the delta between them.
 
 ## Where things stand
 
-`feat/live-backend-and-brand-assets` was fast-forwarded into `main`. **Nothing is
-pushed** — `origin/main` is still at `fe93996`, 16 commits behind local.
+`feat/live-backend-and-brand-assets` was fast-forwarded into `main`, pushed, and
+deleted on both ends. `main` is the only branch and is in sync with `origin`.
 
 Verified this session: `npm run typecheck` and `npm run lint` both pass clean.
 The Playwright suite and `cargo test` were **not** run — the suite needs
@@ -143,12 +143,15 @@ Do it after phase 4, which will have introduced the SDK anyway.
 
 ## Repo hygiene, independent of the above
 
-- **`password123` is in git history.** `supabase/seed.sql` carries it and the
-  file was applied to the hosted project, where the accounts were reachable with
-  only the publishable key. Passwords were rotated; the history rewrite
-  (`git filter-repo` / BFG) has **not** been done. Doing it after pushing means
-  a force-push, so **rewrite before the first push to `origin/main`** if it is
-  going to happen at all.
+- **`password123` is in git history**, in `fe93996`. `supabase/seed.sql` carries
+  it and the file was applied to the hosted project, where the accounts were
+  briefly reachable with only the publishable key. Passwords have been rotated.
+
+  **The repo is private**, which is what makes this low priority rather than
+  urgent — the history was never readable by anyone outside the org. The rewrite
+  (`git filter-repo` / BFG) has not been done and now needs a force-push to
+  `main`. Judgement call whether it is worth it; do not re-raise it as a blocker.
+  The live rule that still matters: **never apply `seed.sql` to a hosted project.**
 - **No CI.** There is no `.github/`. `lint`, `typecheck`, `cargo test` and
   Playwright only ever run locally. A workflow running the first three is cheap;
   Playwright needs secrets and a hosted database, so gate it separately.
