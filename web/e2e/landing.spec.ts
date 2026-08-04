@@ -11,7 +11,7 @@ test.describe("landing page", () => {
       "Track the work. Keep the proof.",
     );
     await expect(page.getByRole("link", { name: "Open the dashboard" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "See the board" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Browse projects" })).toBeVisible();
   });
 
   test("lists the four product pillars", async ({ page }) => {
@@ -25,10 +25,12 @@ test.describe("landing page", () => {
     ]);
   });
 
-  test("primary CTA navigates into the app shell", async ({ page }) => {
+  test("primary CTA sends a signed-out visitor to sign in", async ({ page }) => {
     await page.getByRole("link", { name: "Open the dashboard" }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
+
+    // The landing page is public; the app behind it is not.
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Sign in to qdit" })).toBeVisible();
   });
 
   test("has exactly one h1", async ({ page }) => {
