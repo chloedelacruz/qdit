@@ -21,18 +21,18 @@ export function StatTile({
   return (
     <div
       data-slot="stat-tile"
-      className={cn("rounded-xl bg-card p-4 ring-1 ring-foreground/10", className)}
+      className={cn("surface rounded-xl border border-border p-3", className)}
     >
       <p data-slot="stat-label" className="text-xs font-medium text-muted-foreground">
         {label}
       </p>
-      <p data-slot="stat-value" className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
+      <p data-slot="stat-value" className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">
         {value}
       </p>
 
       {progress !== undefined ? (
         <div
-          className="mt-3 h-1 overflow-hidden rounded-full bg-muted"
+          className="well mt-3 h-1 overflow-hidden rounded-full"
           role="progressbar"
           aria-valuenow={Math.round(progress * 100)}
           aria-valuemin={0}

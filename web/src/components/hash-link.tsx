@@ -62,7 +62,7 @@ export function HashLink({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md bg-muted/60 py-0.5 pr-0.5 pl-2 ring-1 ring-inset ring-border",
+        "well transition-qdit inline-flex items-center gap-1 rounded-md border border-border py-0.5 pr-0.5 pl-2 hover:border-primary/35",
         className,
       )}
     >
