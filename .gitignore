@@ -19,6 +19,14 @@ build/
 .branches/
 .temp/
 
+# Claude Code — local agent config and notes, at any depth.
+# AGENTS.md is deliberately NOT here: it is tool-agnostic and belongs to the repo.
+.claude/
+.claude.json
+.claude.json.backup
+CLAUDE.md
+CLAUDE.local.md
+
 # OS / editor
 .DS_Store
 *.pem

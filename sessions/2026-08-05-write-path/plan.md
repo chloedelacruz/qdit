@@ -95,9 +95,10 @@ while in `schemas.ts`: `walletAddress` on the proof schema, `docsUrl` on the
 project schema. Both columns exist, both are already selected and rendered by
 `queries.ts`, and both are absent from every form — spec §4 requires them.
 
-`updateProject` must not accept `owner_id`, and should treat `slug` carefully:
-it is `unique` and appears in every project URL, so changing it breaks existing
-links. Either omit it from the edit form or confirm the change explicitly.
+`updateProject` must not accept `owner_id`, and **must not accept `slug`** —
+decided: the slug is fixed after creation. It is `unique` and appears in every
+project URL, so an edit would break existing links. Omit it from the edit form
+and from the update payload, not merely disable the input.
 
 ### A4. Dialogs and row controls
 
@@ -165,24 +166,23 @@ and `isTxHash()` are already exported from `stellar.ts` and currently unused.
 Keep the fetch in a route handler; `stellar.ts` is deliberately dependency-free
 and its header says on-chain work belongs server-side.
 
-**F. Drag and drop.** Board only. `tasks.order_index` exists and is unused, so
-ordering within a column comes along with it. Needs a library decision —
-`@dnd-kit` is the usual choice and has no peer conflict with React 19; native
-HTML5 DnD avoids the dependency but has poor touch support, and the `mobile`
-Playwright project would not cover it either way. Reuse `updateTaskStatus` for
-the cross-column case rather than writing a second path.
+**F. Drag and drop.** Board only, using **`@dnd-kit`** — decided.
+`tasks.order_index` exists and is unused, so ordering within a column comes
+along with it. Reuse `updateTaskStatus` for the cross-column case rather than
+writing a second path.
 
 **G. CI.** No `.github/` exists. A workflow running `npm run lint`,
 `npm run typecheck` and `cargo test` needs no secrets. Playwright needs
 `E2E_EMAIL` / `E2E_PASSWORD` and the hosted database — gate it separately, do
 not put it in the default PR check.
 
-## Open decisions
+## Decisions
 
-- **Project slug editable, or fixed after creation?** It is in every project
-  URL. Fixed is safer; editable needs a confirm step (A3).
-- **`@dnd-kit` or native HTML5 drag events?** (F)
-- Everything else in this plan is settled by the schema or the existing code.
+- **The project slug is fixed after creation.** Not in the edit form, not in the
+  update payload (A3).
+- **`@dnd-kit`** for the board (F).
+
+Everything else in this plan is settled by the schema or the existing code.
 
 ## Watch out for
 
