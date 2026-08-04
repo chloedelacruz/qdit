@@ -1,67 +1,74 @@
 import type { Metadata } from "next";
 
-import { HashLink } from "@/components/hash-link";
+import { DataList } from "@/components/data-list";
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { MilestoneListRow } from "@/components/rows";
 import { MILESTONE_STATUS } from "@/lib/constants";
-import { DEMO_MILESTONES } from "@/lib/placeholder-data";
+import { ICON } from "@/lib/icons";
+import { parseFilters, type SearchParams } from "@/lib/filters";
+import { listMilestones, listProjectOptions } from "@/lib/queries";
 
-export const metadata: Metadata = { title: "Milestones" };
+export const metadata: Metadata = { title: "All milestones" };
 
-export default function MilestonesPage() {
+export default async function AllMilestonesPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const filters = parseFilters(await searchParams);
+  const [page, projects] = await Promise.all([
+    listMilestones({}, filters),
+    listProjectOptions(),
+  ]);
+
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
-        title="Milestones"
-        description="Proposed → Submitted → Approved. Each one carries its own proof of work."
+        title="All milestones"
+        description="Every milestone across the workspace, and whether it carries proof."
       />
 
-      <div className="flex flex-col gap-3">
-        {DEMO_MILESTONES.map((milestone) => {
-          const progress =
-            milestone.taskCount === 0 ? 0 : milestone.doneCount / milestone.taskCount;
+      <FilterBar
+        filters={filters}
+        placeholder="Search milestones…"
+        sorts={["updated", "name", "progress", "due"]}
+        facets={[
+          {
+            key: "project",
+            label: "Project",
+            options: projects.map((project) => ({
+              value: project.id,
+              label: project.name,
+            })),
+          },
+          {
+            key: "status",
+            label: "Status",
+            options: Object.entries(MILESTONE_STATUS).map(([value, meta]) => ({
+              value,
+              label: meta.label,
+            })),
+          },
+        ]}
+      />
 
-          return (
-            <Card key={milestone.id}>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{milestone.title}</p>
-                    <p className="text-xs text-muted-foreground">{milestone.project}</p>
-                  </div>
-                  <StatusBadge state={MILESTONE_STATUS[milestone.status]} />
-                </div>
-
-                <div
-                  className="h-1 overflow-hidden rounded-full bg-muted"
-                  role="progressbar"
-                  aria-valuenow={Math.round(progress * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${milestone.title} progress`}
-                >
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${progress * 100}%` }}
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {milestone.doneCount}/{milestone.taskCount} tasks
-                  </span>
-                  {milestone.txHash ? (
-                    <HashLink value={milestone.txHash} kind="tx" network={milestone.network} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground italic">No proof attached</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <DataList
+        filters={filters}
+        total={page.total}
+        matched={page.matched}
+        shown={page.rows.length}
+        noun="milestones"
+        empty={{
+          icon: ICON.milestone,
+          title: "No milestones yet",
+          description: "Milestones you create inside a project will all show up here.",
+        }}
+      >
+        {page.rows.map((milestone) => (
+          <MilestoneListRow key={milestone.id} milestone={milestone} showProject />
+        ))}
+      </DataList>
     </div>
   );
 }
