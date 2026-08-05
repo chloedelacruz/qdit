@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { BOARD_COUNTS, MEMBERS, PROJECT, TASKS } from "./seed";
+import { BOARD_COUNTS, MEMBERS, MILESTONES, PROJECT, TASKS } from "./seed";
 
 test.describe("project board", () => {
   test.beforeEach(async ({ page }) => {
@@ -73,5 +73,92 @@ test.describe("project board", () => {
 
     await expect(page.getByText(/tasks match these filters/)).toBeVisible();
     await expect(page.getByRole("article")).toHaveCount(0);
+  });
+});
+
+/**
+ * A card is two lines and cannot hold a task's description — the detail panel
+ * is where the rest of it lives, and until it existed the description was
+ * captured by the forms and never shown back anywhere.
+ */
+test.describe("task detail panel", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(`/projects/${PROJECT.slug}/board`);
+  });
+
+  function card(page: import("@playwright/test").Page, title: string) {
+    return page.getByRole("article").filter({ hasText: title });
+  }
+
+  test("a card opens into a panel carrying the whole task", async ({ page }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: TASKS.todo }).click();
+
+    const panel = page.getByRole("dialog");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(TASKS.todo);
+    // The description: the field this panel exists to surface.
+    await expect(panel).toContainText("Three columns with drag-free status changes");
+    await expect(panel).toContainText(MILESTONES.proposed);
+    await expect(panel).toContainText(MEMBERS.ben.name);
+  });
+
+  test("clicking the card body opens it too, not just the title", async ({ page }) => {
+    await card(page, TASKS.unassigned).click();
+
+    const panel = page.getByRole("dialog");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(TASKS.unassigned);
+    // Nothing assigned, no milestone and no due date all read as absent.
+    await expect(panel).toContainText("No milestone");
+    await expect(panel).toContainText("No due date");
+  });
+
+  test("a task with no description says so rather than showing a blank", async ({
+    page,
+  }) => {
+    await card(page, TASKS.inProgress).getByRole("button", { name: TASKS.inProgress }).click();
+
+    const panel = page.getByRole("dialog");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(/None yet|No description/);
+  });
+
+  /**
+   * The point of putting the open task in the query string: a board link that
+   * names the card being talked about survives being pasted somewhere.
+   */
+  test("the open task is in the URL and survives a reload", async ({ page }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: TASKS.todo }).click();
+    await expect(page).toHaveURL(/[?&]task=/);
+
+    await page.reload();
+    await expect(page.getByRole("dialog")).toContainText(TASKS.todo);
+  });
+
+  test("closing drops the parameter, and back closes the panel", async ({ page }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: TASKS.todo }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page).not.toHaveURL(/[?&]task=/);
+
+    // Opening pushes an entry, so the browser's own back button closes it.
+    await card(page, TASKS.todo).getByRole("button", { name: TASKS.todo }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toBeHidden();
+  });
+
+  /**
+   * The card is both a drag handle and a link to the panel, and it carries two
+   * controls of its own. A press on either must not also open the panel behind
+   * the menu it just opened.
+   */
+  test("the status menu on a card does not open the panel", async ({ page }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: /^Status:/ }).click();
+
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeHidden();
   });
 });
