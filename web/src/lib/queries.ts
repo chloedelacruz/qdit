@@ -53,6 +53,13 @@ export type Member = {
   name: string;
   initials: string;
   walletAddress: string | null;
+  /**
+   * Populated by `handle_new_user` from the OAuth provider's metadata, so it is
+   * null for anyone who signed up with a password. Every consumer treats it as
+   * an enhancement over `initials` rather than a replacement — see
+   * `MemberAvatar` in `rows.tsx`.
+   */
+  avatarUrl: string | null;
 };
 
 function initialsOf(name: string): string {
@@ -66,6 +73,7 @@ function toMember(row: {
   id: string;
   display_name: string | null;
   wallet_address: string | null;
+  avatar_url: string | null;
 }): Member {
   const name = row.display_name?.trim() || "Unknown";
   return {
@@ -73,6 +81,7 @@ function toMember(row: {
     name,
     initials: initialsOf(name),
     walletAddress: row.wallet_address,
+    avatarUrl: row.avatar_url,
   };
 }
 
@@ -84,7 +93,7 @@ export async function listMembers(): Promise<Member[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
-    .select("id, display_name, wallet_address")
+    .select("id, display_name, wallet_address, avatar_url")
     .order("display_name");
 
   return (data ?? []).map(toMember);
@@ -364,6 +373,7 @@ export type TaskRow = {
   milestoneTitle: string | null;
   assigneeName: string;
   assigneeInitials: string | null;
+  assigneeAvatarUrl: string | null;
 };
 
 const TASK_SELECT = `
@@ -386,7 +396,8 @@ type TaskRecord = {
 };
 
 function toTask(row: TaskRecord, members: MemberMap): TaskRow {
-  const name = members.get(row.assignee_id ?? "")?.name;
+  const member = members.get(row.assignee_id ?? "");
+  const name = member?.name;
   return {
     id: row.id,
     projectId: row.project_id,
@@ -401,6 +412,9 @@ function toTask(row: TaskRecord, members: MemberMap): TaskRow {
     milestoneTitle: row.milestones?.title ?? null,
     assigneeName: name || "Unassigned",
     assigneeInitials: name ? initialsOf(name) : null,
+    // Only when there is someone to attribute it to: an unassigned task shows
+    // the dashed placeholder, never a stale photo.
+    assigneeAvatarUrl: name ? (member?.avatarUrl ?? null) : null,
   };
 }
 

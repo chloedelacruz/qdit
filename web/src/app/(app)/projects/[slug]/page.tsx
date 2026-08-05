@@ -63,10 +63,29 @@ export default async function ProjectOverviewPage({
         }
         actions={
           <>
+            {/* The three external destinations a project can carry. Each is
+                optional, so the row collapses to whatever was actually filled
+                in rather than showing dead buttons. */}
             {project.repoUrl ? (
               <Button asChild variant="outline" size="sm">
                 <a href={project.repoUrl} target="_blank" rel="noreferrer noopener">
                   Repo
+                  <ExternalLink data-icon="inline-end" />
+                </a>
+              </Button>
+            ) : null}
+            {project.docsUrl ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={project.docsUrl} target="_blank" rel="noreferrer noopener">
+                  Docs
+                  <ExternalLink data-icon="inline-end" />
+                </a>
+              </Button>
+            ) : null}
+            {project.demoUrl ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={project.demoUrl} target="_blank" rel="noreferrer noopener">
+                  Demo
                   <ExternalLink data-icon="inline-end" />
                 </a>
               </Button>
