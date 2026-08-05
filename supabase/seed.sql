@@ -168,16 +168,33 @@ values
     current_date + 21,
     2
   )
-on conflict (id) do nothing;
+-- These already had a conflict target. `do update` for the same reason as the
+-- tasks below: a milestone that has been advanced through the approval flow
+-- since seeding is a row to repair, not one to skip.
+on conflict (id) do update set
+  title       = excluded.title,
+  description = excluded.description,
+  status      = excluded.status,
+  due_date    = excluded.due_date,
+  order_index = excluded.order_index;
 
 
 -- ----------------------------------------------------------------------------
 -- Tasks
 -- ----------------------------------------------------------------------------
 
-insert into public.tasks (project_id, milestone_id, title, description, status, assignee_id, due_date, order_index)
+-- Explicit ids, like the milestones above, so `on conflict (id)` has a target.
+-- With a bare `on conflict do nothing` and a generated primary key there is
+-- nothing for a re-run to collide with, so applying this file twice inserted a
+-- second copy of all five tasks rather than doing nothing.
+--
+-- `do update` rather than `do nothing`, because a seed that skips rows it
+-- already sees cannot repair one that has been edited since — and `status` in
+-- particular is one drag away from being wrong.
+insert into public.tasks (id, project_id, milestone_id, title, description, status, assignee_id, due_date, order_index)
 values
   (
+    'cccccccc-0000-4000-8000-000000000001',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000001',
     'Model the milestone state machine',
@@ -188,6 +205,7 @@ values
     0
   ),
   (
+    'cccccccc-0000-4000-8000-000000000002',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000001',
     'Write contract unit tests',
@@ -198,6 +216,7 @@ values
     1
   ),
   (
+    'cccccccc-0000-4000-8000-000000000003',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000002',
     'Publish the WASM to Testnet',
@@ -208,6 +227,7 @@ values
     0
   ),
   (
+    'cccccccc-0000-4000-8000-000000000004',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000003',
     'Build the task board',
@@ -218,6 +238,7 @@ values
     0
   ),
   (
+    'cccccccc-0000-4000-8000-000000000005',
     'aaaaaaaa-0000-4000-8000-000000000001',
     null,
     'Draft the grant progress update',
@@ -227,18 +248,29 @@ values
     null,
     0
   )
-on conflict do nothing;
+on conflict (id) do update set
+  milestone_id = excluded.milestone_id,
+  title        = excluded.title,
+  description  = excluded.description,
+  status       = excluded.status,
+  assignee_id  = excluded.assignee_id,
+  due_date     = excluded.due_date,
+  order_index  = excluded.order_index;
 
 
 -- ----------------------------------------------------------------------------
 -- Stellar proofs
 -- ----------------------------------------------------------------------------
 
+-- Explicit ids for the same reason as the tasks above: the primary key is
+-- generated, so a bare `on conflict do nothing` had nothing to match and a
+-- re-run duplicated both rows.
 insert into public.stellar_proofs (
-  project_id, milestone_id, contract_id, tx_hash, network, wallet_address, proof_url, notes, created_by
+  id, project_id, milestone_id, contract_id, tx_hash, network, wallet_address, proof_url, notes, created_by
 )
 values
   (
+    'dddddddd-0000-4000-8000-000000000001',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000001',
     null,
@@ -250,6 +282,7 @@ values
     '11111111-1111-1111-1111-111111111111'
   ),
   (
+    'dddddddd-0000-4000-8000-000000000002',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'bbbbbbbb-0000-4000-8000-000000000002',
     'CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K',
@@ -260,18 +293,28 @@ values
     'Testnet deploy transaction. Awaiting reviewer approval.',
     '11111111-1111-1111-1111-111111111111'
   )
-on conflict do nothing;
+on conflict (id) do update set
+  milestone_id   = excluded.milestone_id,
+  contract_id    = excluded.contract_id,
+  tx_hash        = excluded.tx_hash,
+  network        = excluded.network,
+  wallet_address = excluded.wallet_address,
+  proof_url      = excluded.proof_url,
+  notes          = excluded.notes;
 
 
 -- ----------------------------------------------------------------------------
 -- Deployment history
 -- ----------------------------------------------------------------------------
 
+-- The log is append-only in the app, which makes a duplicated seed row worse
+-- here than elsewhere: there is no UI that can remove one again.
 insert into public.deployments (
-  project_id, status, network, contract_id, tx_hash, release_notes, deployed_by, deployed_at
+  id, project_id, status, network, contract_id, tx_hash, release_notes, deployed_by, deployed_at
 )
 values
   (
+    'eeeeeeee-0000-4000-8000-000000000001',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'not_started',
     null,
@@ -282,6 +325,7 @@ values
     now() - interval '30 days'
   ),
   (
+    'eeeeeeee-0000-4000-8000-000000000002',
     'aaaaaaaa-0000-4000-8000-000000000001',
     'testnet',
     'testnet',
@@ -291,6 +335,12 @@ values
     '11111111-1111-1111-1111-111111111111',
     now() - interval '3 days'
   )
-on conflict do nothing;
+on conflict (id) do update set
+  status        = excluded.status,
+  network       = excluded.network,
+  contract_id   = excluded.contract_id,
+  tx_hash       = excluded.tx_hash,
+  release_notes = excluded.release_notes,
+  deployed_at   = excluded.deployed_at;
 
 commit;
