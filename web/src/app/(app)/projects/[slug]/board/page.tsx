@@ -82,6 +82,7 @@ export default async function ProjectBoardPage({
       ) : (
         <TaskBoard
           columns={board.columns}
+          filters={filters}
           milestones={milestones}
           members={members}
           canEdit={canContribute(role)}

@@ -4,7 +4,8 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   pointerWithin,
   useDroppable,
   useSensor,
@@ -20,6 +21,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -27,17 +29,18 @@ import { MemberChip, RowMeta } from "@/components/data-list";
 import { TaskRowActions } from "@/components/entity-row-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
+import { Button } from "@/components/ui/button";
 import { TASK_STATUS, type TaskStatus } from "@/lib/constants";
 import { moveTask } from "@/lib/actions";
+import { DEFAULT_LIMIT, serialiseFilters, type Filters } from "@/lib/filters";
 import type { BoardColumn, TaskRow } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 /**
  * The board, with cards draggable between columns.
  *
- * The status menu on each card stays. Dragging is faster when it works, but it
- * is unusable on touch without a long-press dance, invisible to a screen reader
- * without the keyboard sensor, and impossible to hit precisely on a trackpad
+ * The status menu on each card stays. Dragging is faster when it works, but on
+ * touch it costs a deliberate long press, and on a trackpad it is hard to aim
  * mid-scroll. The menu is the path that always works; the drag is the shortcut.
  *
  * State is optimistic: `moveTask` writes the new column and the order of the
@@ -46,11 +49,14 @@ import { cn } from "@/lib/utils";
  */
 export function TaskBoard({
   columns,
+  filters,
   milestones,
   members,
   canEdit,
 }: {
   columns: BoardColumn[];
+  /** Drives the per-column "Load more", which pages by raising `limit`. */
+  filters: Filters;
   milestones: { id: string; title: string }[];
   members: { id: string; name: string }[];
   canEdit: boolean;
@@ -94,10 +100,20 @@ export function TaskBoard({
     },
   );
 
+  /**
+   * Mouse and touch are split on purpose rather than sharing one PointerSensor.
+   *
+   * A mouse gets a small distance threshold, so clicking the status menu or the
+   * overflow button on a card is not read as the beginning of a drag. A finger
+   * cannot use the same rule: "moved six pixels" is also exactly how a scroll
+   * starts, and columns scroll, so a distance constraint makes the drag and the
+   * scroll fight over every swipe. Touch gets a delay instead — hold to drag,
+   * swipe to scroll. Moving further than `tolerance` before the delay elapses
+   * cancels the pending drag and lets the scroll through untouched.
+   */
   const sensors = useSensors(
-    // A few pixels of travel before a drag starts, so clicking the status menu
-    // or the overflow button on a card is not read as the beginning of one.
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -152,7 +168,7 @@ export function TaskBoard({
     return (
       <div className="grid gap-2 md:grid-cols-3">
         {optimistic.map((column) => (
-          <Column key={column.status} column={column}>
+          <Column key={column.status} column={column} filters={filters}>
             {column.rows.map((task) => (
               <Card key={task.id} task={task} />
             ))}
@@ -175,7 +191,7 @@ export function TaskBoard({
     >
       <div className="grid gap-2 md:grid-cols-3">
         {optimistic.map((column) => (
-          <DroppableColumn key={column.status} column={column}>
+          <DroppableColumn key={column.status} column={column} filters={filters}>
             <SortableContext
               items={column.rows.map((row) => row.id)}
               strategy={verticalListSortingStrategy}
@@ -202,15 +218,17 @@ export function TaskBoard({
 
 function DroppableColumn({
   column,
+  filters,
   children,
 }: {
   column: BoardColumn;
+  filters: Filters;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.status });
 
   return (
-    <Column column={column} ref={setNodeRef} isOver={isOver}>
+    <Column column={column} filters={filters} ref={setNodeRef} isOver={isOver}>
       {children}
     </Column>
   );
@@ -222,17 +240,23 @@ function DroppableColumn({
  */
 function Column({
   column,
+  filters,
   ref,
   isOver,
   children,
 }: {
   column: BoardColumn;
+  filters: Filters;
   ref?: React.Ref<HTMLDivElement>;
   isOver?: boolean;
   children: React.ReactNode;
 }) {
   const meta = TASK_STATUS[column.status];
   const hidden = column.matched - column.rows.length;
+  // `limit` is per column server-side (`listBoard` applies it to each query),
+  // so one step reveals the same number of cards in whichever column you press.
+  const step = Math.min(hidden, DEFAULT_LIMIT);
+  const nextQuery = serialiseFilters({ ...filters, limit: filters.limit + DEFAULT_LIMIT });
 
   return (
     <section
@@ -261,10 +285,24 @@ function Column({
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">Nothing here</p>
         ) : null}
 
+        {/* Not a label. Cards past the cap were unreachable here — and, because
+            they were never rendered, undraggable too. Paging state lives in the
+            URL like it does for the lists, so a board opened two pages deep is
+            shareable and the back button pages back out of it. */}
         {hidden > 0 ? (
-          <p className="px-2 py-1.5 text-center text-xs text-muted-foreground tabular-nums">
-            +{hidden} more
-          </p>
+          <Button asChild variant="outline" size="sm" className="w-full">
+            {/* Query-only href keeps the current pathname. */}
+            <Link
+              href={`?${nextQuery}`}
+              scroll={false}
+              data-slot="board-more"
+              // Three columns each render one of these; without the column
+              // name they are three identically-labelled links.
+              aria-label={`Load ${step} more ${meta.label} tasks`}
+            >
+              Load {step} more
+            </Link>
+          </Button>
         ) : null}
       </div>
     </section>
@@ -314,6 +352,19 @@ function SortableCard({
   );
 }
 
+/**
+ * Keeps a press on a control inside a card from reaching the card's own drag
+ * activator. It has to cover every event the sensors listen on — `mousedown`
+ * for the MouseSensor and `touchstart` for the TouchSensor — because dnd-kit
+ * binds those directly, not `pointerdown`. `pointerdown` is stopped too so the
+ * guard does not silently lapse if the sensors ever change again.
+ */
+const stopActivation = {
+  onPointerDown: (event: React.SyntheticEvent) => event.stopPropagation(),
+  onMouseDown: (event: React.SyntheticEvent) => event.stopPropagation(),
+  onTouchStart: (event: React.SyntheticEvent) => event.stopPropagation(),
+} as const;
+
 function Card({
   task,
   ref,
@@ -340,7 +391,12 @@ function Card({
       {...handleProps}
       className={cn(
         "surface lift group/row rounded-lg border border-border p-2",
-        handleProps && "cursor-grab active:cursor-grabbing",
+        // `touch-manipulation` rather than `touch-none`: the column has to keep
+        // scrolling under a finger, and the TouchSensor's delay is what
+        // separates the two. It only drops the double-tap zoom gesture, and
+        // with it the tap delay. `select-none` stops a long press raising the
+        // text-selection callout on top of the drag it was meant to start.
+        handleProps && "cursor-grab touch-manipulation select-none active:cursor-grabbing",
         placeholder && "opacity-40",
         dragging && "rotate-1 cursor-grabbing shadow-lg",
       )}
@@ -348,17 +404,15 @@ function Card({
       <p className="text-sm">{task.title}</p>
 
       <div className="mt-1.5 flex items-center gap-2">
-        {/* Stops a click on the menu from being swallowed by the drag sensor. */}
-        <span onPointerDown={(event) => event.stopPropagation()}>
+        {/* Stops a press on the menu from being read as the start of a drag. */}
+        <span {...stopActivation}>
           <TaskStatusMenu taskId={task.id} status={task.status} />
         </span>
 
         <RowMeta className="min-w-0 flex-1" items={[task.milestoneTitle, task.dueDate]} />
         <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
 
-        {actions ? (
-          <span onPointerDown={(event) => event.stopPropagation()}>{actions}</span>
-        ) : null}
+        {actions ? <span {...stopActivation}>{actions}</span> : null}
       </div>
     </article>
   );
