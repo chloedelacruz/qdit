@@ -116,6 +116,83 @@ export async function getCurrentUserId(): Promise<string | null> {
   return (await getUser())?.id ?? null;
 }
 
+export type ProjectMember = Member & {
+  role: MemberRole;
+  joinedAt: string;
+};
+
+/** Mirrors `member_role_rank()` in the RLS migration, for display ordering. */
+const ROLE_RANK: Record<MemberRole, number> = {
+  owner: 4,
+  admin: 3,
+  member: 2,
+  viewer: 1,
+};
+
+/**
+ * The roster for one project.
+ *
+ * Readable by anyone in the project — `project_members: read as member` is
+ * viewer+, and only the three write actions are admin-gated. So this is a list
+ * everybody sees and a few people can change.
+ *
+ * `project_members.user_id` references `auth.users`, not `public.profiles`, so
+ * PostgREST has no relationship to embed across and names are joined through
+ * `memberMap()` — the same reason it exists for tasks and proofs. A member with
+ * no readable profile still shows: RLS could in principle hide one, and a row
+ * missing from the roster would be worse than a row without a name.
+ */
+export async function listProjectMembers(projectId: string): Promise<ProjectMember[]> {
+  const supabase = await createClient();
+  const [{ data }, profiles] = await Promise.all([
+    supabase
+      .from("project_members")
+      .select("user_id, role, joined_at")
+      .eq("project_id", projectId),
+    memberMap(),
+  ]);
+
+  const rows: ProjectMember[] = (data ?? []).map((row) => {
+    const profile = profiles.get(row.user_id);
+    return {
+      id: row.user_id,
+      name: profile?.name ?? "Unknown",
+      initials: profile?.initials ?? "?",
+      walletAddress: profile?.walletAddress ?? null,
+      avatarUrl: profile?.avatarUrl ?? null,
+      role: row.role as MemberRole,
+      joinedAt: row.joined_at,
+    };
+  });
+
+  // Owner first, then by rank, then alphabetically — the roster answers "who
+  // decides here" before it answers "who is here".
+  return rows.sort(
+    (a, b) => ROLE_RANK[b.role] - ROLE_RANK[a.role] || a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Who an admin can actually add to a project.
+ *
+ * This is where RLS sets the ceiling. `profiles: read own or teammate` narrows
+ * `profiles` to yourself plus anyone `shares_project_with()` says you already
+ * share a project with, so `listMembers()` is the complete set of people this
+ * caller can resolve to a user id at all. There is no query that turns an
+ * arbitrary email or wallet address into a uuid without a new SECURITY DEFINER
+ * function, so the picker offers exactly the people RLS admits exist — minus
+ * whoever is already on this project.
+ */
+export async function listAddableMembers(projectId: string): Promise<Member[]> {
+  const [everyone, existing] = await Promise.all([
+    listMembers(),
+    listProjectMembers(projectId),
+  ]);
+
+  const taken = new Set(existing.map((member) => member.id));
+  return everyone.filter((member) => !taken.has(member.id));
+}
+
 /**
  * The caller's role in one project, or null if they are not a member.
  *

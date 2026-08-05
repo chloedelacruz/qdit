@@ -6,13 +6,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
   DEPLOYMENT_STATUS,
+  MEMBER_ROLE,
   MILESTONE_STATUS,
   PROJECT_STATUS,
+  type MemberRole,
+  type Tone,
 } from "@/lib/constants";
 import { NETWORK_LABELS } from "@/lib/stellar";
 import type {
   DeploymentRow,
   MilestoneRow,
+  ProjectMember,
   ProjectRow,
   ProofRow,
   TaskRow,
@@ -304,6 +308,66 @@ export function MemberAvatar({
       </AvatarFallback>
     </Avatar>
   );
+}
+
+/**
+ * One person on a project, with what they may do.
+ *
+ * The role is a badge rather than plain meta text because it is the only thing
+ * on this row that is actionable — everything else identifies the person, and
+ * the role is what an admin came here to change. Owner and admin get weight so
+ * the question the roster really answers, "who decides here", is legible at a
+ * glance.
+ */
+export function MemberListRow({
+  member,
+  actions,
+}: {
+  member: ProjectMember;
+  actions?: React.ReactNode;
+}) {
+  const role = MEMBER_ROLE[member.role];
+
+  return (
+    <ListRow>
+      <div className={LINE}>
+        <MemberAvatar
+          avatarUrl={member.avatarUrl}
+          initials={member.initials}
+          name={member.name}
+        />
+
+        <span className="min-w-0 flex-1 truncate">{member.name}</span>
+
+        {member.walletAddress ? (
+          <span className="hidden shrink-0 @2xl:inline">
+            <HashLink value={member.walletAddress} kind="account" network="testnet" />
+          </span>
+        ) : null}
+
+        <RowMeta className="hidden shrink-0 @lg:block" items={[joinedLabel(member.joinedAt)]} />
+
+        <StatusBadge
+          dot={false}
+          state={{ label: role.label, tone: ROLE_TONE[member.role] }}
+        />
+
+        {actions}
+      </div>
+    </ListRow>
+  );
+}
+
+/** Owner and admin carry weight; the rest are quiet. */
+const ROLE_TONE: Record<MemberRole, Tone> = {
+  owner: "accent",
+  admin: "accent",
+  member: "neutral",
+  viewer: "neutral",
+};
+
+function joinedLabel(joinedAt: string | null): string | null {
+  return joinedAt ? `Joined ${joinedAt.slice(0, 10)}` : null;
 }
 
 /** A hairline progress bar sized for a list row rather than a card. */

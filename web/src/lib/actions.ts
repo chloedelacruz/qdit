@@ -7,6 +7,7 @@ import {
   deploymentSchema,
   milestoneSchema,
   profileSchema,
+  projectMemberSchema,
   projectSchema,
   projectUpdateSchema,
   proofSchema,
@@ -557,6 +558,159 @@ export async function createDeployment(
 
 export async function deleteDeployment(deploymentId: string): Promise<ActionState> {
   return deleteRow("deployments", deploymentId);
+}
+
+// ---------------------------------------------------------------------------
+// Members
+//
+// `project_members` is what every RLS policy in the app derives from, so these
+// three actions are the only writes that can change what anyone else is allowed
+// to do. RLS admits an admin to all of them; the extra rules below are the ones
+// Postgres does not encode.
+// ---------------------------------------------------------------------------
+
+/**
+ * Refuses any member write aimed at the project owner.
+ *
+ * `project_members: update/delete as admin` lets an admin touch *any* row in
+ * the project, including the owner's — so without this an admin could demote or
+ * remove the one person `projects: delete as owner` and the contract's
+ * `approver == owner` check depend on, and nothing could put it back (the
+ * bootstrap trigger only fires on project creation).
+ *
+ * Both records of ownership are consulted, because they are separate columns
+ * that can in principle disagree: `projects.owner_id` is what the contract will
+ * authenticate, and the `owner` membership row is what `member_role_rank()`
+ * orders. Either one is enough to protect the row.
+ */
+async function ownerBlock(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  userId: string,
+): Promise<string | null> {
+  const [{ data: project }, { data: membership }] = await Promise.all([
+    supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle(),
+    supabase
+      .from("project_members")
+      .select("role")
+      .eq("project_id", projectId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  if (project?.owner_id === userId || membership?.role === "owner") {
+    return "The project owner's role cannot be changed or revoked.";
+  }
+
+  return null;
+}
+
+/**
+ * Adds someone who is already visible to the caller.
+ *
+ * There is no invite-by-email here, and that is an RLS consequence rather than
+ * a shortcut: `profiles: read own or teammate` restricts `profiles` to the
+ * caller plus whoever `shares_project_with()` matches, so a stranger's email or
+ * wallet address cannot be resolved to a user id by any query this client can
+ * make. `listAddableMembers()` offers exactly the set that can be.
+ */
+export async function addProjectMember(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = projectMemberSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    userId: String(formData.get("userId") ?? ""),
+    role: String(formData.get("role") || "member"),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("project_members").insert({
+    project_id: parsed.data.projectId,
+    user_id: parsed.data.userId,
+    role: parsed.data.role,
+  });
+
+  // (project_id, user_id) is the primary key, so a duplicate arrives as 23505 —
+  // which `friendly()` phrases for names and slugs and would read as nonsense.
+  if (error?.code === "23505") {
+    return { error: "They are already a member of this project." };
+  }
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function updateProjectMemberRole(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = projectMemberSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    userId: String(formData.get("userId") ?? ""),
+    role: String(formData.get("role") || "member"),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  // Self-demotion is the other way to lock a project's administration out:
+  // `admin` is the minimum for this whole surface, so an admin who set
+  // themselves to `viewer` could not undo it.
+  if (user.id === parsed.data.userId) {
+    return { error: "You cannot change your own role. Ask an admin or the owner." };
+  }
+
+  const supabase = await createClient();
+  const blocked = await ownerBlock(supabase, parsed.data.projectId, parsed.data.userId);
+  if (blocked) return { error: blocked };
+
+  const { error } = await supabase
+    .from("project_members")
+    .update({ role: parsed.data.role })
+    .eq("project_id", parsed.data.projectId)
+    .eq("user_id", parsed.data.userId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * Not `deleteRow()`: `project_members` has a composite primary key, so it is
+ * matched on both columns rather than on an `id`.
+ */
+export async function removeProjectMember(
+  projectId: string,
+  userId: string,
+): Promise<ActionState> {
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  if (user.id === userId) {
+    return { error: "You cannot remove yourself from a project you administer." };
+  }
+
+  const supabase = await createClient();
+  const blocked = await ownerBlock(supabase, projectId, userId);
+  if (blocked) return { error: blocked };
+
+  const { error } = await supabase
+    .from("project_members")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("user_id", userId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

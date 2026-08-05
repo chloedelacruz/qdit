@@ -28,6 +28,9 @@ export function projectNav(slug: string): NavItem[] {
     { href: `/projects/${slug}/milestones`, label: "Milestones", icon: ICON.milestone },
     { href: `/projects/${slug}/deployments`, label: "Deployments", icon: ICON.deployment },
     { href: `/projects/${slug}/proofs`, label: "Proofs", icon: ICON.proof },
+    // Last: it is the only one that is about the project rather than the work,
+    // and most visits here are administrative rather than daily.
+    { href: `/projects/${slug}/members`, label: "Members", icon: ICON.members },
   ];
 }
 

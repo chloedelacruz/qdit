@@ -168,12 +168,35 @@ export const profileSchema = z.object({
     .or(z.literal("")),
 });
 
+/**
+ * `project_members`. One row is a person plus what they may do in one project.
+ *
+ * `owner` is deliberately absent from the assignable roles. The owner row is
+ * written by the `on_project_created` trigger and mirrors `projects.owner_id`,
+ * which is what `projects: delete as owner` and the contract's
+ * `approver == owner` check both key off. Handing `owner` out here would leave
+ * a project with two of them and only one recorded on `projects`. Transferring
+ * ownership is a different operation from managing a team, so it is not on this
+ * form — and omitting it from the schema means a hand-made POST cannot set it
+ * either.
+ */
+export const ASSIGNABLE_ROLES = ["admin", "member", "viewer"] as const;
+
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+export const projectMemberSchema = z.object({
+  projectId: z.guid(),
+  userId: z.guid("Choose someone to add."),
+  role: z.enum(ASSIGNABLE_ROLES),
+});
+
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
 export type ProofInput = z.infer<typeof proofSchema>;
 export type DeploymentInput = z.infer<typeof deploymentSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
+export type ProjectMemberInput = z.infer<typeof projectMemberSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
 export function slugify(value: string): string {
