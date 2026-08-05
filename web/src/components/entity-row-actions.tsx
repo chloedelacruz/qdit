@@ -45,17 +45,21 @@ export function TaskRowActions({
   milestones,
   members,
   canEdit,
+  persistent = false,
 }: {
   task: TaskRow;
   milestones: Options;
   members: { id: string; name: string }[];
   canEdit: boolean;
+  /** For the detail panel, which has no row to hover. */
+  persistent?: boolean;
 }) {
   return (
     <RowActions
       label="task"
       canEdit={canEdit}
       canDelete={canEdit}
+      persistent={persistent}
       deleteTitle="Delete this task?"
       deleteDescription={`"${task.title}" will be removed. This cannot be undone.`}
       onDelete={deleteTask.bind(null, task.id)}

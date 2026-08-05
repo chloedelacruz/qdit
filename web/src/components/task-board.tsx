@@ -22,12 +22,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
-import { useOptimistic, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { MemberChip, RowMeta } from "@/components/data-list";
 import { TaskRowActions } from "@/components/entity-row-actions";
 import { StatusBadge } from "@/components/status-badge";
+import { TaskDetailSheet } from "@/components/task-detail";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import { Button } from "@/components/ui/button";
 import { TASK_STATUS, type TaskStatus } from "@/lib/constants";
@@ -117,6 +119,75 @@ export function TaskBoard({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  /**
+   * Which card's detail panel is open, in the query string.
+   *
+   * It lives in the URL for the same reasons the filters do: a task is the
+   * thing people actually paste into Slack, and a bare board link makes the
+   * reader hunt for the card being talked about. It also means the back button
+   * closes the panel, which is what everyone tries first.
+   *
+   * The writes go through the History API rather than `router.push`, which
+   * Next supports and keeps in sync with `useSearchParams`. A router navigation
+   * would re-run the page — three column queries, the members and the
+   * milestones — to render a panel out of a row the board is already holding.
+   */
+  const searchParams = useSearchParams();
+  const openTaskId = searchParams.get("task");
+  const openTask =
+    optimistic.flatMap((column) => column.rows).find((row) => row.id === openTaskId) ?? null;
+
+  // Whether *this* panel put the entry on the history stack, as opposed to the
+  // URL having arrived with `?task=` already on it.
+  const pushedHere = useRef(false);
+
+  const closeTask = useCallback(() => {
+    if (pushedHere.current) {
+      pushedHere.current = false;
+      // Unwinds the entry rather than stacking a second one, so the back button
+      // does not have to walk back through a panel the user already closed.
+      window.history.back();
+      return;
+    }
+
+    // Opened by a pasted link: there is nothing of ours to go back to, and
+    // `back()` would leave the app entirely.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("task");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+  }, [searchParams]);
+
+  function openTaskPanel(id: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("task", id);
+    window.history.pushState(null, "", `?${params.toString()}`);
+    pushedHere.current = true;
+  }
+
+  useEffect(() => {
+    // Reset when the panel closes by any route other than `closeTask` — the
+    // browser's own back button, most often.
+    if (!openTaskId) pushedHere.current = false;
+  }, [openTaskId]);
+
+  useEffect(() => {
+    // The id names a task the board is not holding: deleted from the panel
+    // itself, or a link outliving the task. Either way there is nothing to
+    // show, so drop the parameter rather than leaving it dangling in the URL.
+    if (openTaskId && !openTask) closeTask();
+  }, [openTaskId, openTask, closeTask]);
+
+  const detail = (
+    <TaskDetailSheet
+      task={openTask}
+      milestones={milestones}
+      members={members}
+      canEdit={canEdit}
+      onClose={closeTask}
+    />
+  );
+
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
     setDragging(
@@ -164,17 +235,22 @@ export function TaskBoard({
   }
 
   // Viewers get the board as it was: no sensors, no drag handles, no overlay.
+  // They still get the panel — reading a task is not editing it.
   if (!canEdit) {
     return (
-      <div className="grid gap-2 md:grid-cols-3">
-        {optimistic.map((column) => (
-          <Column key={column.status} column={column} filters={filters}>
-            {column.rows.map((task) => (
-              <Card key={task.id} task={task} />
-            ))}
-          </Column>
-        ))}
-      </div>
+      <>
+        <div className="grid gap-2 md:grid-cols-3">
+          {optimistic.map((column) => (
+            <Column key={column.status} column={column} filters={filters}>
+              {column.rows.map((task) => (
+                <Card key={task.id} task={task} onOpen={() => openTaskPanel(task.id)} />
+              ))}
+            </Column>
+          ))}
+        </div>
+
+        {detail}
+      </>
     );
   }
 
@@ -202,6 +278,7 @@ export function TaskBoard({
                   task={task}
                   milestones={milestones}
                   members={members}
+                  onOpen={() => openTaskPanel(task.id)}
                 />
               ))}
             </SortableContext>
@@ -212,6 +289,8 @@ export function TaskBoard({
       {/* Rendered outside the columns so the card being dragged is not clipped
           by a column's own overflow. */}
       <DragOverlay>{dragging ? <Card task={dragging} dragging /> : null}</DragOverlay>
+
+      {detail}
     </DndContext>
   );
 }
@@ -313,10 +392,12 @@ function SortableCard({
   task,
   milestones,
   members,
+  onOpen,
 }: {
   task: TaskRow;
   milestones: { id: string; title: string }[];
   members: { id: string; name: string }[];
+  onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -335,6 +416,7 @@ function SortableCard({
     <Card
       task={task}
       ref={setNodeRef}
+      onOpen={onOpen}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       // The whole card is the handle. A dedicated grip would be a second thing
       // to hit on a surface whose cards are already only two lines tall.
@@ -363,6 +445,10 @@ const stopActivation = {
   onPointerDown: (event: React.SyntheticEvent) => event.stopPropagation(),
   onMouseDown: (event: React.SyntheticEvent) => event.stopPropagation(),
   onTouchStart: (event: React.SyntheticEvent) => event.stopPropagation(),
+  // The card itself now opens the detail panel on click, and these controls sit
+  // inside it. Without this, changing a status or picking "Delete" would also
+  // open the panel behind the menu.
+  onClick: (event: React.SyntheticEvent) => event.stopPropagation(),
 } as const;
 
 function Card({
@@ -373,6 +459,7 @@ function Card({
   placeholder,
   dragging,
   actions,
+  onOpen,
 }: {
   task: TaskRow;
   ref?: React.Ref<HTMLDivElement>;
@@ -383,12 +470,21 @@ function Card({
   /** The copy following the cursor. */
   dragging?: boolean;
   actions?: React.ReactNode;
+  /** Opens the detail panel. Omitted on the drag overlay, which is not a target. */
+  onOpen?: () => void;
 }) {
   return (
     <article
       ref={ref}
       style={style}
       {...handleProps}
+      /**
+       * Safe to hang off the card even though the card is also the drag handle:
+       * dnd-kit swallows the trailing `click` once a drag has actually started
+       * (a capture-phase listener it adds on activation), so only a press that
+       * never became a drag reaches this.
+       */
+      onClick={onOpen}
       className={cn(
         "surface lift group/row rounded-lg border border-border p-2",
         // `touch-manipulation` rather than `touch-none`: the column has to keep
@@ -397,11 +493,40 @@ function Card({
         // with it the tap delay. `select-none` stops a long press raising the
         // text-selection callout on top of the drag it was meant to start.
         handleProps && "cursor-grab touch-manipulation select-none active:cursor-grabbing",
+        // A viewer's card does not drag, so nothing else says it is clickable.
+        onOpen && !handleProps && "cursor-pointer",
         placeholder && "opacity-40",
         dragging && "rotate-1 cursor-grabbing shadow-lg",
       )}
     >
-      <p className="text-sm">{task.title}</p>
+      {onOpen ? (
+        /**
+         * The keyboard's way into the panel.
+         *
+         * The card carries the drag, and dnd-kit's keyboard sensor spends Enter
+         * and Space on starting one — so those keys are not free at card level
+         * and the title takes the job instead. It stops its own click and those
+         * two keys from reaching the card, but deliberately lets `mousedown`
+         * through, so the card can still be dragged by the title.
+         */
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+          }}
+          // Interactive text is brand on hover, never at rest (spec §Accent).
+          className="focus-ring transition-qdit rounded-sm text-left text-sm hover:text-primary"
+        >
+          {task.title}
+        </button>
+      ) : (
+        <p className="text-sm">{task.title}</p>
+      )}
 
       <div className="mt-1.5 flex items-center gap-2">
         {/* Stops a press on the menu from being read as the start of a drag. */}
