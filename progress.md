@@ -1,6 +1,6 @@
 # progress
 
-Handoff notes. Last updated 2026-08-05, end of the write-path session.
+Handoff notes. Last updated 2026-08-05, end of the gap-closing session.
 
 Read this with [`README.md`](./README.md) (how the thing works) and
 [`stellar-builder-task-hub-spec.md`](./stellar-builder-task-hub-spec.md) (what it
@@ -13,27 +13,63 @@ feature by feature against the spec. Start there when picking up work.
 
 `main` is the only branch and is in sync with `origin`.
 
-Verified at the end of this session, all four run locally and clean:
+Verified at the end of this session:
 
 | Check | Result |
 |---|---|
 | `npm run lint` | pass |
 | `npm run typecheck` | pass |
-| `npm run build` | pass, also with `.env` removed and only CI's placeholders |
-| `npx playwright test` | **102 passed, 1 skipped** |
-| `cargo test` | 12 passed |
+| `npm run build` | pass, with only CI's placeholder env |
+| `npm test` (Vitest, new) | **91 passed** |
+| `npx playwright test` | **93 passed, 1 failed, 1 skipped, 13 did not run** |
+| `cargo test` | 12 passed (unchanged, not re-run) |
 
-The Playwright number is now a *reproduced* baseline, not an inherited claim.
-The earlier "93 pass" figure had never been re-run; treat 102/1 as the number to
-compare against.
+**Read the Playwright line carefully before comparing it to the old 102/1.**
+The one failure is `board.spec.ts` → "each column counts its own cards", and it
+is *not* a regression: it was reproduced by stashing every local change and
+running against unmodified `cfd75d9`. The hosted database has drifted from
+`e2e/seed.ts` — `BOARD_COUNTS.todo` expects 2 todo tasks and there is 1.
+
+That drift is also why 13 specs "did not run": `mutations` depends on `chromium`
+and `edits` depends on `mutations`, so a single red test in `chromium` gates
+both write projects. Those 13 were run separately and **12 of 13 pass**; the
+thirteenth passes in isolation and fails only when `--no-deps` strips the
+ordering that stops two write specs racing on one database. Fix the seed and the
+suite should read 106/1.
 
 | Layer | State |
 |---|---|
-| Database | Unchanged this session — **not one migration was needed.** 7 tables, 6 enums, 28 RLS policies. |
-| Web | Full CRUD on every entity, role-gated. Deployment logging, profile editing, board drag-and-drop, tx verification. |
+| Database | **Still not one migration.** 7 tables, 6 enums, 28 RLS policies. |
+| Web | Full CRUD, role-gated, plus member management, error boundaries, board paging and a proof rollup. |
 | Contract | Built, 12 tests, **still never deployed.** No SDK in `web/`. |
 
 ## What this session built
+
+Closing [`gaps.md`](./gaps.md). Everything except contract integration.
+
+- **Member management** (spec §10) — roster at `/projects/[slug]/members`, with
+  add / change-role / remove, admin-gated. Two guards live in the actions rather
+  than the database: an admin cannot touch the owner's row, and cannot change
+  their own role. Either would lock a project's administration out for good,
+  since the bootstrap trigger only fires at project creation.
+- **A validation bypass fixed.** `createProof` validated with `proofSchema` but
+  left `walletAddress` out of the parse and inserted it anyway, while
+  `updateProof` validated it. The column has no CHECK behind it, so unvalidated
+  strkeys were reaching the database.
+- **Error boundaries** — six files. Next 16 renamed `reset` to
+  `unstable_retry`; they are not equivalent.
+- **Vitest**, 91 tests over the milestone state machine, the filter round trip
+  and the strkey validators. **In CI**, unlike Playwright, because it needs
+  neither secrets nor a database.
+- **Board paging and touch drag**, dashboard proof panel, docs URL, proof signer
+  and avatars — the remaining display and interaction gaps.
+
+The milestone rules in `constants.ts` were **cross-checked against the Rust
+contract by hand** and agree. One nuance: on-chain, re-submitting an already
+`Submitted` milestone is legal and overwrites the proof hash; in the app it is a
+no-op. Harmless until the app starts attaching a hash on transition.
+
+## What the previous session built
 
 All of it on the existing schema. The database was already ahead of the app.
 
@@ -59,6 +95,14 @@ All of it on the existing schema. The database was already ahead of the app.
 - **E2E coverage** for all of the above in `e2e/edit-delete.spec.ts`.
 
 ## What is left
+
+### 0. Restore the e2e seed — small, and currently hiding 13 specs
+
+`e2e/seed.ts` says the board has 2 todo tasks; the hosted database has 1. One
+red test in `chromium` gates both write projects through the `mutations` →
+`edits` dependency chain, so 13 write specs never run in a normal invocation.
+Either restore the missing task or correct `seed.ts`. Do this before trusting
+any future suite number.
 
 ### 1. Contract integration — the only thing that still blocks the pitch
 
@@ -123,6 +167,25 @@ Each of these cost real debugging time this session. They are all still true.
 - `npm install` run from the repo root instead of `web/` still appears to work,
   because Node resolves upward. CI and a clean checkout will not have the
   package. Install from `web/`.
+- **Next 16 renamed the error boundary's `reset` prop to `unstable_retry`**, and
+  they are not interchangeable: `unstable_retry` re-fetches and re-renders the
+  segment, `reset` only clears the boundary — which, for a failed read, renders
+  the same failure again. Also `error.tsx` does *not* wrap the layout in its own
+  segment, so a throw in `(app)/layout.tsx` skips `(app)/error.tsx` and lands in
+  the root one.
+- **`npx playwright test --no-deps` is not a shortcut, it is a footgun.** The
+  `edits`-depends-on-`mutations` chain is the *only* thing serialising two write
+  specs against one shared database. Stripping it made them interleave, left
+  rows behind, and turned a dozen count-based assertions red across specs that
+  had nothing to do with the change. If it happens, `npx playwright test
+  --project=cleanup` puts it right.
+- **A Playwright locator keyed to a control whose label changes stops resolving
+  the moment the test acts on it.** `HashLink`'s copy button relabels itself to
+  "Copied", so a chip located by `filter({ has: … "Copy transaction" })` matched
+  nothing immediately after the click. Anchor on something static — the explorer
+  link's `aria-label` is a good handle.
+- **Adding a `<Section href>` adds a "View all" link**, and `dashboard.spec.ts`
+  counts them. Panels are cheap to add and each one moves that number.
 
 ## Conventions worth not rediscovering
 
