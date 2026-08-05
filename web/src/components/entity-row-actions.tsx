@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  EditMemberRoleDialog,
   EditMilestoneDialog,
   EditProjectDialog,
   EditProofDialog,
@@ -13,10 +14,12 @@ import {
   deleteProject,
   deleteProof,
   deleteTask,
+  removeProjectMember,
 } from "@/lib/actions";
 import type {
   DeploymentRow,
   MilestoneRow,
+  ProjectMember,
   ProjectRow,
   ProofRow,
   TaskRow,
@@ -203,6 +206,44 @@ export function DeploymentRowActions({
       deleteTitle="Delete this deployment record?"
       deleteDescription="The release history is a log. Removing an entry rewrites it — prefer recording a correction."
       onDelete={deleteDeployment.bind(null, deployment.id)}
+    />
+  );
+}
+
+/**
+ * Change a member's role, or remove them from the project.
+ *
+ * `canManage` is decided by the page from `canAdminister(role)`, matching the
+ * `project_members` insert/update/delete policies. The two rules RLS does not
+ * encode are enforced in the actions rather than here — an admin may not touch
+ * the owner's row, and may not change their own — so the menu stays visible and
+ * the refusal arrives with a reason. Hiding the controls instead would leave an
+ * admin wondering why their own row looks different from everyone else's.
+ */
+export function MemberRowActions({
+  projectId,
+  member,
+  canManage,
+}: {
+  projectId: string;
+  member: ProjectMember;
+  canManage: boolean;
+}) {
+  return (
+    <RowActions
+      label="member"
+      canEdit={canManage}
+      canDelete={canManage}
+      deleteTitle={`Remove ${member.name}?`}
+      deleteDescription="They lose access to this project immediately. Anything they created stays, and they can be added again later."
+      onDelete={removeProjectMember.bind(null, projectId, member.id)}
+      renderEdit={(props) => (
+        <EditMemberRoleDialog
+          projectId={projectId}
+          member={{ id: member.id, name: member.name, role: member.role }}
+          {...props}
+        />
+      )}
     />
   );
 }

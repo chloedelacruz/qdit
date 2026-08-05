@@ -10,11 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   DEPLOYMENT_STATUS,
   DEPLOYMENT_STATUS_ORDER,
+  MEMBER_ROLE,
   PROJECT_STATUS,
   TASK_STATUS,
   TASK_STATUS_ORDER,
 } from "@/lib/constants";
 import {
+  addProjectMember,
   createDeployment,
   createMilestone,
   createProject,
@@ -24,10 +26,11 @@ import {
   updateProfile,
   updateProject,
   updateProof,
+  updateProjectMemberRole,
   updateTask,
   type ActionState,
 } from "@/lib/actions";
-import { slugify } from "@/lib/schemas";
+import { ASSIGNABLE_ROLES, slugify } from "@/lib/schemas";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
 /**
@@ -866,6 +869,135 @@ export function EditProfileDialog({
               defaultValue={defaults.walletAddress ?? ""}
             />
           </Field>
+        </>
+      )}
+    </FormDialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Members
+// ---------------------------------------------------------------------------
+
+/**
+ * The role picker, shared by add and edit for the usual reason.
+ *
+ * `owner` is not among the options: `ASSIGNABLE_ROLES` omits it because the
+ * owner row mirrors `projects.owner_id`, which the RLS policies and the
+ * contract's approver check both key off. Handing it out here would leave a
+ * project with two owners and only one of them recorded where it counts.
+ */
+function RoleField({ state, defaultValue }: { state: ActionState; defaultValue?: string }) {
+  return (
+    <Field
+      id="m-role"
+      label="Role"
+      hint={MEMBER_ROLE[(defaultValue as keyof typeof MEMBER_ROLE) ?? "member"]?.description}
+      error={state.fieldErrors?.role}
+    >
+      <NativeSelect id="m-role" name="role" defaultValue={defaultValue ?? "member"}>
+        {ASSIGNABLE_ROLES.map((role) => (
+          <option key={role} value={role}>
+            {MEMBER_ROLE[role].label}
+          </option>
+        ))}
+      </NativeSelect>
+    </Field>
+  );
+}
+
+/**
+ * Adds someone to a project.
+ *
+ * The picker is a select rather than an email box, and that is RLS talking
+ * rather than a shortcut: `profiles` is readable only for yourself and people
+ * `shares_project_with()` matches, so an arbitrary email cannot be resolved to
+ * a user id by any query this client is allowed to make. `listAddableMembers()`
+ * returns precisely the set that can be, minus whoever is already here.
+ */
+export function AddMemberDialog({
+  projectId,
+  candidates,
+  label = "Add member",
+}: {
+  projectId: string;
+  candidates: { id: string; name: string }[];
+  label?: string;
+}) {
+  return (
+    <FormDialog
+      trigger={
+        <Button size="sm">
+          <Plus data-icon="inline-start" />
+          {label}
+        </Button>
+      }
+      title="Add member"
+      description="Give someone access to this project and choose what they may do."
+      submitLabel="Add member"
+      successMessage="Member added"
+      action={addProjectMember}
+    >
+      {(state) => (
+        <>
+          <input type="hidden" name="projectId" value={projectId} />
+
+          <Field
+            id="m-userId"
+            label="Person"
+            hint={
+              candidates.length === 0
+                ? "Everyone you share a project with is already a member of this one."
+                : undefined
+            }
+            error={state.fieldErrors?.userId}
+          >
+            <NativeSelect id="m-userId" name="userId" required defaultValue="">
+              <option value="" disabled>
+                Choose someone…
+              </option>
+              {candidates.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+
+          <RoleField state={state} />
+        </>
+      )}
+    </FormDialog>
+  );
+}
+
+/** Changes one member's role. Opened from the row's overflow menu. */
+export function EditMemberRoleDialog({
+  projectId,
+  member,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  member: { id: string; name: string; role: string };
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  return (
+    <FormDialog
+      title={`Change ${member.name}'s role`}
+      description="Roles decide what someone may create, edit and approve in this project."
+      submitLabel="Save role"
+      successMessage="Role updated"
+      action={updateProjectMemberRole}
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      {(state) => (
+        <>
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="userId" value={member.id} />
+          <RoleField state={state} defaultValue={member.role} />
         </>
       )}
     </FormDialog>

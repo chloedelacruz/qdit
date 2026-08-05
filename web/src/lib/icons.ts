@@ -10,6 +10,7 @@ import {
   Settings2,
   SquareStack,
   UserRound,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +42,8 @@ export const ICON = {
   assignedToMe: UserRound,
   /** Waiting on someone else — review, approval, sign-off. */
   awaiting: Clock3,
+  /** A project's roster. Plural of `assignedToMe`, deliberately. */
+  members: Users,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON;
