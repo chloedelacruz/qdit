@@ -7,8 +7,10 @@ import {
   LayoutGrid,
   Link2,
   Milestone,
+  SearchX,
   Settings2,
   SquareStack,
+  TriangleAlert,
   UserRound,
   Users,
   type LucideIcon,
@@ -44,6 +46,10 @@ export const ICON = {
   awaiting: Clock3,
   /** A project's roster. Plural of `assignedToMe`, deliberately. */
   members: Users,
+  /** Something failed. Error boundaries only — never a status or a warning. */
+  error: TriangleAlert,
+  /** Asked for by name, and there is no such thing. 404 only. */
+  missing: SearchX,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON;

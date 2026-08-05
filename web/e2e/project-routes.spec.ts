@@ -31,7 +31,11 @@ test.describe("project routes", () => {
   test("an unknown slug renders not-found rather than an empty shell", async ({ page }) => {
     await page.goto("/projects/does-not-exist");
 
-    await expect(page.getByText(/could not be found/i)).toBeVisible();
+    // The app's own not-found page, not Next's default. It names both reasons
+    // a slug fails to resolve, because RLS makes them indistinguishable from
+    // here: a project you are not a member of returns no rows.
+    await expect(page.getByText(/not found/i).first()).toBeVisible();
+    await expect(page.getByText(/not a member of/i)).toBeVisible();
     await expect(page.locator('[data-slot="stat-tile"]')).toHaveCount(0);
   });
 
