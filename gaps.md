@@ -197,14 +197,26 @@ Decided, not overlooked.
 
 ## 4. Risks rather than gaps
 
-- **The e2e seed has drifted from `seed.ts`.** Still true on 2026-08-05, and
-  the drift has moved: the failing column is now `in_progress`, where
-  `BOARD_COUNTS` says 1 and the hosted database returns 2. Two board specs and
-  two dashboard specs fail on it. **Pre-existing** — re-reproduced by stashing
-  all local work (`git stash -u`) and running the same specs on a clean tree.
-  It matters more than one red test: `mutations` depends on `chromium` and
-  `edits` depends on `mutations`, so one failure there leaves **13 write specs
-  unrun**. Either restore the missing todo task or correct `seed.ts`.
+- **The e2e seed drift — resolved, and it was not what this file said it was.**
+  Both previous entries described a seeded task in the wrong column. It was
+  never a moved row: the hosted project had a **sixth task titled `123`**,
+  created 2026-08-05 by someone typing into the New task dialog by hand. That
+  is one extra card in Todo (2 board specs) and one extra task in the
+  denominator, 2/6 rather than 2/5 (2 dashboard specs). Counting columns and
+  then reasoning about which one moved is what produced two wrong diagnoses in
+  a row; listing the rows found it immediately.
+
+  Fixed at the cause rather than by deleting the row. `cleanup.teardown.ts`
+  only removes rows matching the `e2e ` prefix every write spec uses, which is
+  right for what the suite creates and no help for what a human creates — and
+  nothing restored a seeded row either. `reseed.setup.ts` is the other half: it
+  sweeps tasks the seed does not define and puts the rest back in their
+  columns, running before `chromium` so every count assertion starts from a
+  known board. `BOARD_COUNTS` is now derived by counting `SEEDED_TASKS` rather
+  than typed as a literal beside a prose comment, so the mirror can no longer
+  disagree with itself.
+
+  *Checked: full suite now 115 passed, 1 skipped — the first green run, and the 13 write specs behind `mutations` → `edits` ran at last.*
 - **`/api/verify-tx` has no rate limit.** Auth-gated, so not an open Horizon
   proxy, but any signed-in user can drive unlimited upstream requests.
 - **`moveTask` writes the destination column one row at a time.** N round trips,
@@ -222,10 +234,11 @@ Decided, not overlooked.
 
 ## Suggested order
 
-1. **Restore the e2e seed** (§4). It is small and it is currently hiding the
-   results of 13 write specs.
-2. **§1.1 contract integration** — the largest piece and the one that makes the
-   product what it claims to be.
-3. **§2.1 invite-by-email**, if onboarding anyone outside the existing circle
+1. **§1.1 contract integration** — now the top item, and the largest piece: the
+   one that makes the product what it claims to be. Decide custodial vs.
+   wallet-signed first.
+2. **§2.1 invite-by-email**, if onboarding anyone outside the existing circle
    matters before launch. It needs a migration; treat it as such.
-4. Scale UX, when it is wanted.
+3. Scale UX, when it is wanted.
+
+The seed drift that used to head this list is fixed (§4).

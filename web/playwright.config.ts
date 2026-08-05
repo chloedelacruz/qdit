@@ -20,6 +20,7 @@ const STORAGE_STATE = path.join(__dirname, "e2e/.auth/user.json");
  *
  * Projects:
  *   setup    signs in once and saves the session
+ *   reseed   restores the seeded tasks to the columns `seed.ts` claims
  *   anon     runs *without* that session, to prove the auth gate works
  *   chromium desktop, signed in
  *   mobile   Pixel 7, signed in — the sidebar becomes a sheet below `lg`
@@ -52,6 +53,17 @@ export default defineConfig({
     { name: "setup", testMatch: /auth\.setup\.ts/, teardown: "cleanup" },
     { name: "cleanup", testMatch: /cleanup\.teardown\.ts/ },
 
+    /**
+     * The other half of `cleanup`: that one deletes the rows the write specs
+     * add, this one puts the seeded rows back where `seed.ts` says they go.
+     * Neither can do the other's job — a mutated seeded row is not a row to
+     * delete, and a stray drag during manual testing mutates one without any
+     * spec being involved.
+     *
+     * Runs before `chromium` because that is where the count assertions live.
+     */
+    { name: "reseed", testMatch: /reseed\.setup\.ts/ },
+
     {
       // Deliberately no storageState: these specs assert what a signed-out
       // visitor sees, so they must not depend on the setup project.
@@ -63,7 +75,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
-      dependencies: ["setup"],
+      dependencies: ["setup", "reseed"],
       // Every write-path spec must also be listed here, or it runs twice —
       // once in this project and again in `mutations`.
       testIgnore: /(mobile-nav|auth|landing|create-task|edit-delete)\.spec\.ts/,
