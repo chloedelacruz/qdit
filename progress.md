@@ -6,6 +6,9 @@ Read this with [`README.md`](./README.md) (how the thing works) and
 [`stellar-builder-task-hub-spec.md`](./stellar-builder-task-hub-spec.md) (what it
 is meant to do). This file is only the delta between them.
 
+[`gaps.md`](./gaps.md) is the audited list of what is still missing, checked
+feature by feature against the spec. Start there when picking up work.
+
 ## Where things stand
 
 `main` is the only branch and is in sync with `origin`.
