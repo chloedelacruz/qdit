@@ -440,6 +440,7 @@ export async function createProof(_prev: ActionState, formData: FormData): Promi
     contractId: String(formData.get("contractId") ?? ""),
     txHash: String(formData.get("txHash") ?? ""),
     network: String(formData.get("network") || "testnet"),
+    walletAddress: String(formData.get("walletAddress") ?? ""),
     proofUrl: String(formData.get("proofUrl") ?? ""),
     notes: String(formData.get("notes") ?? ""),
   });
