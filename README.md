@@ -28,34 +28,46 @@ built and tested, but never deployed and not reachable from the app.
 |---|---|
 | Database | 7 tables, 6 enums, triggers, indexes, 28 RLS policies. **Applied to a hosted project and seeded.** |
 | Contract | All 5 spec'd functions, 12 tests + snapshots. Not deployed; no Stellar SDK in `web/`. |
-| Web UI | Auth, project-scoped routing, filtering with URL state, dense lists, elevation system. **Reads and writes real Postgres**; 93 Playwright specs pass against it. |
+| Web UI | Full CRUD, role-gated, over real Postgres. Auth, project-scoped routing, URL-state filtering, dense lists, elevation system. **102 Playwright specs pass against it**, 1 skipped. |
 
-Working end to end: sign in / sign up / sign out, the auth gate, every read,
-creating **projects, tasks, milestones and proofs**, and moving a task between
-statuses from either the board or a list row.
+Working end to end: sign in / sign up / sign out and the auth gate; every read;
+create, edit and delete for **projects, tasks, milestones and proofs**; the
+milestone approval flow; deployment logging; profile and wallet address;
+drag-and-drop on the board; and transaction verification against Horizon.
 
-Every create form is built on `src/components/form-dialog.tsx` — one shell, so
-pending state, error placement and the close-only-on-success rule cannot drift
-between them. Add a new entity by writing fields, not another dialog.
+Every create and edit form is built on `src/components/form-dialog.tsx` — one
+shell, so pending state, error placement and the close-only-on-success rule
+cannot drift between them. Create and edit share one field set per entity in
+`entity-dialogs.tsx`. Add a new entity by writing fields, not another dialog.
 
-Not started, roughly in dependency order:
+Which controls appear is decided by the caller's role in that project, because
+the RLS policies are not uniform: tasks and milestones are open to any member,
+projects and deployments to an admin, proofs to their author or an admin. The
+server actions re-check — a hidden button is courtesy, not the boundary.
 
-1. **Editing beyond status** — a task's title, assignee, milestone and due date
-   cannot be changed after creation, and nothing can be deleted. The status
-   control (`src/components/task-status-menu.tsx`) is the pattern to follow.
-2. **Drag and drop on the board** — status changes go through a menu today.
-3. **Contract integration** — deploy `milestone_proof` to Testnet, add
-   `@stellar/stellar-sdk`, wire submit/approve from the milestone UI.
-4. **Scale UX still open** — bulk actions, inline create, command palette and
-   keyboard navigation, and a priority field (needs a migration). The `.row`,
-   `.stagger` and `.focus-ring` primitives exist for these.
+Milestone status is **not** a dropdown. `milestone_status` is the contract's
+state machine, so the app enforces the contract's transitions (`proposed →
+submitted → approved | rejected`, approve/reject reserved to the project owner,
+approved terminal). Otherwise the database could reach a state the contract will
+refuse to reproduce once the on-chain call exists.
+
+Not started:
+
+1. **Contract integration** — deploy `milestone_proof` to Testnet, add
+   `@stellar/stellar-sdk`, wire submit/approve from the milestone UI. The rule
+   checks are already in `updateMilestoneStatus`; the chain call goes inside it.
+2. **Scale UX** — bulk actions, inline create, command palette and keyboard
+   navigation, and a priority field. That field is the only thing left in the
+   project that needs a migration. The `.row`, `.stagger` and `.focus-ring`
+   primitives exist for these.
 
 > **Security note.** `supabase/seed.sql` contains `password123` in plaintext and
 > its header says it is for the local stack only. It was nonetheless applied to
 > the hosted project, where those accounts were reachable from the public
-> internet using only the publishable key. The passwords have been rotated, but
-> **`password123` remains in git history** — removing it needs a history rewrite
-> (`git filter-repo` / BFG). Never apply `seed.sql` to a hosted project.
+> internet using only the publishable key. The passwords have been rotated and
+> the repo is private, but **`password123` remains in git history** — removing it
+> needs a history rewrite (`git filter-repo` / BFG). Never apply `seed.sql` to a
+> hosted project.
 
 The density question is settled: **Linear over whitespace.** The spec's "large
 whitespace" principle is gone, replaced by §Density — 13px base, single-line
@@ -138,8 +150,9 @@ Playwright projects, in order:
 | `setup` | — | Signs in once, saves `e2e/.auth/user.json` |
 | `anon` | none | The auth gate, login form, sign-out |
 | `chromium` | shared | Every read-only spec |
-| `mutations` | shared | The write path — runs *after* `chromium` |
-| `cleanup` | — | Deletes rows titled `e2e task …` |
+| `mutations` | shared | Creating a task — runs *after* `chromium` |
+| `edits` | shared | Edit, delete, approval, deployments — runs after `mutations` |
+| `cleanup` | — | Deletes rows prefixed `e2e <noun> …` |
 
 Seeded values live in `e2e/seed.ts` rather than being repeated across specs.
 Where a value is generated rather than authored (contract IDs, tx hashes) the
@@ -147,9 +160,13 @@ specs read it out of the DOM instead of hardcoding it.
 
 Four behaviours are worth knowing before editing the suite:
 
-- **Write specs run last, by project dependency.** They insert real rows, which
-  moves the counts the read-only specs assert. One shared database means
-  ordering — not isolation — is what keeps both honest.
+- **Write specs run last, by project dependency**, and are ordered against each
+  other the same way. They insert real rows, which moves the counts the
+  read-only specs assert. One shared database means ordering — not isolation —
+  is what keeps both honest. `fullyParallel` puts separate *files* on separate
+  workers even when each is internally serial, so a new write spec needs its own
+  project (chained after the last one) or a home in an existing write file — and
+  it must be added to `chromium`'s `testIgnore`, or it runs twice.
 - **Never sign out from a spec that uses the shared session.** It is in the
   `anon` project with its own login for that reason.
 - **Assertions wait 15s, not the 5s default**, because every page makes real

@@ -1,6 +1,6 @@
 # progress
 
-Handoff notes. Written 2026-08-05.
+Handoff notes. Last updated 2026-08-05, end of the write-path session.
 
 Read this with [`README.md`](./README.md) (how the thing works) and
 [`stellar-builder-task-hub-spec.md`](./stellar-builder-task-hub-spec.md) (what it
@@ -8,170 +8,144 @@ is meant to do). This file is only the delta between them.
 
 ## Where things stand
 
-`feat/live-backend-and-brand-assets` was fast-forwarded into `main`, pushed, and
-deleted on both ends. `main` is the only branch and is in sync with `origin`.
+`main` is the only branch and is in sync with `origin`.
 
-Verified this session: `npm run typecheck` and `npm run lint` both pass clean.
-The Playwright suite and `cargo test` were **not** run — the suite needs
-`E2E_EMAIL` / `E2E_PASSWORD` against the hosted project.
+Verified at the end of this session, all four run locally and clean:
+
+| Check | Result |
+|---|---|
+| `npm run lint` | pass |
+| `npm run typecheck` | pass |
+| `npm run build` | pass, also with `.env` removed and only CI's placeholders |
+| `npx playwright test` | **102 passed, 1 skipped** |
+| `cargo test` | 12 passed |
+
+The Playwright number is now a *reproduced* baseline, not an inherited claim.
+The earlier "93 pass" figure had never been re-run; treat 102/1 as the number to
+compare against.
 
 | Layer | State |
 |---|---|
-| Database | Ahead of the app. 7 tables, 6 enums, 28 RLS policies **including UPDATE and DELETE on every table**. Applied to a hosted project. |
-| Web | Reads are complete. Writes are create-only, plus task status. |
-| Contract | Built, 12 tests, never deployed. No SDK in `web/`, no link to the app. |
+| Database | Unchanged this session — **not one migration was needed.** 7 tables, 6 enums, 28 RLS policies. |
+| Web | Full CRUD on every entity, role-gated. Deployment logging, profile editing, board drag-and-drop, tx verification. |
+| Contract | Built, 12 tests, **still never deployed.** No SDK in `web/`. |
 
-The important discovery for planning: **the schema does not block anything below
-except priority.** Edit, delete, deployment logging, wallet address and docs URL
-all have their columns and their policies already. What is missing is UI and
-server actions.
+## What this session built
 
-## The plan
+All of it on the existing schema. The database was already ahead of the app.
 
-Ordered by dependency, then by spec weight. Each phase is independently
-shippable and independently testable.
+- **Edit and delete** for tasks, projects, milestones and proofs. `actions.ts`
+  went from four `create*` plus a status change to the full set.
+- **Role gating.** `project_members.role` was read by nothing before;
+  `getProjectRole` / `listProjectRoles` now drive which controls render, because
+  the policies are not uniform (tasks and milestones: any member; projects and
+  deployments: admin; proofs: author or admin).
+- **Milestone approval flow** enforcing the contract's state machine —
+  `proposed → submitted → approved|rejected`, approve/reject reserved to the
+  project owner, approved terminal. Not a dropdown, deliberately; see below.
+- **Deployment logging**, append-only, with the network-required rule mirrored
+  from the CHECK constraint so it fails inline rather than as a 23514.
+- **`wallet_address` and `docs_url`**, which were readable but unwritable.
+- **Profile editing** — display name and wallet address, on `/settings`.
+- **Board drag and drop** with `@dnd-kit`, writing `order_index` for the whole
+  destination column.
+- **Transaction verification** (spec §8) — a Horizon REST call behind the auth
+  gate, no SDK.
+- **CI** at `.github/workflows/ci.yml`: lint, typecheck, build, and
+  fmt/clippy/test for the contract.
+- **E2E coverage** for all of the above in `e2e/edit-delete.spec.ts`.
 
-### 1. Edit and delete — spec §1, §2, §3
+## What is left
 
-`src/lib/actions.ts` has four `create*` functions and `updateTaskStatus`. That is
-the whole mutation surface. Nothing in the app can be changed after creation
-except a task's status, and nothing can be deleted at all.
+### 1. Contract integration — the only thing that still blocks the pitch
 
-- Add `updateTask`, `updateProject`, `updateMilestone`, `updateProof` and the
-  four matching `delete*` actions, in that file, following the shape already
-  there: zod parse → `orNull` for empties → `friendly(error.message, error.code)`
-  → `revalidatePath("/", "layout")` → `{ ok: true }`.
-- Reuse the existing schemas in `src/lib/schemas.ts` — the create and edit
-  payloads are the same fields.
-- `FormDialog` (`src/components/form-dialog.tsx`) already says it is the shell
-  for "every create/edit form". Edit dialogs are the same call with
-  `defaultValue` on each control. Do not write a second dialog component.
-- Milestone status has no control at all — `TaskStatusMenu`
-  (`src/components/task-status-menu.tsx`) is the pattern to copy.
+Everything else in the spec is built. This is not, and it is the differentiator.
 
-  **Read this before building that control.** The milestone enum is
-  `proposed → submitted → approved → rejected` — the contract's state machine,
-  named identically to `MilestoneStatus` in `contracts/milestone_proof/src/lib.rs`.
-  These two are meant to be one thing: approving a milestone in the UI is the
-  off-chain shadow of `approve_milestone` on-chain, and the contract enforces
-  rules Postgres does not (approve only from `submitted`, approver must be the
-  project owner, approved is terminal, rejected may be re-submitted).
+1. Deploy `milestone_proof` to Testnet. The commands are already written out in
+   [`contracts/README.md`](./contracts/README.md).
+2. Add `MILESTONE_PROOF_CONTRACT_ID` to `.env.example` and `.env`.
+3. Add `@stellar/stellar-sdk` to `web/package.json` — still absent.
+4. Wire submit/approve/reject to the chain.
 
-  So a free-form milestone status dropdown is the wrong shape — it would let the
-  database drift out of a state the contract will later refuse to reproduce.
-  Either build the control to respect the contract's transitions from the start,
-  or defer milestone status to phase 4 and ship only title/description/due-date
-  editing here. The second is smaller and does not paint you into a corner.
-- Delete needs a confirm step. There is no `AlertDialog` in `components/ui/` yet.
+**The groundwork is done.** `updateMilestoneStatus` in `actions.ts` already
+validates every rule the contract enforces, in the order the contract enforces
+them. The on-chain call goes inside that function, after the checks pass and
+before the row is written. `profiles.wallet_address` is now capturable, so
+accounts can be linked before this starts rather than backfilled after.
 
-RLS to be aware of, from `20260731000002_rls.sql`: tasks and milestones are
-member-editable, **projects and deployments are admin-only, proofs are own-or-admin**.
-A non-admin will get `42501`, which `friendly()` already turns into "You do not
-have permission to do that in this project." Prefer hiding the control over
-letting it fail — `listMembers()` can tell you the caller's role.
+Decide custodial vs. wallet-signed first — it changes the shape of everything
+else here.
 
-### 2. Deployment logging — spec §5
+### 2. Scale UX — deferred by decision, not blocked
 
-The largest spec gap after the contract. `/deployments` and
-`/projects/[slug]/deployments` render history, but there is no
-`createDeployment` action and no dialog, so rows can only arrive by SQL.
+Bulk actions, inline create, command palette, keyboard navigation, and a
+priority field. **The priority field is the only remaining item in the whole
+project that needs a migration.** The `.row`, `.stagger` and `.focus-ring`
+primitives exist for the rest.
 
-Everything needed is already in the table: `status`, `network`, `contract_id`,
-`tx_hash`, `release_notes`, `deployed_by`, `deployed_at`. **No migration.**
+### 3. Smaller things
 
-- `deploymentSchema` in `schemas.ts`, `createDeployment` in `actions.ts`,
-  `CreateDeploymentDialog` in `create-dialogs.tsx`.
-- Enforce the table's own rule in the schema so the failure is inline rather
-  than a 23514 from Postgres: anything past `not_started` **must** carry a
-  network (`deployments_network_required`).
-- The status ladder is Not Started → Deployed to Testnet → Ready for Mainnet →
-  Mainnet Live. The log is append-only by design; the latest row per project is
-  the current state, which is what `/deployments` already assumes.
+- The **dashboard** rows are deliberately read-only. It is a capped rollup and
+  every entity is editable from its own list; adding menus there was judged
+  noise on a scanning surface. Revisit if it feels inconsistent in use.
+- **Deployment rows cannot be edited**, only deleted, because the log is
+  append-only. Recording a correction is the intended path.
+- One spec is still skipped: `e2e/stellar-proof.spec.ts` needs a seeded project
+  with no contract, which does not exist.
+- Playwright is still **not** in CI, for the reasons written inline in the
+  workflow: it needs secrets and a database two concurrent runs would fight over.
 
-### 3. Two proof fields that can be read but never written
+## Things that bit, and will bite again
 
-`stellar_proofs.wallet_address` and `projects.docs_url` are selected in
-`queries.ts` (`:569`) and rendered, but they are absent from `schemas.ts`, from
-the create actions and from the dialogs. Spec §4 lists both as required proof
-fields. Two-line fix in each of the three places; worth doing alongside phase 1
-while those files are open.
+Each of these cost real debugging time this session. They are all still true.
 
-### 4. Contract integration — the differentiator
-
-Nothing connects `contracts/milestone_proof` to the app. This is the feature
-that makes the product what it claims to be, and it is entirely unbuilt.
-
-1. Deploy to Testnet — the full command sequence is already written out in
-   [`contracts/README.md`](./contracts/README.md) under "Deploy to testnet".
-2. Add `MILESTONE_PROOF_CONTRACT_ID` to `web/.env.example` and `.env.local`.
-3. Add `@stellar/stellar-sdk` to `web/package.json`. It is not there today.
-4. Wire submit / approve / reject from the milestone UI.
-
-`src/lib/stellar.ts` is deliberately dependency-free — strkey validation and
-explorer links only, no network calls — and its header says on-chain work
-belongs in a server route. Keep it that way; put the SDK behind a route handler.
-`HORIZON_URL` and `SOROBAN_RPC_URL` are already exported there and currently
-unused.
-
-The DB is already shaped for this: `milestone_status` is the contract's state
-machine verbatim (see phase 1), so the app's job is to keep the two in step, not
-to translate between them.
-
-Note the identity problem before starting: the contract authenticates a Stellar
-`Address`, the app authenticates a Supabase user. `profiles.wallet_address`
-exists (see phase 3) and is the intended join. Decide custodial vs. wallet-signed
-early — it changes the whole shape of this phase.
-
-### 5. Board drag and drop
-
-Status moves go through a menu today. `tasks.order_index` exists and is unused,
-so ordering within a column is possible in the same pass.
-
-### 6. Scale UX
-
-Bulk actions, inline create, command palette, keyboard navigation. The `.row`,
-`.stagger` and `.focus-ring` primitives in `globals.css` exist for these.
-
-A priority field is the **only** item in this document that needs a migration —
-new enum, new column, new index, plus `filters.ts` and the filter bar.
-
-### 7. Nice-to-have: transaction verification — spec §8
-
-Paste a tx hash, confirm it exists, show basic info. `isTxHash()` and
-`HORIZON_URL` are already in `stellar.ts`; this is a server route over Horizon.
-Do it after phase 4, which will have introduced the SDK anyway.
-
-## Repo hygiene, independent of the above
-
-- **`password123` is in git history**, in `fe93996`. `supabase/seed.sql` carries
-  it and the file was applied to the hosted project, where the accounts were
-  briefly reachable with only the publishable key. Passwords have been rotated.
-
-  **The repo is private**, which is what makes this low priority rather than
-  urgent — the history was never readable by anyone outside the org. The rewrite
-  (`git filter-repo` / BFG) has not been done and now needs a force-push to
-  `main`. Judgement call whether it is worth it; do not re-raise it as a blocker.
-  The live rule that still matters: **never apply `seed.sql` to a hosted project.**
-- **No CI.** There is no `.github/`. `lint`, `typecheck`, `cargo test` and
-  Playwright only ever run locally. A workflow running the first three is cheap;
-  Playwright needs secrets and a hosted database, so gate it separately.
-- **One skipped e2e spec**, `web/e2e/stellar-proof.spec.ts:88` — it needs a
-  seeded project with no contract, which does not exist. Reason is inline.
-- Write specs mutate the shared database and run after the read-only ones by
-  Playwright project dependency. Adding a spec that writes outside the
-  `mutations` project will move counts the read specs assert.
+- **React bubbles portal events along the React tree, not the DOM tree.** A
+  dialog rendered inside a row that intercepts clicks will have its form submits
+  cancelled by that row's `preventDefault`. This silently produced a dialog that
+  never wrote anything. `row-actions.tsx` carries the explanation; the rule is
+  `stopPropagation` on the wrapper, `preventDefault` only on the trigger that is
+  genuinely inside the anchor.
+- **dnd-kit sets `role="button"` on every draggable**, replacing whatever
+  semantic role the element had. It broke five specs by making board cards stop
+  being `article`s. Override via `useSortable({ attributes: { role } })`.
+- **Playwright's `fullyParallel` puts separate files on separate workers** even
+  when each file is internally serial. Two write specs against one shared
+  database will interleave. Cross-file ordering is only available through
+  project `dependencies` — hence the `edits` project depending on `mutations`.
+  **Any new write spec needs its own project, or it must go in an existing write
+  file.** It also needs adding to `chromium`'s `testIgnore`, or it runs twice.
+- **A modal makes the rest of the page `aria-hidden`**, so `getByRole` cannot
+  see anything behind an open dialog. Use a CSS locator to assert on what is
+  underneath.
+- `npm install` run from the repo root instead of `web/` still appears to work,
+  because Node resolves upward. CI and a clean checkout will not have the
+  package. Install from `web/`.
 
 ## Conventions worth not rediscovering
 
 - `web/AGENTS.md`: this is Next.js 16 and it has breaking changes. Read
   `node_modules/next/dist/docs/` before writing routing or caching code.
 - Radix `Select` submits nothing in a native form post. `NativeSelect` in
-  `form-dialog.tsx` exists for exactly that reason — see its comment.
+  `form-dialog.tsx` exists for exactly that reason.
 - `FormDialog` closes on success from inside the action, not from an effect on
   `state.ok`, because `revalidatePath` re-renders the subtree and an effect can
-  miss the transition.
+  miss the transition. It takes optional `open`/`onOpenChange` for dialogs
+  driven from a row menu.
+- Create and edit share one field set per entity in `entity-dialogs.tsx`. A
+  field added to one and forgotten in the other is the drift that file prevents.
+- Server components cannot pass a render prop to a client component, which is
+  why `entity-row-actions.tsx` exists between `rows.tsx` and `row-actions.tsx`.
 - Every page names exactly one primary object via `<Section priority>`. A second
-  one on the same page cancels the first out.
+  on the same page cancels the first out.
 - Icons come from `src/lib/icons.ts`, never picked inline.
 - Density is settled: Linear over whitespace, 13px base, single-line rows. The
   landing page is exempt.
+
+## Security note
+
+`password123` is in git history, in `fe93996`, via `supabase/seed.sql`. The
+passwords have been rotated and **the repo is private**, which is what makes
+this low priority rather than urgent. The history rewrite has not been done and
+would now need a force-push. Judgement call whether it is worth it; do not
+re-raise it as a blocker. The live rule that still matters: **never apply
+`seed.sql` to a hosted project.**
