@@ -92,18 +92,28 @@ export function RowActions({
   }
 
   return (
-    // The row is wrapped in a Link. Without this the menu button's click
-    // bubbles up and navigates away underneath the open menu.
+    /**
+     * `stopPropagation` only — never `preventDefault` here.
+     *
+     * The row is a Link, and React bubbles events from a portal along the React
+     * tree rather than the DOM tree. Both dialogs below are portalled to
+     * `body`, so their clicks still pass through this handler: stopping
+     * propagation keeps them from reaching the Link's onClick, but calling
+     * `preventDefault` would also cancel the submit button's default action and
+     * the edit form would silently never post.
+     *
+     * Preventing the anchor's own navigation is the trigger's job instead.
+     */
     <span
       className={cn("shrink-0", className)}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
+      onClick={(event) => event.stopPropagation()}
     >
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`Actions for this ${label}`}
+          // This button really is inside the anchor, so its click would follow
+          // the link. Radix still opens the menu — its own handler runs after.
+          onClick={(event) => event.preventDefault()}
           className={cn(
             "focus-ring transition-qdit grid size-6 place-items-center rounded-md text-muted-foreground",
             "hover:bg-muted hover:text-foreground",

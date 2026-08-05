@@ -40,14 +40,23 @@ export function ListRow({
 
   if (!href) {
     return (
-      <div className={classes} data-active={active ? "true" : undefined}>
+      <div
+        data-slot="list-row"
+        className={classes}
+        data-active={active ? "true" : undefined}
+      >
         {children}
       </div>
     );
   }
 
   return (
-    <Link href={href} className={classes} data-active={active ? "true" : undefined}>
+    <Link
+      href={href}
+      data-slot="list-row"
+      className={classes}
+      data-active={active ? "true" : undefined}
+    >
       {children}
     </Link>
   );
