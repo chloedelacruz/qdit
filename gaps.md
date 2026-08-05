@@ -12,7 +12,7 @@ than trusted.
 | Spec section | State |
 |---|---|
 | §1 Project management | **Complete** — create, edit, delete, overview, status |
-| §2 Task board | **Complete** — create, edit, assign, due date, move by menu or drag, paged |
+| §2 Task board | **Complete** — create, edit, assign, due date, move by menu or drag, paged, and a card opens a detail panel |
 | §3 Milestone tracking | **Complete** — create, edit, link tasks, approval flow |
 | §4 Stellar proof fields | **Complete** — all fields captured *and* displayed |
 | §5 Deployment tracking | **Complete** — status ladder, release notes, append-only history |
@@ -197,9 +197,11 @@ Decided, not overlooked.
 
 ## 4. Risks rather than gaps
 
-- **The e2e seed has drifted from `seed.ts`.** `BOARD_COUNTS.todo` says 2; the
-  hosted database returns 1. This is **pre-existing** — reproduced by stashing
-  all local work and running `board.spec.ts` against unmodified `cfd75d9`.
+- **The e2e seed has drifted from `seed.ts`.** Still true on 2026-08-05, and
+  the drift has moved: the failing column is now `in_progress`, where
+  `BOARD_COUNTS` says 1 and the hosted database returns 2. Two board specs and
+  two dashboard specs fail on it. **Pre-existing** — re-reproduced by stashing
+  all local work (`git stash -u`) and running the same specs on a clean tree.
   It matters more than one red test: `mutations` depends on `chromium` and
   `edits` depends on `mutations`, so one failure there leaves **13 write specs
   unrun**. Either restore the missing todo task or correct `seed.ts`.
