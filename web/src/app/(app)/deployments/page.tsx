@@ -3,11 +3,17 @@ import type { Metadata } from "next";
 import { DataList } from "@/components/data-list";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
+import { DeploymentRowActions } from "@/components/entity-row-actions";
 import { DeploymentListRow } from "@/components/rows";
 import { DEPLOYMENT_STATUS } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
-import { listDeployments, listProjectOptions } from "@/lib/queries";
+import {
+  canAdminister,
+  listDeployments,
+  listProjectOptions,
+  listProjectRoles,
+} from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
 export const metadata: Metadata = { title: "All deployments" };
@@ -19,9 +25,10 @@ export default async function AllDeploymentsPage({
 }) {
   const filters = parseFilters(await searchParams);
   // Unscoped: current state per project. Full history lives on the project.
-  const [page, projects] = await Promise.all([
+  const [page, projects, roles] = await Promise.all([
     listDeployments({}, filters),
     listProjectOptions(),
+    listProjectRoles(),
   ]);
 
   return (
@@ -77,7 +84,17 @@ export default async function AllDeploymentsPage({
         }}
       >
         {page.rows.map((deployment) => (
-          <DeploymentListRow key={deployment.id} deployment={deployment} showProject />
+          <DeploymentListRow
+            key={deployment.id}
+            deployment={deployment}
+            showProject
+            actions={
+              <DeploymentRowActions
+                deployment={deployment}
+                canAdminister={canAdminister(roles.get(deployment.projectId) ?? null)}
+              />
+            }
+          />
         ))}
       </DataList>
     </div>

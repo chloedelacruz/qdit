@@ -281,7 +281,17 @@ function SortableCard({
   members: { id: string; name: string }[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: task.id });
+    useSortable({
+      id: task.id,
+      /**
+       * dnd-kit defaults a draggable to `role="button"`, which would replace the
+       * card's `article` role — the thing that makes a board card a card to a
+       * screen reader, and what the board specs select on. Keep the semantic and
+       * describe the drag separately; `attributes` still supplies the tabIndex
+       * the keyboard sensor needs.
+       */
+      attributes: { role: "article", roleDescription: "Draggable task card" },
+    });
 
   return (
     <Card

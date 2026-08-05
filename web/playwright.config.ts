@@ -64,7 +64,9 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["setup"],
-      testIgnore: /(mobile-nav|auth|landing|create-task)\.spec\.ts/,
+      // Every write-path spec must also be listed here, or it runs twice —
+      // once in this project and again in `mutations`.
+      testIgnore: /(mobile-nav|auth|landing|create-task|edit-delete)\.spec\.ts/,
     },
 
     {
@@ -78,6 +80,23 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["chromium"],
       testMatch: /create-task\.spec\.ts/,
+    },
+
+    {
+      /**
+       * A second write project rather than another file inside `mutations`.
+       *
+       * `fullyParallel` runs separate *files* on separate workers even when
+       * each is internally serial, so two write specs sharing one database
+       * would interleave — and `create-task` asserts an exact dashboard total,
+       * which a task inserted by another worker moves underneath it. A project
+       * dependency is the only ordering guarantee Playwright offers across
+       * files.
+       */
+      name: "edits",
+      use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
+      dependencies: ["mutations"],
+      testMatch: /edit-delete\.spec\.ts/,
     },
 
     {
