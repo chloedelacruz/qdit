@@ -40,6 +40,14 @@ jobs:
 
       - run: npm run typecheck
 
+      # Vitest, unlike Playwright, is pure logic — no browser, no database, no
+      # secrets — so it runs here. It covers the milestone state machine, the
+      # filter round trip and the strkey validators. The milestone rules are the
+      # ones that matter most: `updateMilestoneStatus` mirrors what
+      # `milestone_proof` enforces on-chain, and a silent divergence between the
+      # two is the expensive kind.
+      - run: npm test
+
       # `next build` typechecks too, but it also catches what tsc cannot: a
       # server/client boundary violation, a bad import in a route handler.
       - run: npm run build
