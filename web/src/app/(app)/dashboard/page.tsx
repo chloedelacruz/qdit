@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
-import { MilestoneListRow, ProjectListRow, TaskListRow } from "@/components/rows";
+import {
+  MilestoneListRow,
+  ProjectListRow,
+  ProofListRow,
+  TaskListRow,
+} from "@/components/rows";
 import { Section } from "@/components/section";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
@@ -13,6 +18,7 @@ import {
   getWorkspaceSummary,
   listMilestones,
   listProjects,
+  listProofs,
   listTasks,
 } from "@/lib/queries";
 
@@ -23,7 +29,7 @@ export default async function DashboardPage() {
   // workspace stops being an overview and becomes a worse projects page.
   const userId = await getCurrentUserId();
 
-  const [summary, projects, myTasks, attention] = await Promise.all([
+  const [summary, projects, myTasks, attention, proofs] = await Promise.all([
     getWorkspaceSummary(),
     listProjects({ ...EMPTY_FILTERS, status: ["active"], limit: 5 }),
     listTasks(
@@ -37,6 +43,9 @@ export default async function DashboardPage() {
       },
     ),
     listMilestones({}, { ...EMPTY_FILTERS, status: ["submitted"], limit: 4 }),
+    // Already ordered newest-first by `listProofs`, so the cap is the whole
+    // filter: the last few things this workspace put on-chain.
+    listProofs({}, { ...EMPTY_FILTERS, limit: 4 }),
   ]);
 
   const progress = summary.taskCount === 0 ? 0 : summary.doneCount / summary.taskCount;
@@ -116,6 +125,22 @@ export default async function DashboardPage() {
       >
         {projects.rows.map((project) => (
           <ProjectListRow key={project.id} project={project} />
+        ))}
+      </Section>
+
+      {/* The claim the product makes, in the rollup that summarises it: what
+          has actually been recorded on-chain lately. Read-only like every row
+          on this page — each proof is editable from the registry it lives in. */}
+      <Section
+        className="mt-5"
+        icon={ICON.proof}
+        title="Recent proof"
+        count={proofs.total}
+        href="/proofs"
+        empty="No proof recorded yet."
+      >
+        {proofs.rows.map((proof) => (
+          <ProofListRow key={proof.id} proof={proof} showProject />
         ))}
       </Section>
     </div>

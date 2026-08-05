@@ -54,7 +54,13 @@ test.describe("dashboard", () => {
   });
 
   test("each panel links to its filtered full view", async ({ page }) => {
-    await expect(page.getByRole("link", { name: /^View all/ })).toHaveCount(3);
+    // Four panels: my open tasks, awaiting approval, active projects, and the
+    // recent proof rollup added for spec §6's "Linked Stellar proof".
+    await expect(page.getByRole("link", { name: /^View all/ })).toHaveCount(4);
+    await expect(page.getByRole("link", { name: /^View all recent proof/ })).toHaveAttribute(
+      "href",
+      "/proofs",
+    );
 
     await page.getByRole("link", { name: "View all awaiting approval" }).click();
 

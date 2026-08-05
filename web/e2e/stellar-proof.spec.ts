@@ -58,9 +58,18 @@ test.describe("stellar proof fields", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.goto(`/projects/${PROJECT.slug}/proofs`);
 
+    // Scoped to the transaction chip, not "the first hash on the row": proof
+    // rows now also carry the signer's account strkey, which is a
+    // `[data-slot="hash"]` too, so `.first()` meant "the tx hash" only by
+    // accident of DOM order.
+    //
+    // Anchored on the explorer link rather than the copy button, because the
+    // copy button relabels itself to "Copied" on click — a filter keyed to it
+    // stops matching the moment the test acts on it, and every later assertion
+    // resolves against nothing.
     const chip = page
       .locator("span")
-      .filter({ has: page.locator('[data-slot="hash"]') })
+      .filter({ has: page.getByRole("link", { name: "View transaction on stellar.expert" }) })
       .first();
     const expected = await chip.locator('[data-slot="hash"]').getAttribute("title");
 

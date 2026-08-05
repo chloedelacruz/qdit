@@ -2,6 +2,8 @@ import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowMeta } from "@/components/data-list";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 import {
   DEPLOYMENT_STATUS,
   MILESTONE_STATUS,
@@ -112,7 +114,11 @@ export function TaskListRow({
           </span>
         ) : null}
 
-        <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
+        <MemberAvatar
+          avatarUrl={task.assigneeAvatarUrl}
+          initials={task.assigneeInitials}
+          name={task.assigneeName}
+        />
 
         {actions}
       </div>
@@ -187,6 +193,23 @@ export function ProofListRow({
           ]}
         />
 
+        {/* Who signed it, next to what they signed. Widest containers only —
+            two hash pills side by side is the most this row can carry, so the
+            signer is the first thing to go when the panel narrows. Labelled
+            because an unlabelled strkey reads as another tx hash. */}
+        {proof.walletAddress ? (
+          <span className="hidden shrink-0 items-center gap-1.5 @4xl:flex">
+            <span className="text-xs text-muted-foreground">Signer</span>
+            <HashLink
+              value={proof.walletAddress}
+              kind="account"
+              network={proof.network}
+              lead={4}
+              tail={4}
+            />
+          </span>
+        ) : null}
+
         {proof.txHash ? (
           <HashLink value={proof.txHash} kind="tx" network={proof.network} />
         ) : null}
@@ -244,6 +267,42 @@ export function DeploymentListRow({
         {actions}
       </div>
     </ListRow>
+  );
+}
+
+/**
+ * A member's photo at row scale, degrading to the initials chip.
+ *
+ * Three states, in order: the OAuth avatar when there is one, initials when
+ * there is not, and the dashed outline when nobody is assigned. Radix only
+ * swaps the image in once it has actually loaded, so a stale or broken
+ * `avatar_url` shows initials rather than a torn image — the fallback is the
+ * real component, the photo is the enhancement.
+ */
+export function MemberAvatar({
+  avatarUrl,
+  initials,
+  name,
+  className,
+}: {
+  avatarUrl?: string | null;
+  initials: string | null;
+  name: string;
+  className?: string;
+}) {
+  if (!avatarUrl) {
+    return <MemberChip initials={initials} name={name} className={className} />;
+  }
+
+  return (
+    // Sized to the initials chip it replaces, not to the primitive's default —
+    // a row is 32–36px and cannot afford the 24px variant.
+    <Avatar size="sm" title={name} aria-label={name} className={cn("size-5", className)}>
+      <AvatarImage src={avatarUrl} alt="" />
+      <AvatarFallback className="bg-accent text-[0.625rem] font-medium text-accent-foreground">
+        {initials ?? "–"}
+      </AvatarFallback>
+    </Avatar>
   );
 }
 
