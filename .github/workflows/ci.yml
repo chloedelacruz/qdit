@@ -28,9 +28,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 24, not 20, and the lock file is the reason. npm 10 (which ships with
+      # Node 20) and npm 11 disagree about which optional peer dependencies
+      # belong in package-lock.json — @creit.tech/stellar-wallets-kit pulls
+      # @trezor/connect-plugin-stellar, which asks for @stellar/stellar-sdk
+      # ^13.3.0 against the ^16 we use, and that unresolved peer is where the
+      # two versions diverge. A lock written by npm 11 then fails `npm ci`
+      # under npm 10 with "Missing: typescript@4.9.5 from lock file".
+      #
+      # Matching the npm major to the one that writes the lock is the fix.
+      # Node 20 is deprecated on the runners regardless — the actions here were
+      # already being forced onto Node 24.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
 
