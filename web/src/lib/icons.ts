@@ -1,4 +1,5 @@
 import {
+  Anchor,
   CircleDot,
   Clock3,
   Columns3,
@@ -10,6 +11,7 @@ import {
   SearchX,
   Settings2,
   SquareStack,
+  Wallet,
   TriangleAlert,
   UserRound,
   Users,
@@ -50,6 +52,10 @@ export const ICON = {
   error: TriangleAlert,
   /** Asked for by name, and there is no such thing. 404 only. */
   missing: SearchX,
+  /** A connected Stellar account, used for signing. Never a payment. */
+  wallet: Wallet,
+  /** Proof written to the ledger. The one place chain imagery is warranted. */
+  anchor: Anchor,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON;
