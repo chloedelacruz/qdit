@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated verbatim by `stellar contract bindings typescript` from the
+    // deployed contract. Regenerate it, never edit it — see chain/client.ts.
+    "src/lib/chain/bindings.ts",
   ]),
 ]);
 

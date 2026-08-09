@@ -20,20 +20,21 @@ materials/   Brand source material
 
 ## Status
 
-The database and the web app are **joined**: the UI reads and writes a hosted
-Postgres with RLS enforced. The contract is the layer still standing alone —
-built and tested, but never deployed and not reachable from the app.
+All three layers are **joined**. The UI reads and writes a hosted Postgres with
+RLS enforced, and it signs Soroban transactions against a contract deployed on
+Testnet.
 
 | Layer | State |
 |---|---|
-| Database | 7 tables, 6 enums, triggers, indexes, 28 RLS policies. **Applied to a hosted project and seeded.** |
-| Contract | All 5 spec'd functions, 12 tests + snapshots. Not deployed; no Stellar SDK in `web/`. |
-| Web UI | Full CRUD, role-gated, over real Postgres. Auth, project-scoped routing, URL-state filtering, dense lists, elevation system. **102 Playwright specs pass against it**, 1 skipped. |
+| Database | 8 tables, 7 enums, triggers, indexes, 30 RLS policies. **Applied to a hosted project and seeded.** |
+| Contract | All 5 spec'd functions plus events, 17 tests + snapshots. **Deployed to Testnet** and called from the app. |
+| Web UI | Full CRUD, role-gated, over real Postgres, plus wallet-signed anchoring. **115 Playwright specs pass**, 1 skipped; 111 Vitest unit tests. |
 
 Working end to end: sign in / sign up / sign out and the auth gate; every read;
 create, edit and delete for **projects, tasks, milestones and proofs**; the
 milestone approval flow; deployment logging; profile and wallet address;
-drag-and-drop on the board; and transaction verification against Horizon.
+drag-and-drop on the board; transaction verification against Horizon; and
+**anchoring a milestone's proof hash on chain with a connected wallet**.
 
 Every create and edit form is built on `src/components/form-dialog.tsx` — one
 shell, so pending state, error placement and the close-only-on-success rule
@@ -48,18 +49,22 @@ server actions re-check — a hidden button is courtesy, not the boundary.
 Milestone status is **not** a dropdown. `milestone_status` is the contract's
 state machine, so the app enforces the contract's transitions (`proposed →
 submitted → approved | rejected`, approve/reject reserved to the project owner,
-approved terminal). Otherwise the database could reach a state the contract will
-refuse to reproduce once the on-chain call exists.
+approved terminal). Otherwise the database could reach a state the contract
+refuses to reproduce — and now that the on-chain call exists, that is not a
+hypothetical: the transaction would fail at simulation.
 
 Not started:
 
-1. **Contract integration** — deploy `milestone_proof` to Testnet, add
-   `@stellar/stellar-sdk`, wire submit/approve from the milestone UI. The rule
-   checks are already in `updateMilestoneStatus`; the chain call goes inside it.
+1. **Invite-by-email** — `profiles` is RLS-scoped to people you already share a
+   project with, so nobody outside that circle can be added. Needs a
+   `SECURITY DEFINER` lookup function, i.e. a migration.
 2. **Scale UX** — bulk actions, inline create, command palette and keyboard
-   navigation, and a priority field. That field is the only thing left in the
-   project that needs a migration. The `.row`, `.stagger` and `.focus-ring`
-   primitives exist for these.
+   navigation. The `.row`, `.stagger` and `.focus-ring` primitives exist for
+   these. A `tasks.priority` column already exists in the database and is
+   unused, so wiring it up is front-end work rather than a migration.
+
+See [`gaps.md`](./gaps.md) for the audited list, and [`progress.md`](./progress.md)
+for handoff notes.
 
 > **Security note.** `supabase/seed.sql` contains `qdit-local-dev` in plaintext and
 > its header says it is for the local stack only. It was nonetheless applied to
@@ -140,8 +145,21 @@ below `lg`.
 
 The suite runs against the **real Supabase project** with RLS enforced — there
 are no fixtures. It needs `E2E_EMAIL` and `E2E_PASSWORD` in `.env.local` (see
-`.env.example`) for an account that belongs to at least one project. Credentials
-are never written into a spec file.
+`.env.example`). Credentials are never written into a spec file.
+
+> **The account must *own* the seeded project, not merely belong to it.**
+> `board.spec.ts` asserts the owner's name on the card for the in-progress task,
+> and `dashboard.spec.ts` asserts that same task appears under "My open tasks" —
+> which only holds for tasks assigned to whoever is signed in. Both pass only if
+> the signed-in user *is* the owner persona. An account with no membership at
+> all fails 64 specs with an empty dashboard and 404s on every project route,
+> which reads like an auth bug and is not one.
+>
+> On 2026-08-09 the real account took over the seeded "Ada Builder" role in the
+> hosted database — memberships, assignments, proofs and deployments all moved
+> across. `supabase/seed.sql` still creates Ada, because it seeds a *local*
+> stack where there is no real account to hand anything to. `e2e/seed.ts`
+> records which is which.
 
 Playwright projects, in order:
 
@@ -153,6 +171,11 @@ Playwright projects, in order:
 | `mutations` | shared | Creating a task — runs *after* `chromium` |
 | `edits` | shared | Edit, delete, approval, deployments — runs after `mutations` |
 | `cleanup` | — | Deletes rows prefixed `e2e <noun> …` |
+
+`cleanup` needs `SUPABASE_SECRET_KEY` and **no-ops without it**, printing a
+warning rather than failing. `reseed.setup.ts` sweeps stray tasks before each
+run so the board counts stay right, but milestones and deployments created by
+the write specs then accumulate until someone deletes them by hand.
 
 Seeded values live in `e2e/seed.ts` rather than being repeated across specs.
 Where a value is generated rather than authored (contract IDs, tx hashes) the
@@ -225,7 +248,38 @@ cargo test
 stellar contract build
 ```
 
-See [`contracts/README.md`](./contracts/README.md) for the deploy flow.
+`milestone_proof` is **deployed to Testnet**; the contract id, WASM hash and
+both transaction hashes are published in
+[`contracts/README.md`](./contracts/README.md), along with the deploy flow and
+the command that regenerates the TypeScript bindings.
+
+### On-chain anchoring
+
+The chain never sees a milestone's content — only a SHA-256 of it, so anyone can
+verify a milestone was in a given state at a given time without being handed the
+data. `src/lib/milestone-hash.ts` defines exactly what that digest covers.
+
+Anchoring is **additive**: it never writes `milestones.status`. Moving a
+milestone through the approval flow and proving it on chain are separate acts,
+and they may disagree — a milestone can be approved in the app and not yet
+anchored, or anchored under a hash that no longer matches. The UI shows both,
+and marks a mismatch `stale` rather than hiding it.
+
+Because the wallet signs in the browser, the flow is three steps rather than one
+server action: the server builds and simulates the transaction, the wallet signs
+the resulting XDR string, and the server verifies that envelope before
+submitting it. **That verification is not optional** — without it a user could
+sign any transaction and have the server record it as an anchor. See
+`assertInvocation` in `src/lib/chain/client.ts`.
+
+The wallet is an **attestation key, not a login.** Sessions stay with Supabase;
+connecting a wallet only decides which account signs. `profiles.wallet_address`
+is a convenience field, and the signer written to `milestone_anchors` is read
+back out of the verified transaction instead.
+
+Set `NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` to switch it on. **Leave it empty
+and the feature is absent rather than broken** — the controls simply do not
+render, which is how CI builds it.
 
 ## Database
 

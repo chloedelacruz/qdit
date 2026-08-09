@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { ProjectRowActions } from "@/components/entity-row-actions";
 import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
+import { ProjectChainRegistration } from "@/components/project-chain";
 import { Section } from "@/components/section";
 import { MilestoneListRow, ProofListRow } from "@/components/rows";
 import { StatTile } from "@/components/stat-tile";
@@ -16,12 +17,16 @@ import { EMPTY_FILTERS } from "@/lib/filters";
 import { ICON } from "@/lib/icons";
 import {
   canAdminister,
+  getCurrentUserId,
   getProject,
   getProjectRole,
   listMilestones,
   listProofs,
 } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
+
+/** Anchoring is off unless this deployment names a contract. */
+const ANCHORING = Boolean(process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID);
 
 export async function generateMetadata({
   params,
@@ -43,10 +48,11 @@ export default async function ProjectOverviewPage({
 
   // Capped deliberately: an overview that grows without bound stops being one.
   const preview = { ...EMPTY_FILTERS, limit: 4 };
-  const [milestones, proofs, role] = await Promise.all([
+  const [milestones, proofs, role, userId] = await Promise.all([
     listMilestones({ projectId: project.id }, preview),
     listProofs({ projectId: project.id }, preview),
     getProjectRole(project.id),
+    getCurrentUserId(),
   ]);
 
   return (
@@ -138,6 +144,20 @@ export default async function ProjectOverviewPage({
             network={project.network}
             lead={8}
             tail={8}
+          />
+        </div>
+      ) : null}
+
+      {/* On-chain registration. Sunken like the contract row above it: this is
+          a fact you look up, not one you scan for — except once, when the owner
+          has to act on it. */}
+      {ANCHORING ? (
+        <div className="well mt-2 rounded-xl border border-border px-3 py-2">
+          <ProjectChainRegistration
+            projectId={project.id}
+            network={project.network}
+            registration={project.chainRegistration}
+            isOwner={project.ownerId === userId}
           />
         </div>
       ) : null}

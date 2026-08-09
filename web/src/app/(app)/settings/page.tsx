@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 
 import { EditProfileDialog } from "@/components/entity-dialogs";
-import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WalletConnect } from "@/components/wallet-connect";
 import { MEMBER_ROLE } from "@/lib/constants";
 import { getCurrentUserId, listMembers } from "@/lib/queries";
+import type { StellarNetwork } from "@/lib/stellar";
+
+const NETWORK: StellarNetwork =
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -35,14 +39,11 @@ export default async function SettingsPage() {
 
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <span className="text-sm font-medium">Wallet address</span>
-            {me?.walletAddress ? (
-              // Truncated and linked the same way every other strkey is.
-              <HashLink value={me.walletAddress} kind="account" network="testnet" />
-            ) : (
-              <span className="text-sm text-muted-foreground">
-                Not set — required to sign milestone proofs on-chain.
-              </span>
-            )}
+            {/*
+              The wallet is an attestation key, not a login: the session is
+              Supabase's, and this only decides which account signs an anchor.
+            */}
+            <WalletConnect saved={me?.walletAddress ?? null} network={NETWORK} />
           </div>
         </CardContent>
       </Card>

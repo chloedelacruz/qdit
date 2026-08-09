@@ -8,15 +8,22 @@
 //! State machine: `Proposed -> Submitted -> Approved | Rejected`.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Symbol,
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env,
+    String,
 };
 
 /// Ledgers produced in roughly one day at ~5s close times.
 const DAY_IN_LEDGERS: u32 = 17_280;
-/// How far out to push a persistent entry's TTL when it is touched.
-const ENTRY_TTL_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
 /// Only pay for an extension once the entry drops below this many ledgers.
-const ENTRY_TTL_THRESHOLD: u32 = ENTRY_TTL_EXTEND_TO - DAY_IN_LEDGERS;
+const ENTRY_TTL_THRESHOLD: u32 = 30 * DAY_IN_LEDGERS;
+/// How far out to push a persistent entry's TTL when it is touched.
+const ENTRY_TTL_EXTEND_TO: u32 = 90 * DAY_IN_LEDGERS;
+
+/// Ceiling on caller-supplied identifiers.
+///
+/// The app's ids are 36-character UUIDs. 64 leaves room for a prefix without
+/// letting a caller pay for — or make the ledger carry — an unbounded key.
+const MAX_ID_LEN: u32 = 64;
 
 /// Lifecycle of a single milestone.
 #[contracttype]
@@ -36,13 +43,20 @@ pub enum MilestoneStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MilestoneRecord {
-    pub project_id: Symbol,
-    pub milestone_id: Symbol,
+    pub project_id: String,
+    pub milestone_id: String,
     /// Address that submitted the proof hash.
     pub submitter: Address,
     /// Hash of the off-chain proof artifact.
     pub proof_hash: BytesN<32>,
     pub status: MilestoneStatus,
+    /// Submissions so far, starting at 1. Monotonic.
+    ///
+    /// A re-submission overwrites `proof_hash`, so without this the ledger
+    /// would show the latest hash with no evidence an earlier one existed.
+    /// Approve and reject preserve the counter — they attest to a submission
+    /// rather than making one.
+    pub version: u32,
     /// Ledger timestamp at the moment the proof was submitted.
     pub timestamp: u64,
 }
@@ -52,9 +66,9 @@ pub struct MilestoneRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     /// `project_id -> Address` (the project owner).
-    Project(Symbol),
+    Project(String),
     /// `(project_id, milestone_id) -> MilestoneRecord`.
-    Milestone(Symbol, Symbol),
+    Milestone(String, String),
 }
 
 #[contracterror]
@@ -71,6 +85,63 @@ pub enum Error {
     NotAuthorized = 4,
     /// The milestone is not in a status that permits this transition.
     InvalidStatus = 5,
+    /// An identifier exceeds [`MAX_ID_LEN`].
+    IdTooLong = 6,
+}
+
+// ---------------------------------------------------------------------------
+// Events
+//
+// Every write emits one, and they are what makes the ledger an audit trail an
+// off-chain indexer can resync from without trusting the app's database.
+//
+// The shape is uniform on purpose:
+//   topic 0  "qdit"       — one predicate filters every event of this contract
+//   topic 1  the verb
+//   topic 2  project_id   — indexed, so a consumer can watch a single project
+//                           without decoding the body of every event
+//
+// Nothing else is a topic. `milestone_id` lives in the data because a consumer
+// that cares about one milestone already had to fetch the project's list.
+// ---------------------------------------------------------------------------
+
+#[contractevent(topics = ["qdit", "register"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectRegistered {
+    #[topic]
+    pub project_id: String,
+    pub owner: Address,
+}
+
+#[contractevent(topics = ["qdit", "submit"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofSubmitted {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub submitter: Address,
+    pub proof_hash: BytesN<32>,
+    pub version: u32,
+}
+
+#[contractevent(topics = ["qdit", "approve"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneApproved {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub approver: Address,
+    pub version: u32,
+}
+
+#[contractevent(topics = ["qdit", "reject"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneRejected {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub approver: Address,
+    pub version: u32,
 }
 
 #[contract]
@@ -80,17 +151,22 @@ pub struct MilestoneProofContract;
 impl MilestoneProofContract {
     /// Register a project reference owned by `owner`.
     ///
-    /// Requires `owner` auth. Errors with [`Error::ProjectExists`] if the id is taken.
-    pub fn create_project_ref(env: Env, project_id: Symbol, owner: Address) -> Result<(), Error> {
+    /// Requires `owner` auth. Errors with [`Error::ProjectExists`] if the id is
+    /// taken — deliberately, rather than upserting, so a client can treat that
+    /// error as "already registered" and carry on.
+    pub fn create_project_ref(env: Env, project_id: String, owner: Address) -> Result<(), Error> {
+        Self::check_id(&project_id)?;
         owner.require_auth();
 
-        let key = DataKey::Project(project_id);
+        let key = DataKey::Project(project_id.clone());
         if env.storage().persistent().has(&key) {
             return Err(Error::ProjectExists);
         }
 
         env.storage().persistent().set(&key, &owner);
         Self::bump(&env, &key);
+
+        ProjectRegistered { project_id, owner }.publish(&env);
         Ok(())
     }
 
@@ -101,11 +177,13 @@ impl MilestoneProofContract {
     /// been approved is terminal and cannot be re-submitted.
     pub fn submit_milestone_proof(
         env: Env,
-        project_id: Symbol,
-        milestone_id: Symbol,
+        project_id: String,
+        milestone_id: String,
         submitter: Address,
         proof_hash: BytesN<32>,
     ) -> Result<(), Error> {
+        Self::check_id(&project_id)?;
+        Self::check_id(&milestone_id)?;
         submitter.require_auth();
 
         let project_key = DataKey::Project(project_id.clone());
@@ -114,6 +192,8 @@ impl MilestoneProofContract {
         }
 
         let milestone_key = DataKey::Milestone(project_id.clone(), milestone_id.clone());
+        // Every prior submission counts, including ones that were rejected.
+        let mut version = 1;
         if let Some(existing) = env
             .storage()
             .persistent()
@@ -122,61 +202,96 @@ impl MilestoneProofContract {
             if existing.status == MilestoneStatus::Approved {
                 return Err(Error::InvalidStatus);
             }
+            version = existing.version + 1;
         }
 
         let record = MilestoneRecord {
-            project_id,
-            milestone_id,
-            submitter,
-            proof_hash,
+            project_id: project_id.clone(),
+            milestone_id: milestone_id.clone(),
+            submitter: submitter.clone(),
+            proof_hash: proof_hash.clone(),
             status: MilestoneStatus::Submitted,
+            version,
             timestamp: env.ledger().timestamp(),
         };
 
         env.storage().persistent().set(&milestone_key, &record);
         Self::bump(&env, &milestone_key);
         Self::bump(&env, &project_key);
+
+        ProofSubmitted {
+            project_id,
+            milestone_id,
+            submitter,
+            proof_hash,
+            version,
+        }
+        .publish(&env);
         Ok(())
     }
 
     /// Approve a submitted milestone. Only the project owner may call this.
     pub fn approve_milestone(
         env: Env,
-        project_id: Symbol,
-        milestone_id: Symbol,
+        project_id: String,
+        milestone_id: String,
         approver: Address,
     ) -> Result<(), Error> {
-        Self::transition(
-            env,
+        let version = Self::transition(
+            &env,
+            &project_id,
+            &milestone_id,
+            &approver,
+            MilestoneStatus::Approved,
+        )?;
+
+        MilestoneApproved {
             project_id,
             milestone_id,
             approver,
-            MilestoneStatus::Approved,
-        )
+            version,
+        }
+        .publish(&env);
+        Ok(())
     }
 
     /// Reject a submitted milestone. Only the project owner may call this.
     pub fn reject_milestone(
         env: Env,
-        project_id: Symbol,
-        milestone_id: Symbol,
+        project_id: String,
+        milestone_id: String,
         approver: Address,
     ) -> Result<(), Error> {
-        Self::transition(
-            env,
+        let version = Self::transition(
+            &env,
+            &project_id,
+            &milestone_id,
+            &approver,
+            MilestoneStatus::Rejected,
+        )?;
+
+        MilestoneRejected {
             project_id,
             milestone_id,
             approver,
-            MilestoneStatus::Rejected,
-        )
+            version,
+        }
+        .publish(&env);
+        Ok(())
     }
 
     /// Read the current record for a milestone.
+    ///
+    /// Unauthenticated: an anchored hash is public by design, and that is what
+    /// makes it evidence a third party can check.
     pub fn get_milestone_status(
         env: Env,
-        project_id: Symbol,
-        milestone_id: Symbol,
+        project_id: String,
+        milestone_id: String,
     ) -> Result<MilestoneRecord, Error> {
+        Self::check_id(&project_id)?;
+        Self::check_id(&milestone_id)?;
+
         env.storage()
             .persistent()
             .get(&DataKey::Milestone(project_id, milestone_id))
@@ -186,26 +301,31 @@ impl MilestoneProofContract {
 
 impl MilestoneProofContract {
     /// Shared owner-authenticated `Submitted -> {Approved, Rejected}` transition.
+    ///
+    /// Returns the record's version so the caller can name it in its event.
     fn transition(
-        env: Env,
-        project_id: Symbol,
-        milestone_id: Symbol,
-        approver: Address,
+        env: &Env,
+        project_id: &String,
+        milestone_id: &String,
+        approver: &Address,
         next: MilestoneStatus,
-    ) -> Result<(), Error> {
+    ) -> Result<u32, Error> {
+        Self::check_id(project_id)?;
+        Self::check_id(milestone_id)?;
         approver.require_auth();
 
         let project_key = DataKey::Project(project_id.clone());
+        // Authorize against the owner in storage, never against an argument.
         let owner: Address = env
             .storage()
             .persistent()
             .get(&project_key)
             .ok_or(Error::ProjectNotFound)?;
-        if owner != approver {
+        if &owner != approver {
             return Err(Error::NotAuthorized);
         }
 
-        let milestone_key = DataKey::Milestone(project_id, milestone_id);
+        let milestone_key = DataKey::Milestone(project_id.clone(), milestone_id.clone());
         let mut record: MilestoneRecord = env
             .storage()
             .persistent()
@@ -217,12 +337,21 @@ impl MilestoneProofContract {
 
         record.status = next;
         env.storage().persistent().set(&milestone_key, &record);
-        Self::bump(&env, &milestone_key);
-        Self::bump(&env, &project_key);
+        Self::bump(env, &milestone_key);
+        Self::bump(env, &project_key);
+
+        Ok(record.version)
+    }
+
+    /// Reject an identifier longer than [`MAX_ID_LEN`].
+    fn check_id(id: &String) -> Result<(), Error> {
+        if id.len() > MAX_ID_LEN {
+            return Err(Error::IdTooLong);
+        }
         Ok(())
     }
 
-    /// Push a persistent entry's TTL back out to ~30 days.
+    /// Push a persistent entry's TTL back out to ~90 days.
     fn bump(env: &Env, key: &DataKey) {
         env.storage()
             .persistent()
