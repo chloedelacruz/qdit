@@ -18,6 +18,12 @@ import {
   listProjectRoles,
 } from "@/lib/queries";
 
+/**
+ * Anchoring is off unless this deployment names a contract. Absent, not broken:
+ * the menu items simply do not render.
+ */
+const ANCHORING = Boolean(process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID);
+
 export const metadata: Metadata = { title: "All milestones" };
 
 export default async function AllMilestonesPage({
@@ -94,6 +100,8 @@ export default async function AllMilestonesPage({
               <MilestoneRowActions
                 milestone={milestone}
                 canEdit={canContribute(roles.get(milestone.projectId) ?? null)}
+                anchoring={ANCHORING}
+                isOwner={owners.get(milestone.projectId) === userId}
               />
             }
           />
