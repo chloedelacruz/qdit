@@ -59,6 +59,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
           NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
           NEXT_PUBLIC_STELLAR_NETWORK: testnet
+          # Anchoring is off when this is empty, which is what CI wants: the
+          # build must not depend on a deployed contract.
+          NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID: ""
 
   contracts:
     name: contracts — fmt, clippy, test
@@ -85,3 +88,49 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
 
       - run: cargo test
+
+  wasm:
+    name: contracts — build wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+          # The `contracts` job above caches the host target. Sharing one cache
+          # between a host build and a wasm build makes them evict each other.
+          cache-targets: false
+
+      # Pinned rather than "latest": the CLI decides the wasm optimisation pass,
+      # so an unpinned upgrade would change the artifact hash without a commit
+      # to explain it — and the hash is what contracts/README.md publishes as
+      # proof the deployed bytes match this source.
+      - name: Install Stellar CLI
+        env:
+          STELLAR_CLI_VERSION: "27.0.0"
+        run: |
+          set -euo pipefail
+          asset="stellar-cli-${STELLAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          url="https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/${asset}"
+          curl -fsSL "$url" -o /tmp/stellar-cli.tar.gz
+          tar -xzf /tmp/stellar-cli.tar.gz -C /tmp
+          sudo install -m 755 /tmp/stellar /usr/local/bin/stellar
+          stellar --version
+
+      - run: stellar contract build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: milestone_proof-wasm
+          path: contracts/target/wasm32v1-none/release/milestone_proof.wasm
+          # A silently empty artifact would let a broken build look green.
+          if-no-files-found: error

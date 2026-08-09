@@ -74,6 +74,11 @@ export type Database = {
           repo_url: string | null
           demo_url: string | null
           docs_url: string | null
+          chain_contract_id: string | null
+          chain_network: Database['public']['Enums']['stellar_network'] | null
+          chain_owner_address: string | null
+          chain_registered_tx: string | null
+          chain_registered_at: string | null
           created_at: string
           updated_at: string
         }
@@ -87,6 +92,16 @@ export type Database = {
           repo_url?: string | null
           demo_url?: string | null
           docs_url?: string | null
+          /**
+           * `projects_chain_registration_complete`: the five chain_* columns
+           * are all null or all set. A contract id without the tx that proves
+           * it was written is a claim, not a record.
+           */
+          chain_contract_id?: string | null
+          chain_network?: Database['public']['Enums']['stellar_network'] | null
+          chain_owner_address?: string | null
+          chain_registered_tx?: string | null
+          chain_registered_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -100,6 +115,11 @@ export type Database = {
           repo_url?: string | null
           demo_url?: string | null
           docs_url?: string | null
+          chain_contract_id?: string | null
+          chain_network?: Database['public']['Enums']['stellar_network'] | null
+          chain_owner_address?: string | null
+          chain_registered_tx?: string | null
+          chain_registered_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -209,6 +229,12 @@ export type Database = {
           /** `date` column — serialised as `YYYY-MM-DD`, not an ISO timestamp. */
           due_date: string | null
           order_index: number
+          /**
+           * Live in the database, unused by the app — nothing reads or writes
+           * it, so every row holds the default. See
+           * `20260731000004_task_priority.sql` for what wiring it up needs.
+           */
+          priority: Database['public']['Enums']['task_priority']
           created_at: string
           updated_at: string
         }
@@ -222,6 +248,7 @@ export type Database = {
           assignee_id?: string | null
           due_date?: string | null
           order_index?: number
+          priority?: Database['public']['Enums']['task_priority']
           created_at?: string
           updated_at?: string
         }
@@ -235,6 +262,7 @@ export type Database = {
           assignee_id?: string | null
           due_date?: string | null
           order_index?: number
+          priority?: Database['public']['Enums']['task_priority']
           created_at?: string
           updated_at?: string
         }
@@ -388,6 +416,74 @@ export type Database = {
           },
         ]
       }
+
+      milestone_anchors: {
+        Row: {
+          id: string
+          milestone_id: string
+          project_id: string
+          action: Database['public']['Enums']['anchor_action']
+          proof_hash: string | null
+          version: number
+          contract_id: string
+          network: Database['public']['Enums']['stellar_network']
+          tx_hash: string
+          signer_address: string
+          ledger: number | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          milestone_id: string
+          project_id: string
+          action: Database['public']['Enums']['anchor_action']
+          /**
+           * `milestone_anchors_hash_matches_action`: required for 'submit',
+           * forbidden otherwise — approve and reject attest to a hash already
+           * on chain rather than supplying a new one. 64 lowercase hex chars.
+           */
+          proof_hash?: string | null
+          version: number
+          contract_id: string
+          network?: Database['public']['Enums']['stellar_network']
+          /** 64 lowercase hex chars, unique across the table. */
+          tx_hash: string
+          signer_address: string
+          ledger?: number | null
+          created_by?: string | null
+          created_at?: string
+        }
+        /**
+         * Append-only: there is no UPDATE or DELETE policy on this table, so
+         * nothing here is reachable through the anon or authenticated roles.
+         * Present only because the Database generic requires the key.
+         */
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'milestone_anchors_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_anchors_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_anchors_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -412,12 +508,16 @@ export type Database = {
       member_role: 'viewer' | 'member' | 'admin' | 'owner'
       milestone_status: 'proposed' | 'submitted' | 'approved' | 'rejected'
       task_status: 'todo' | 'in_progress' | 'done'
+      /** Ordered low -> urgent. Present in the schema, not yet in the UI. */
+      task_priority: 'low' | 'medium' | 'high' | 'urgent'
       stellar_network: 'testnet' | 'mainnet'
       deployment_status:
         | 'not_started'
         | 'testnet'
         | 'ready_for_mainnet'
         | 'mainnet_live'
+      /** Named for the milestone_proof function the transaction invoked. */
+      anchor_action: 'submit' | 'approve' | 'reject'
     }
 
     CompositeTypes: Record<string, never>

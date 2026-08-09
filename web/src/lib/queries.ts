@@ -13,6 +13,7 @@
 
 import { TASK_STATUS_ORDER, type MemberRole, type TaskStatus } from "@/lib/constants";
 import type { Filters } from "@/lib/filters";
+import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
@@ -299,6 +300,14 @@ export type ProjectRow = {
   milestoneCount: number;
   openMilestoneCount: number;
   progress: number;
+  /** `create_project_ref` transaction, or null if never registered. */
+  chainRegistration: {
+    contractId: string;
+    network: StellarNetwork;
+    ownerAddress: string;
+    txHash: string;
+    registeredAt: string;
+  } | null;
 };
 
 /**
@@ -308,6 +317,7 @@ export type ProjectRow = {
  */
 const PROJECT_SELECT = `
   id, owner_id, slug, name, description, status, repo_url, demo_url, docs_url, updated_at,
+  chain_contract_id, chain_network, chain_owner_address, chain_registered_tx, chain_registered_at,
   tasks(count),
   done:tasks(count),
   milestones(count),
@@ -326,6 +336,11 @@ type ProjectRecord = {
   demo_url: string | null;
   docs_url: string | null;
   updated_at: string;
+  chain_contract_id: string | null;
+  chain_network: StellarNetwork | null;
+  chain_owner_address: string | null;
+  chain_registered_tx: string | null;
+  chain_registered_at: string | null;
   tasks: EmbeddedCount;
   done: EmbeddedCount;
   milestones: EmbeddedCount;
@@ -368,6 +383,17 @@ function toProject(row: ProjectRecord): ProjectRow {
     milestoneCount: countOf(row.milestones),
     openMilestoneCount: countOf(row.open_milestones),
     progress: taskCount === 0 ? 0 : doneCount / taskCount,
+    // The schema constrains these five to be all-null or all-set, so one null
+    // check settles it.
+    chainRegistration: row.chain_contract_id
+      ? {
+          contractId: row.chain_contract_id,
+          network: row.chain_network ?? "testnet",
+          ownerAddress: row.chain_owner_address ?? "",
+          txHash: row.chain_registered_tx ?? "",
+          registeredAt: row.chain_registered_at ?? "",
+        }
+      : null,
   };
 }
 
@@ -609,14 +635,38 @@ export type MilestoneRow = {
   progress: number;
   proofCount: number;
   network: StellarNetwork;
+  /** Whether the project is registered on chain; null until it is. */
+  chainContractId: string | null;
+  /** Most recent milestone_anchors row, or null if never anchored. */
+  anchor: MilestoneAnchor | null;
+  /**
+   * The milestone changed after its hash was anchored, so the ledger entry is
+   * still valid evidence of what it *was* and no longer describes what it is.
+   * False when there is no anchor at all — nothing to be stale against.
+   */
+  anchorStale: boolean;
 };
 
+export type MilestoneAnchor = {
+  action: "submit" | "approve" | "reject";
+  proofHash: string | null;
+  version: number;
+  txHash: string;
+  network: StellarNetwork;
+  signerAddress: string;
+  createdAt: string;
+};
+
+// `stellar_proofs` is embedded as rows rather than a count because the anchor
+// digest covers them: adding a proof to a milestone changes its hash, which is
+// what makes an existing anchor stale. The count falls out of `.length`.
 const MILESTONE_SELECT = `
   id, project_id, title, description, status, due_date, order_index,
-  projects!inner(name, slug),
+  projects!inner(name, slug, chain_contract_id),
   tasks(count),
   done:tasks(count),
-  stellar_proofs(count)
+  stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
+  milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at)
 `;
 
 type MilestoneRecord = {
@@ -627,15 +677,48 @@ type MilestoneRecord = {
   status: MilestoneRow["status"];
   due_date: string | null;
   order_index: number;
-  projects: { name: string; slug: string };
+  projects: { name: string; slug: string; chain_contract_id: string | null };
   tasks: EmbeddedCount;
   done: EmbeddedCount;
-  stellar_proofs: EmbeddedCount;
+  stellar_proofs: {
+    id: string;
+    contract_id: string | null;
+    tx_hash: string | null;
+    network: StellarNetwork;
+    wallet_address: string | null;
+    proof_url: string | null;
+  }[];
+  milestone_anchors: {
+    action: MilestoneAnchor["action"];
+    proof_hash: string | null;
+    version: number;
+    tx_hash: string;
+    network: StellarNetwork;
+    signer_address: string;
+    created_at: string;
+  }[];
 };
 
 function toMilestone(row: MilestoneRecord): MilestoneRow {
   const taskCount = countOf(row.tasks);
   const doneCount = countOf(row.done);
+
+  // The embed comes back unordered; the newest row is the current anchor state.
+  // Sorted here rather than in the query because PostgREST cannot order an
+  // embedded resource and limit it to one row in the same select.
+  const latest = [...(row.milestone_anchors ?? [])].sort((a, b) =>
+    a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0,
+  )[0];
+
+  // Only a `submit` carries a hash — approve and reject attest to one already
+  // on chain — so staleness is measured against the last submission, not the
+  // last action.
+  const anchoredHash = [...(row.milestone_anchors ?? [])]
+    .filter((entry) => entry.action === "submit")
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))[0]
+    ?.proof_hash;
+
+  const proofs = row.stellar_proofs ?? [];
 
   return {
     id: row.id,
@@ -650,8 +733,41 @@ function toMilestone(row: MilestoneRecord): MilestoneRow {
     taskCount,
     doneCount,
     progress: taskCount === 0 ? 0 : doneCount / taskCount,
-    proofCount: countOf(row.stellar_proofs),
+    proofCount: proofs.length,
     network: "testnet",
+    chainContractId: row.projects.chain_contract_id,
+    anchor: latest
+      ? {
+          action: latest.action,
+          proofHash: latest.proof_hash,
+          version: latest.version,
+          txHash: latest.tx_hash,
+          network: latest.network,
+          signerAddress: latest.signer_address,
+          createdAt: latest.created_at,
+        }
+      : null,
+    anchorStale: anchoredHash
+      ? isMilestoneAnchorStale(
+          {
+            id: row.id,
+            projectId: row.project_id,
+            title: row.title,
+            description: row.description,
+            status: row.status,
+            dueDate: row.due_date,
+            proofs: proofs.map((proof) => ({
+              id: proof.id,
+              contractId: proof.contract_id,
+              txHash: proof.tx_hash,
+              network: proof.network,
+              walletAddress: proof.wallet_address,
+              proofUrl: proof.proof_url,
+            })),
+          },
+          anchoredHash,
+        )
+      : false,
   };
 }
 

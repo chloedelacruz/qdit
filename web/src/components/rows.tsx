@@ -1,5 +1,6 @@
 import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowMeta } from "@/components/data-list";
+import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -160,6 +161,15 @@ export function MilestoneListRow({
         />
 
         <ProgressPip value={milestone.progress} />
+
+        {/*
+          Sits beside the status rather than replacing it: the app's status and
+          the ledger's are separate facts, and a milestone can legitimately be
+          approved here and unanchored there.
+        */}
+        {milestone.anchor ? (
+          <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+        ) : null}
 
         <span className="flex w-24 shrink-0 justify-end">
           {statusControl ?? (
