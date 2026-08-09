@@ -19,6 +19,12 @@ import {
   listMilestones,
 } from "@/lib/queries";
 
+/**
+ * Anchoring is off unless this deployment names a contract. Absent, not broken:
+ * the menu items simply do not render.
+ */
+const ANCHORING = Boolean(process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID);
+
 export const metadata: Metadata = { title: "Milestones" };
 
 export default async function ProjectMilestonesPage({
@@ -102,7 +108,14 @@ export default async function ProjectMilestonesPage({
                 canEdit={canEdit}
               />
             }
-            actions={<MilestoneRowActions milestone={milestone} canEdit={canEdit} />}
+            actions={
+              <MilestoneRowActions
+                milestone={milestone}
+                canEdit={canEdit}
+                anchoring={ANCHORING}
+                isOwner={isOwner}
+              />
+            }
           />
         ))}
       </DataList>

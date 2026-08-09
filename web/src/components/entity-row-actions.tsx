@@ -7,6 +7,8 @@ import {
   EditProofDialog,
   EditTaskDialog,
 } from "@/components/entity-dialogs";
+import { MilestoneAnchorDialog } from "@/components/milestone-anchor";
+import type { AnchorAction } from "@/lib/chain/actions";
 import { RowActions } from "@/components/row-actions";
 import {
   deleteDeployment,
@@ -84,13 +86,38 @@ export function TaskRowActions({
   );
 }
 
+/**
+ * `anchoring` gates the on-chain items.
+ *
+ * False when this deployment has no contract configured, in which case the
+ * whole feature is absent rather than present-and-broken. Approve and reject
+ * are offered only to the project owner, matching both `MILESTONE_OWNER_ONLY`
+ * and the contract's own auth check.
+ */
 export function MilestoneRowActions({
   milestone,
   canEdit,
+  anchoring = false,
+  isOwner = false,
 }: {
   milestone: MilestoneRow;
   canEdit: boolean;
+  anchoring?: boolean;
+  isOwner?: boolean;
 }) {
+  const anchorItems: { key: AnchorAction; label: string }[] =
+    anchoring && canEdit
+      ? [
+          { key: "submit", label: "Anchor proof on chain" },
+          ...(isOwner
+            ? [
+                { key: "approve" as const, label: "Approve on chain" },
+                { key: "reject" as const, label: "Reject on chain" },
+              ]
+            : []),
+        ]
+      : [];
+
   return (
     <RowActions
       label="milestone"
@@ -99,6 +126,20 @@ export function MilestoneRowActions({
       deleteTitle="Delete this milestone?"
       deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
       onDelete={deleteMilestone.bind(null, milestone.id)}
+      extraItems={anchorItems.map((item) => ({
+        key: item.key,
+        label: item.label,
+        render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+          <MilestoneAnchorDialog
+            milestoneId={milestone.id}
+            milestoneTitle={milestone.title}
+            action={item.key}
+            network={milestone.network}
+            registered={Boolean(milestone.chainContractId)}
+            {...props}
+          />
+        ),
+      }))}
       renderEdit={(props) => (
         <EditMilestoneDialog
           milestoneId={milestone.id}

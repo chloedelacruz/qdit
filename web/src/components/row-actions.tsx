@@ -41,6 +41,7 @@ export function RowActions({
   canEdit = true,
   canDelete = true,
   renderEdit,
+  extraItems,
   deleteTitle,
   deleteDescription,
   onDelete,
@@ -60,6 +61,22 @@ export function RowActions({
     open: boolean;
     onOpenChange: (open: boolean) => void;
   }) => React.ReactNode;
+  /**
+   * Extra menu items above Edit, each with a dialog of its own.
+   *
+   * Same shape as `renderEdit`, and for the same reason: the dialog cannot live
+   * inside the `DropdownMenuItem` that opens it, so its open state is lifted
+   * here and handed back. Used for on-chain anchoring, which is a milestone
+   * action rather than an edit.
+   */
+  extraItems?: {
+    key: string;
+    label: string;
+    render: (props: {
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+    }) => React.ReactNode;
+  }[];
   deleteTitle: string;
   deleteDescription: string;
   onDelete?: () => Promise<ActionState>;
@@ -67,13 +84,15 @@ export function RowActions({
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [openExtra, setOpenExtra] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const showEdit = canEdit && Boolean(renderEdit);
   const showDelete = canDelete && Boolean(onDelete);
+  const extras = extraItems ?? [];
 
   // Nothing this person may do — render nothing rather than an empty menu.
-  if (!showEdit && !showDelete) return null;
+  if (!showEdit && !showDelete && extras.length === 0) return null;
 
   function confirmDelete() {
     if (!onDelete) return;
@@ -130,9 +149,17 @@ export function RowActions({
           // The menu restores focus to its trigger as it closes, which would
           // pull focus straight back out of the dialog that just opened.
           onCloseAutoFocus={(event) => {
-            if (editOpen || confirmOpen) event.preventDefault();
+            if (editOpen || confirmOpen || openExtra) event.preventDefault();
           }}
         >
+          {extras.map((item) => (
+            <DropdownMenuItem key={item.key} onSelect={() => setOpenExtra(item.key)}>
+              {item.label}
+            </DropdownMenuItem>
+          ))}
+
+          {extras.length > 0 && (showEdit || showDelete) ? <DropdownMenuSeparator /> : null}
+
           {showEdit ? (
             <DropdownMenuItem onSelect={() => setEditOpen(true)}>Edit</DropdownMenuItem>
           ) : null}
@@ -148,6 +175,15 @@ export function RowActions({
       </DropdownMenu>
 
       {showEdit ? renderEdit?.({ open: editOpen, onOpenChange: setEditOpen }) : null}
+
+      {extras.map((item) => (
+        <span key={item.key}>
+          {item.render({
+            open: openExtra === item.key,
+            onOpenChange: (next) => setOpenExtra(next ? item.key : null),
+          })}
+        </span>
+      ))}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
