@@ -1,8 +1,9 @@
 # What is still missing
 
-Audited 2026-08-05 against `main` at `cfd75d9`, then re-audited after the gap
-session that closed most of it. Companion to [`progress.md`](./progress.md),
-which covers where things stand; this file is only what is absent.
+Audited 2026-08-05 against `main` at `cfd75d9`, re-audited after the gap session
+that closed most of it, and again on 2026-08-09 after the contract was wired up.
+Companion to [`progress.md`](./progress.md), which covers where things stand;
+this file is only what is absent.
 
 Each item says how it was checked, so a stale entry can be re-verified rather
 than trusted.
@@ -20,203 +21,187 @@ than trusted.
 | §7 Search / filter | **Complete** — status, network, milestone, assignee, all in URL state |
 | §8 Transaction verification | **Complete** — Horizon REST, behind the auth gate |
 | §9 Contract link helper | **Complete** — `stellar.ts`, explorer URLs, `HashLink` |
-| §10 Team workspace | **Partial** — roster and role management ship; onboarding a stranger does not (see 2.1) |
+| §10 Team workspace | **Complete** — roster, role management, and onboarding is now testable (see 3.1) |
 
-Every off-chain gap from the previous audit is closed except §10's bootstrap
-problem. The blocker below was never off-chain work in the first place.
-
----
-
-## 1. The blocker
-
-### 1.1 Contract integration
-
-The product's differentiator, and still entirely unwired. `milestone_proof` is
-built and tested and has never been deployed; `@stellar/stellar-sdk` is not in
-`web/package.json`; nothing in the app talks to a chain.
-
-*Checked: `grep stellar-sdk web/package.json` → absent; no `MILESTONE_PROOF_CONTRACT_ID` in `.env.example`.*
-
-The groundwork is done and has now been locked in by tests.
-`updateMilestoneStatus` in `src/lib/actions.ts` validates every rule the
-contract enforces, in the order it enforces them, and `constants.test.ts`
-asserts those rules directly. The chain call goes inside that function, after
-the checks pass and before the row is written.
-
-**The TypeScript rules and the Rust contract were cross-checked by hand this
-session and agree.** One nuance is worth carrying forward: on-chain,
-`submit_milestone_proof` only rejects a milestone that is already `Approved`, so
-re-submitting an already-`Submitted` milestone is legal and overwrites the proof
-hash. In the app, `submitted → submitted` short-circuits to a no-op. Harmless
-today because the app attaches no hash on transition — it stops being harmless
-the moment it does.
-
-Decide custodial vs. wallet-signed first — it changes everything downstream.
-
-Steps are in [`contracts/README.md`](./contracts/README.md) under "Deploy to
-testnet".
+**The blocker that headed this file is gone.** `milestone_proof` is deployed to
+Testnet, the app signs against it with a real wallet, and anchors are recorded
+and rendered. What remains is smaller than what was closed.
 
 ---
 
-## 2. Gaps found in this audit
+## 1. On-chain: what is done and what is not
 
-### 2.1 Members can be managed, but nobody new can be onboarded
+### 1.1 Contract integration — **resolved**
 
-**Mostly resolved.** There is now a roster at
-`/projects/[slug]/members`, admin-gated add / change-role / remove actions, and
-guards the database does not encode: the owner's row cannot be demoted or
-removed, and an admin cannot change their own role (both would lock a project's
-administration out permanently, since the bootstrap trigger only fires at
-project creation).
+Deployed at
+[`CAZYR4UI…JRH6`](https://stellar.expert/explorer/testnet/contract/CAZYR4UI5EYAIUDNXYAYDVHGMUOELJHQNETOAPN3SMR5BMH6XV2FJRH6),
+WASM hash `18e77bec…2a8a`. Full deploy record in
+[`contracts/README.md`](./contracts/README.md).
 
-**What remains is a real hole.** `profiles` is readable only for yourself plus
-whoever `shares_project_with()` matches, so the picker can only offer people you
-*already* share a project with. There is no query that turns an arbitrary email
-or wallet address into a user id. Consequences:
+The contract was **revised before the first deploy**, which was the last moment
+it could be:
 
-- A brand-new user cannot be added to any project by anyone. They can only get
-  in by creating their own project, at which point the trigger makes them its
-  owner — and they still cannot be added to anyone else's.
-- Invite-by-email is not a UI change. It needs a `SECURITY DEFINER` lookup
-  function, i.e. a migration, written with the same care as the existing helpers
-  in `20260731000002_rls.sql` (derive from arguments narrowly, return the
-  minimum, revoke from `PUBLIC`).
+- `Symbol` → `String` for ids. `Symbol` caps at 32 characters and forbids `-`;
+  the app's ids are 36-character UUIDs, which only fitted by stripping hyphens
+  to land on exactly 32. No headroom, and a lossy conversion at every call.
+- A `version` counter on `MilestoneRecord`, incremented per submission. This
+  closes the nuance the previous audit flagged: a re-submission overwrites
+  `proof_hash`, so without a counter the ledger showed the latest hash with no
+  evidence an earlier one existed.
+- Events on every write, via `#[contractevent]` so they land in the contract
+  spec and the generated bindings. `IdTooLong` guard. TTL 30/90 rather than
+  29/30.
 
-*Checked: read the `profiles` policies and `shares_project_with()` in `supabase/migrations/20260731000002_rls.sql`; `listAddableMembers()` in `queries.ts` is `listMembers()` minus current members, and `listMembers()` is itself RLS-capped.*
+17 Rust tests, up from 12 — including the two that carry the most weight and
+were missing: an auth test that does **not** call `mock_all_auths` (so deleting
+`require_auth()` goes red) and an event test that pins topics, field names and
+version per write.
 
-This also means the add path **cannot be end-to-end tested** with the current
-seed: all three seeded users already belong to the one seeded project, so the
-candidate set is empty. Same class of problem as the skipped
-`stellar-proof.spec.ts`. Fixing it is seed data, not test code.
+*Checked: `cargo test` 17 passed; live `create_project_ref` → `submit` → `reject` → `submit` on Testnet returned `version: 2` and emitted the expected events.*
 
-### 2.2 `docs_url` never displayed — **resolved**
+### 1.2 Anchoring is additive, and that is a decision
 
-Docs button now renders on the project overview beside Repo and Demo. Demo was
-missing too and was added in the same pass.
+Anchoring never writes `milestones.status`. Moving a milestone through the
+approval flow and proving it on chain are separate acts, so the two **can
+legitimately disagree** — approved in the app, not yet anchored; anchored under
+a hash that no longer matches. The UI shows both, and a mismatched hash renders
+as `stale` rather than being hidden.
 
-*Checked: `src/app/(app)/projects/[slug]/page.tsx` renders all three, each conditional.*
+The alternative — making the chain write a precondition for the transition —
+was rejected: it would mean nobody without a funded wallet could move a
+milestone at all.
 
-### 2.3 No error boundaries — **resolved**
+### 1.3 What is deliberately not on chain
 
-Six files, placed by what actually catches what rather than by mirroring the
-`loading.tsx` layout:
-
-| File | Catches |
-|---|---|
-| `app/global-error.tsx` | the root layout itself; renders its own document |
-| `app/error.tsx` | landing, login, **and throws from `(app)/layout.tsx`** |
-| `app/(app)/error.tsx` | every signed-in route, shell preserved |
-| `app/(app)/projects/[slug]/error.tsx` | one project's five routes |
-| `app/not-found.tsx` | 404 outside the shell |
-| `app/(app)/not-found.tsx` | 404 inside it — the `notFound()` calls in six files |
-
-Two things worth not rediscovering. **Next 16 renamed the error boundary's
-`reset` prop to `unstable_retry`**, and the two differ in kind: `unstable_retry`
-re-fetches and re-renders, `reset` only clears the boundary — which for a failed
-read just renders the same failure again. And `error.tsx` does *not* wrap the
-layout in its own segment, which is why the root file matters: `(app)/layout.tsx`
-awaits `getUser()` and `listProjectOptions()` before the shell exists, so a
-throw there skips `(app)/error.tsx` entirely.
-
-The in-app 404 names both reasons a slug fails, because RLS makes them
-indistinguishable: a project you are not a member of returns no rows, exactly
-like one that was never created.
-
-*Checked: read `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md`; `project-routes.spec.ts` asserts the new copy.*
-
-### 2.4 Dashboard proof surface — **resolved**
-
-A "Recent proof" panel, capped at 4, linking to `/proofs`. Read-only like every
-other row on that page.
-
-### 2.5 Board columns capped with no way past — **resolved**
-
-`+N more` was a `<p>`. It is now a "Load N more" control that raises `limit` in
-the URL, matching what `data-list.tsx` already did for the lists — so a board
-opened two pages deep is shareable and the back button pages out of it. Cards
-past the cap were also undraggable, since they were never rendered.
-
-### 2.6 Drag and drop wrong on touch — **resolved**
-
-`PointerSensor` was split into `MouseSensor` (6px distance) plus `TouchSensor`
-(250ms delay, 8px tolerance). A distance threshold cannot work for touch:
-"moved six pixels" is also how a scroll starts, so the drag and the scroll
-fought over every swipe. Hold-to-drag, swipe-to-scroll now.
-
-The guard that stops a press on a card's menu starting a drag had to grow to
-cover `mousedown` and `touchstart`, because dnd-kit binds those directly rather
-than `pointerdown`.
-
-**Still untested.** The `mobile` Playwright project covers only
-`mobile-nav.spec.ts`, and touch drag is awkward to assert. This is better by
-construction, not by verification.
-
-### 2.7 `avatar_url` captured and never used — **resolved**
-
-Selected in `listMembers()`, carried on `Member` and `TaskRow`, rendered by a
-new `MemberAvatar` that degrades to the existing initials chip. Radix only swaps
-the image in once it loads, so a broken URL shows initials rather than a torn
-image.
-
-### 2.8 `createProof` skipped wallet-address validation — **resolved**
-
-Found in this audit, and the only one of these that was writing bad data rather
-than omitting a feature. `createProof` parsed with `proofSchema` but left
-`walletAddress` out of the object it validated, then inserted it anyway;
-`updateProof` validated it correctly. `stellar_proofs.wallet_address` is plain
-`text` with no CHECK, so nothing downstream caught it either.
-
-The structural cause is still present and worth knowing: **every action
-validates `parsed.data` but writes `orNull(formData.get(...))`**. The two are
-decoupled by convention, so a field can pass validation and be written
-unvalidated with nothing failing. All ten actions were checked; this was the
-only mismatch. A wholesale move to `parsed.data` would remove the class of bug
-and was judged out of scope for a fix this size.
+No mainnet. No escrow, no multi-party approval. **No upgrade path**: there is no
+admin address and no `upgrade` entry point, so a contract bug means a new
+contract id and migrating `projects.chain_contract_id`. Decide that before
+mainnet, not after.
 
 ---
 
-## 3. Known and deferred
+## 2. Risks introduced by the on-chain work
+
+- **`submitMilestoneAnchor` takes a signed transaction from the browser.** It is
+  the one genuinely new attack surface, and it is defended: `assertInvocation`
+  in `web/src/lib/chain/client.ts` parses the envelope and refuses anything that
+  is not exactly one `invokeHostFunction` against the expected contract and
+  function. `signer_address` is read from the verified transaction, never from
+  `profiles.wallet_address`. Without both, a user could sign an arbitrary
+  transaction and have the server write an authentic-looking anchor row.
+- **`milestone_anchors` insert is member-level, not owner-level.** The chain
+  enforces the rule that matters (approve/reject need the registering address's
+  signature), so the policy does not restate it. A forged row would point at a
+  transaction that does not exist, and the hash is checkable — but nothing in
+  the app currently re-checks it.
+- **The proof digest is a cross-system contract.** Changing
+  `canonicalMilestone` invalidates every anchor already on the ledger, silently:
+  no build breaks, every anchor just starts reading `stale`.
+  `milestone-hash.test.ts` pins the encoding itself for that reason.
+- **`chain_owner_address` is set once and cannot be changed.** Registering a
+  project with the wrong wallet is not recoverable through the app — the
+  contract will only ever accept approvals from that address.
+
+---
+
+## 3. Remaining gaps
+
+### 3.1 Invite-by-email — still absent, but now testable
+
+`profiles` is readable only for yourself plus whoever `shares_project_with()`
+matches, so the member picker can only offer people you *already* share a
+project with. There is still no query turning an arbitrary email or wallet
+address into a user id; that needs a `SECURITY DEFINER` lookup function, i.e. a
+migration written with the same care as the helpers in
+`20260731000002_rls.sql`.
+
+**What changed:** the previous audit noted the add path could not be end-to-end
+tested because all three seeded users already belonged to the one seeded
+project. After the 2026-08-09 owner handover (§4), `ada@qdit.test` exists and is
+*not* on the project — so `listAddableMembers()` finally returns someone, and
+the add path is coverable.
+
+*Checked: `profiles` policies and `shares_project_with()` in the RLS migration; `listAddableMembers()` is `listMembers()` minus current members, and `listMembers()` is RLS-capped.*
+
+### 3.2 `tasks.priority` exists and the app ignores it
+
+**Corrected from the previous audit, which was wrong.** That audit said the
+priority field was "the only planned item that needs a migration". It had
+already been applied to the hosted database on 2026-07-31 and never committed —
+see §4. The column is live, `not null default 'medium'`, and nothing in `web/`
+reads or writes it, so every row carries the default.
+
+This is deferred **UI** work, not deferred schema work: add it to
+`constants.ts` beside `TASK_STATUS`, to the shared field set in
+`entity-dialogs.tsx`, to a chip in `rows.tsx`, and to the board/task facets.
+`database.ts` already describes it.
+
+### 3.3 Untested by construction
+
+- **Touch drag.** The `mobile` Playwright project covers only `mobile-nav`, and
+  touch drag is awkward to assert. Better by construction, not by verification.
+- **The anchoring flow end to end.** It needs a funded Testnet wallet and a
+  browser extension, neither of which Playwright can drive here. The contract
+  side is covered by 17 Rust tests and a live CLI walkthrough; the hash is
+  covered by Vitest; the middle — wallet signature to ledger — is manual.
+- **The server actions themselves.** Vitest covers the pure logic they depend
+  on (milestone state machine, filter round trip, strkey validators, proof
+  digest) but the actions need a mocked Supabase client.
+
+---
+
+## 4. Repository / hosted-database drift
+
+Found on 2026-08-09 while adding the anchor migration, and worth its own
+section because two entries in this file were wrong because of it.
+
+**Two migrations existed on the hosted project and not in the repo.** Recovered
+from `supabase_migrations.schema_migrations` and backfilled verbatim as
+`20260731000003_function_grants.sql` and `20260731000004_task_priority.sql`.
+Their headers say so; do not re-run them against that project.
+
+**The version numbers do not match.** The repo names `20260731000001_init.sql`;
+the hosted ledger records init as `20260731133219`. So `supabase db push` from a
+clean checkout will not line up with what is deployed. It would fail loudly
+("type already exists") rather than corrupt anything, but it is not a usable
+path today.
+
+**PostgREST caches its schema.** After applying a migration, `notify pgrst,
+'reload schema'` is needed or every query naming a new column returns nothing —
+which surfaces as an empty dashboard and 404s on project routes, not as an
+error. This cost a full suite run.
+
+**The e2e account owned nothing.** `E2E_EMAIL` pointed at an account with no
+project membership, so RLS returned nothing and 64 specs failed. Resolved by
+handing the seeded owner persona to the real account (§ `e2e/seed.ts`, which
+explains why the two specs involved force this). `supabase/seed.sql` still
+creates Ada, because it seeds a local stack where there is no real account.
+
+---
+
+## 5. Known and deferred
 
 Decided, not overlooked.
 
 - **Scale UX** — bulk actions, inline create, command palette, keyboard
   navigation. Deferred by decision.
-- **Priority field** — still the only planned item that needs a migration.
-  Invite-by-email (2.1) would be a second if it is wanted.
 - **Playwright in CI** — still deliberately excluded; it needs secrets and a
-  database two concurrent runs would fight over. Vitest *is* now in CI, because
-  it is pure logic with neither constraint.
+  database two concurrent runs would fight over. Vitest and the WASM build *are*
+  in CI.
+- **`SUPABASE_SECRET_KEY` is not set locally**, so `cleanup.teardown.ts` no-ops
+  and each write-spec run leaves `e2e ` rows behind. `reseed.setup.ts` sweeps
+  tasks, so the board stays correct, but milestones and deployments accumulate
+  until someone deletes them by hand.
 - **Dashboard rows are read-only** — a capped rollup; every entity is editable
   from its own list.
 - **Deployment rows cannot be edited** — the log is append-only by design.
-- **Two skipped/uncoverable specs** — `stellar-proof.spec.ts` needs a seeded
-  project with no contract; the member *add* path needs a seeded user who is not
-  already in the project.
+- **One skipped spec** — `stellar-proof.spec.ts` needs a seeded project with no
+  contract.
 
 ---
 
-## 4. Risks rather than gaps
+## 6. Older risks, still true
 
-- **The e2e seed drift — resolved, and it was not what this file said it was.**
-  Both previous entries described a seeded task in the wrong column. It was
-  never a moved row: the hosted project had a **sixth task titled `123`**,
-  created 2026-08-05 by someone typing into the New task dialog by hand. That
-  is one extra card in Todo (2 board specs) and one extra task in the
-  denominator, 2/6 rather than 2/5 (2 dashboard specs). Counting columns and
-  then reasoning about which one moved is what produced two wrong diagnoses in
-  a row; listing the rows found it immediately.
-
-  Fixed at the cause rather than by deleting the row. `cleanup.teardown.ts`
-  only removes rows matching the `e2e ` prefix every write spec uses, which is
-  right for what the suite creates and no help for what a human creates — and
-  nothing restored a seeded row either. `reseed.setup.ts` is the other half: it
-  sweeps tasks the seed does not define and puts the rest back in their
-  columns, running before `chromium` so every count assertion starts from a
-  known board. `BOARD_COUNTS` is now derived by counting `SEEDED_TASKS` rather
-  than typed as a literal beside a prose comment, so the mirror can no longer
-  disagree with itself.
-
-  *Checked: full suite now 115 passed, 1 skipped — the first green run, and the 13 write specs behind `mutations` → `edits` ran at last.*
 - **`/api/verify-tx` has no rate limit.** Auth-gated, so not an open Horizon
   proxy, but any signed-in user can drive unlimited upstream requests.
 - **`moveTask` writes the destination column one row at a time.** N round trips,
@@ -225,20 +210,15 @@ Decided, not overlooked.
 - **`password123` in git history**, in `fe93996`. Rotated, repo is private, so
   low priority. The standing rule is never to apply `seed.sql` to a hosted
   project.
-- **No unit tests for the server actions themselves.** Vitest now covers the
-  pure logic they depend on — the milestone state machine, the filter round
-  trip, the strkey validators — but the actions need a mocked Supabase client
-  and remain uncovered except through Playwright.
 
 ---
 
 ## Suggested order
 
-1. **§1.1 contract integration** — now the top item, and the largest piece: the
-   one that makes the product what it claims to be. Decide custodial vs.
-   wallet-signed first.
-2. **§2.1 invite-by-email**, if onboarding anyone outside the existing circle
-   matters before launch. It needs a migration; treat it as such.
-3. Scale UX, when it is wanted.
-
-The seed drift that used to head this list is fixed (§4).
+1. **§3.1 invite-by-email**, if onboarding anyone outside the existing circle
+   matters before launch. It needs a migration; treat it as such. The seed data
+   it needed for testing now exists.
+2. **§4 migration alignment** — decide whether the repo should be able to
+   rebuild the hosted schema, and if so reconcile the version numbers.
+3. **§3.2 priority UI**, which is now pure front-end work.
+4. Scale UX, when it is wanted.
