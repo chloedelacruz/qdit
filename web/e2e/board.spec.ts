@@ -46,7 +46,7 @@ test.describe("project board", () => {
 
     await expect(card).toContainText("Testnet deployment");
     await expect(card).toContainText("2026-08-03");
-    await expect(card.getByLabel(MEMBERS.ada.name)).toBeVisible();
+    await expect(card.getByLabel(MEMBERS.owner.name)).toBeVisible();
   });
 
   test("unassigned tasks are marked rather than left blank", async ({ page }) => {
