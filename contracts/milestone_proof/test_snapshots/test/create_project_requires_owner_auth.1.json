@@ -16,7 +16,7 @@
               "function_name": "create_project_ref",
               "args": [
                 {
-                  "symbol": "proj_1"
+                  "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -52,7 +52,7 @@
                     "symbol": "Project"
                   },
                   {
-                    "symbol": "proj_1"
+                    "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                   }
                 ]
               },
@@ -64,7 +64,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 1555200
       },
       {
         "entry": {
@@ -125,5 +125,41 @@
       }
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "qdit"
+              },
+              {
+                "symbol": "register"
+              },
+              {
+                "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "owner"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

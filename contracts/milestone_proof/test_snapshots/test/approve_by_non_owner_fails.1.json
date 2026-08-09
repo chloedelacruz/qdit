@@ -16,7 +16,7 @@
               "function_name": "create_project_ref",
               "args": [
                 {
-                  "symbol": "proj_1"
+                  "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -38,10 +38,10 @@
               "function_name": "submit_milestone_proof",
               "args": [
                 {
-                  "symbol": "proj_1"
+                  "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                 },
                 {
-                  "symbol": "ms_1"
+                  "string": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -83,10 +83,10 @@
                     "symbol": "Milestone"
                   },
                   {
-                    "symbol": "proj_1"
+                    "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                   },
                   {
-                    "symbol": "ms_1"
+                    "string": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7"
                   }
                 ]
               },
@@ -98,7 +98,7 @@
                       "symbol": "milestone_id"
                     },
                     "val": {
-                      "symbol": "ms_1"
+                      "string": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7"
                     }
                   },
                   {
@@ -106,7 +106,7 @@
                       "symbol": "project_id"
                     },
                     "val": {
-                      "symbol": "proj_1"
+                      "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                     }
                   },
                   {
@@ -144,6 +144,14 @@
                     "val": {
                       "u64": "1700000000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "version"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
                   }
                 ]
               }
@@ -151,7 +159,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 1555200
       },
       {
         "entry": {
@@ -166,7 +174,7 @@
                     "symbol": "Project"
                   },
                   {
-                    "symbol": "proj_1"
+                    "string": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2"
                   }
                 ]
               },
@@ -178,7 +186,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 1555200
       },
       {
         "entry": {
