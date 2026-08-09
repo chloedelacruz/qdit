@@ -15,8 +15,28 @@ export const PROJECT = {
   status: "Active",
 } as const;
 
+/**
+ * The roster, as the hosted e2e database actually has it.
+ *
+ * `owner` is **the signed-in account** — `E2E_EMAIL` — and that is forced, not
+ * a preference. `board.spec.ts` asserts the owner's name on the card for
+ * `TASKS.inProgress`, and `dashboard.spec.ts` asserts that same task appears
+ * under "My open tasks", which only holds for tasks assigned to whoever is
+ * signed in. The two can only both pass if the signed-in user *is* the owner
+ * persona, so the real account took over the seeded "Ada Builder" role in the
+ * hosted database on 2026-08-09: her memberships, task assignments, proofs and
+ * deployments all moved across, and she is no longer on the project.
+ *
+ * `supabase/seed.sql` still creates Ada, because it seeds a local stack where
+ * there is no real account to hand anything to. That divergence is deliberate;
+ * see the e2e section of README.md.
+ *
+ * One useful side effect: `ada@qdit.test` now exists without belonging to the
+ * seeded project, which is exactly the seed data the member-*add* path needed
+ * and never had (gaps.md §2.1).
+ */
 export const MEMBERS = {
-  ada: { name: "Ada Builder", initials: "AB" },
+  owner: { name: "chloedelacruz", initials: "CH" },
   ben: { name: "Ben Reviewer", initials: "BR" },
   cleo: { name: "Cleo Observer", initials: "CO" },
 } as const;
