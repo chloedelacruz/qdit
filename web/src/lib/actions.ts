@@ -747,3 +747,38 @@ export async function updateProfile(
   revalidateAll();
   return { ok: true };
 }
+
+/**
+ * Records the address a connected wallet reported.
+ *
+ * Separate from `updateProfile` because the wallet flow has no form: the user
+ * clicks Connect, picks a wallet, and the address arrives from the kit. Making
+ * them retype it into the profile dialog would be the only way it could be
+ * wrong.
+ *
+ * This does **not** prove control of the key, and does not need to. The address
+ * is a convenience — it prefills the signer and lets the UI say which account
+ * will be asked to sign. What proves control is the signature on the anchoring
+ * transaction, and `submitMilestoneAnchor` reads the signer back out of the
+ * verified transaction rather than from here.
+ */
+export async function saveWalletAddress(address: string): Promise<ActionState> {
+  const parsed = profileSchema.shape.walletAddress.safeParse(address);
+  if (!parsed.success) {
+    return { error: "That is not a Stellar account address." };
+  }
+
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ wallet_address: address })
+    .eq("id", user.id);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
