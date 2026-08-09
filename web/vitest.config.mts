@@ -22,6 +22,11 @@ export default defineConfig({
     // vite-tsconfig-paths so the test setup adds exactly one devDependency.
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // See src/test/server-only.stub.ts — the real package throws unless the
+      // bundler sets the `react-server` export condition, which Vitest does not.
+      "server-only": fileURLToPath(
+        new URL("./src/test/server-only.stub.ts", import.meta.url),
+      ),
     },
   },
 });
