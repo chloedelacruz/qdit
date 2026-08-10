@@ -1,15 +1,14 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260731000003_function_grants.sql
+-- 20260731133429_function_grants.sql
 --
--- Execute privileges on the functions created in 20260731000001_init.sql and
--- 20260731000002_rls.sql.
+-- Execute privileges on the functions created in 20260731133219_init.sql and
+-- 20260731133313_rls.sql.
 --
--- BACKFILLED. This ran against the hosted project on 2026-07-31 as migration
--- `20260731133429_function_grants` and was never committed. Recovered from
--- supabase_migrations.schema_migrations on 2026-08-09 and written here verbatim
--- so the repository can describe the deployed schema. Do not re-run it against
--- that project; it is already applied.
+-- BACKFILLED. This was applied to the hosted project directly and never
+-- committed; it is transcribed here verbatim from
+-- supabase_migrations.schema_migrations so the repository describes the
+-- deployed schema. Already applied — do not re-run it against that project.
 --
 -- ---------------------------------------------------------------------------
 -- WHY
