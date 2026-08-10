@@ -121,6 +121,23 @@
 }
 
 :root {
+  /**
+   * Tells the browser which palette to paint the parts of the UI that CSS
+   * cannot reach: the popup a native <select> opens, the calendar an
+   * <input type="date"> opens, scrollbars, autofill, the search field's clear
+   * button, and the focus rings the platform draws on all of them.
+   *
+   * Without this the browser assumes light and paints a white select popup,
+   * while `color` on the control is inherited from our dark theme — light grey
+   * text on white, effectively invisible, and unreachable from a stylesheet
+   * because the popup is not in the DOM. Every native control in the app was
+   * affected: 20+ selects across the dialogs, both date fields, and the filter
+   * bar's search input.
+   *
+   * This pairs with `.dark` below and must stay in step with it.
+   */
+  color-scheme: light;
+
   --radius: 0.75rem;
 
   /* --- Brand ramp (spec §Color System) ------------------------------------ */
@@ -231,6 +248,9 @@
 }
 
 .dark {
+  /* The other half of the pair in `:root` — see the note there. */
+  color-scheme: dark;
+
   /* Brand lightens on dark surfaces to hold contrast against #0F172A. */
   --brand: oklch(0.6626 0.1876 285.27);
   --brand-hover: oklch(0.7788 0.1231 292.27);
