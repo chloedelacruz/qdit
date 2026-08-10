@@ -7,6 +7,7 @@ import {
   deploymentSchema,
   milestoneSchema,
   profileSchema,
+  projectMemberEmailSchema,
   projectMemberSchema,
   projectSchema,
   projectUpdateSchema,
@@ -610,13 +611,14 @@ async function ownerBlock(
 }
 
 /**
- * Adds someone who is already visible to the caller.
+ * Adds someone the caller can already see — a teammate from another project.
  *
- * There is no invite-by-email here, and that is an RLS consequence rather than
- * a shortcut: `profiles: read own or teammate` restricts `profiles` to the
- * caller plus whoever `shares_project_with()` matches, so a stranger's email or
- * wallet address cannot be resolved to a user id by any query this client can
- * make. `listAddableMembers()` offers exactly the set that can be.
+ * Kept alongside `addProjectMemberByEmail` because picking a known name beats
+ * typing an address, and `profiles` carries no email column, so the picker
+ * cannot offer one. In a single-project workspace this path finds nobody by
+ * construction (`listAddableMembers()` is the visible set minus the current
+ * roster, and the visible set *is* the roster), which is exactly the hole the
+ * email path fills.
  */
 export async function addProjectMember(
   _prev: ActionState,
@@ -643,6 +645,65 @@ export async function addProjectMember(
     return { error: "They are already a member of this project." };
   }
   if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * Adds someone by email address, including someone the caller has never shared
+ * a project with.
+ *
+ * The resolution happens inside `add_project_member_by_email`, a SECURITY
+ * DEFINER function, because RLS makes a stranger's `profiles` row invisible to
+ * every query this client is allowed to make — there is no id to insert. That
+ * function authorizes the caller as an admin of the target project *before* it
+ * looks the address up, and performs the insert itself rather than handing back
+ * a user id, so it cannot be turned into an address-book lookup. Its header
+ * carries the full argument.
+ *
+ * The three failures below are the ones a user can act on, so each gets its own
+ * sentence rather than a generic "could not add member". They are distinguished
+ * by SQLSTATE rather than by message text, which is free to be reworded.
+ */
+export async function addProjectMemberByEmail(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = projectMemberEmailSchema.safeParse({
+    projectId: String(formData.get("projectId") ?? ""),
+    email: String(formData.get("email") ?? "").trim(),
+    role: String(formData.get("role") || "member"),
+  });
+
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("add_project_member_by_email", {
+    p_project_id: parsed.data.projectId,
+    p_email: parsed.data.email,
+    p_role: parsed.data.role,
+  });
+
+  if (error) {
+    // 42501 insufficient_privilege — not an admin of this project.
+    if (error.code === "42501") {
+      return { error: "You need admin rights on this project to add members." };
+    }
+    // P0002 no_data_found — the address resolved to nobody.
+    if (error.code === "P0002") {
+      return {
+        fieldErrors: {
+          email: "No qdit account uses that email. They need to sign up first.",
+        },
+      };
+    }
+    // 23505 unique_violation — (project_id, user_id) is the primary key.
+    if (error.code === "23505") {
+      return { error: "They are already a member of this project." };
+    }
+    return { error: friendly(error.message, error.code) };
+  }
 
   revalidateAll();
   return { ok: true };

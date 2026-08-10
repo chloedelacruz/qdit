@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { PROJECT } from "./seed";
+import { MEMBERS, OUTSIDER, PROJECT } from "./seed";
 
 /**
  * The edit and delete path, plus the two writes that had no coverage at all:
@@ -223,5 +223,92 @@ test.describe("profile", () => {
     await expect(
       dialog.getByText("Wallet addresses start with G and are 56 characters."),
     ).toBeVisible();
+  });
+});
+
+/**
+ * Invite-by-email — the only path that can reach someone outside the caller's
+ * existing circle.
+ *
+ * Runs against a project this spec creates rather than the seeded one, for two
+ * reasons. Adding a member to the seeded project would move the roster
+ * `members.spec.ts` asserts, and nothing in `cleanup.teardown.ts` removes a
+ * membership row on its own. Deleting a project cascades to its members, and
+ * `e2e project …` is already one of that teardown's targets, so the whole thing
+ * cleans itself up.
+ */
+test.describe("adding a member by email", () => {
+  /** `unique()` yields only lowercase and digits, so the dialog's slug is this. */
+  const slugFor = (name: string) => name.replace(/[^a-z0-9]+/g, "-");
+
+  async function createProject(page: Page, name: string) {
+    await page.goto("/projects");
+    await page.getByRole("button", { name: "New project" }).click();
+    await page.getByLabel("Name").fill(name);
+    await page.getByRole("button", { name: "Create project" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
+  }
+
+  test("adds someone RLS hides from the picker entirely", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    // The creator is the only member, and the owner row is the trigger's own.
+    await expect(page.getByText(MEMBERS.owner.name)).toBeVisible();
+    await expect(page.getByText(OUTSIDER.name)).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Add member" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Email address").fill(OUTSIDER.email);
+    await page.selectOption("#m-role", "member");
+    await dialog.getByRole("button", { name: "Add member" }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    // Resolved server-side: nothing the browser could query knew her user id.
+    await expect(page.getByText(OUTSIDER.name)).toBeVisible();
+
+    // And it stuck, rather than only appearing in an optimistic render.
+    await page.reload();
+    await expect(page.getByText(OUTSIDER.name)).toBeVisible();
+  });
+
+  test("an address matching no account is reported on the field", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    await page.getByRole("button", { name: "Add member" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Email address").fill(`nobody-${Date.now()}@qdit.test`);
+    await dialog.getByRole("button", { name: "Add member" }).click();
+
+    // Inline on the field, not a toast: the email is the thing to correct, and
+    // the dialog stays open holding everything else the user typed.
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/No qdit account uses that email/)).toBeVisible();
+  });
+
+  test("adding the same person twice says so", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+    await page.goto(`/projects/${slugFor(name)}/members`);
+
+    for (const attempt of [1, 2]) {
+      await page.getByRole("button", { name: "Add member" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Email address").fill(OUTSIDER.email);
+      await dialog.getByRole("button", { name: "Add member" }).click();
+
+      if (attempt === 1) {
+        await expect(dialog).toBeHidden({ timeout: 20_000 });
+      } else {
+        // The composite primary key rejects it; the message has to say which of
+        // the several ways this can fail actually happened.
+        await expect(dialog.getByText(/already a member/)).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
+    }
   });
 });
