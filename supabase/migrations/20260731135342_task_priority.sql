@@ -4,26 +4,21 @@
 --
 -- Task priority.
 --
--- BACKFILLED. This ran against the hosted project on 2026-07-31 as migration
--- `20260731135342_task_priority` and was never committed. Recovered from
--- supabase_migrations.schema_migrations on 2026-08-09 and written here verbatim
--- so the repository can describe the deployed schema. Do not re-run it against
--- that project; it is already applied.
+-- BACKFILLED. This was applied to the hosted project directly and never
+-- committed; it is transcribed here verbatim from
+-- supabase_migrations.schema_migrations so the repository describes the
+-- deployed schema. Already applied — do not re-run it against that project.
 --
--- ---------------------------------------------------------------------------
--- THE COLUMN IS LIVE AND THE APP DOES NOT USE IT
--- ---------------------------------------------------------------------------
--- Nothing in web/ reads or writes public.tasks.priority: it is absent from
--- src/lib/types/database.ts, from the task dialogs, from the board rows and
--- from the filter bar. Every task in the database therefore carries the
--- default, 'medium'.
+-- The app reads and writes this column: TASK_PRIORITY in
+-- web/src/lib/constants.ts holds the labels and the P3..P0 notation, the task
+-- form writes it, list rows and board cards render it, and it is a filter facet
+-- plus a sort key on the task surfaces.
 --
--- This is deferred UI work, not deferred schema work. gaps.md described the
--- priority field as the last item still needing a migration; that was wrong
--- from the day this ran. The remaining work is: add it to database.ts, give it
--- a StateMeta table in constants.ts alongside TASK_STATUS, put it in the shared
--- field set in entity-dialogs.tsx, render a chip in rows.tsx, and add it to the
--- facets in the board and task filter bars.
+-- Note for anyone writing a test against it: the column arrived before the UI
+-- did, so every task in the hosted project predating that carries 'medium' and
+-- there are no non-default priorities to filter for. A spec that needs one has
+-- to create it. `supabase/seed.sql` spreads priorities across its five tasks,
+-- but that seeds a local stack only.
 -- ============================================================================
 
 create type public.task_priority as enum ('low', 'medium', 'high', 'urgent');

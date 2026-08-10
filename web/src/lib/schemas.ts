@@ -63,6 +63,10 @@ export const taskSchema = z.object({
   title: z.string().trim().min(1, "Required.").max(300, "Keep it under 300 characters."),
   description: z.string().trim().max(4000).optional().or(z.literal("")),
   status: z.enum(["todo", "in_progress", "done"]).default("todo"),
+  // `not null default 'medium'` in Postgres, so the default is stated here too
+  // rather than left to the column — a form that omits the field must still
+  // produce a legal value for the update path, which sends every column.
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   milestoneId: z.guid().optional().or(z.literal("")),
   assigneeId: z.guid().optional().or(z.literal("")),
   dueDate: z.iso.date("Use YYYY-MM-DD.").optional().or(z.literal("")),

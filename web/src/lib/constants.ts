@@ -7,6 +7,7 @@
  */
 
 export type TaskStatus = "todo" | "in_progress" | "done";
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type MilestoneStatus = "proposed" | "submitted" | "approved" | "rejected";
 export type ProjectStatus = "active" | "paused" | "completed" | "archived";
 export type DeploymentStatus =
@@ -33,6 +34,42 @@ export const TASK_STATUS: StateMeta<TaskStatus> = {
 
 /** Board column order — Todo → In Progress → Done. */
 export const TASK_STATUS_ORDER: TaskStatus[] = ["todo", "in_progress", "done"];
+
+/**
+ * Task priority, carrying two labels rather than one.
+ *
+ * `label` is the word — what the form, the facet and the detail panel say,
+ * where there is room and the field is named beside it. `short` is the P0–P3
+ * form the `task_priority` comment in `20260731135342_task_priority.sql`
+ * specifies for the board, where a card is two lines and a chip has to survive
+ * beside a status badge, a milestone, a date and an avatar.
+ *
+ * The numbering inverts the enum: `urgent` is P0 because P0 is the convention
+ * everywhere this notation is used, and 'P0' reading as 'the top one' is the
+ * whole reason to use it. Postgres orders the enum the other way, low → urgent,
+ * which is what makes `order("priority", { ascending: false })` sort P0 first.
+ *
+ * Only `urgent` and `high` take a signal colour. A scale where every step is
+ * coloured has no scale left — and `medium` is the column default, so tinting
+ * it would tint essentially every task in the database.
+ */
+export const TASK_PRIORITY: Record<
+  TaskPriority,
+  { label: string; short: string; tone: Tone }
+> = {
+  urgent: { label: "Urgent", short: "P0", tone: "destructive" },
+  high: { label: "High", short: "P1", tone: "warning" },
+  medium: { label: "Medium", short: "P2", tone: "neutral" },
+  low: { label: "Low", short: "P3", tone: "neutral" },
+};
+
+/**
+ * Most important first, which is the order a menu of priorities is read in.
+ * Deliberately not the enum's own order — that one exists to make Postgres sort
+ * correctly, and reading a picker top-down as "least important first" inverts
+ * what the list is for.
+ */
+export const TASK_PRIORITY_ORDER: TaskPriority[] = ["urgent", "high", "medium", "low"];
 
 export const MILESTONE_STATUS: StateMeta<MilestoneStatus> = {
   proposed: { label: "Proposed", tone: "neutral" },

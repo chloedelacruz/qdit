@@ -12,6 +12,8 @@ import {
   DEPLOYMENT_STATUS_ORDER,
   MEMBER_ROLE,
   PROJECT_STATUS,
+  TASK_PRIORITY,
+  TASK_PRIORITY_ORDER,
   TASK_STATUS,
   TASK_STATUS_ORDER,
 } from "@/lib/constants";
@@ -77,6 +79,7 @@ export type TaskDefaults = {
   title: string;
   description: string | null;
   status: string;
+  priority: string;
   milestoneId: string | null;
   assigneeId: string | null;
   dueDate: string | null;
@@ -116,6 +119,9 @@ function TaskFields({
         />
       </Field>
 
+      {/* Status and priority pair because they are the two questions that
+          classify a task rather than place it: where it is, and how much it
+          matters. */}
       <FieldRow>
         <Field id="status" label="Status">
           <NativeSelect id="status" name="status" defaultValue={defaults?.status ?? "todo"}>
@@ -127,6 +133,25 @@ function TaskFields({
           </NativeSelect>
         </Field>
 
+        {/* Not marked optional: the column is `not null default 'medium'`, so
+            there is no such thing as a task without one — leaving it alone
+            picks Medium rather than picking nothing. */}
+        <Field id="priority" label="Priority">
+          <NativeSelect
+            id="priority"
+            name="priority"
+            defaultValue={defaults?.priority ?? "medium"}
+          >
+            {TASK_PRIORITY_ORDER.map((priority) => (
+              <option key={priority} value={priority}>
+                {TASK_PRIORITY[priority].label}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+      </FieldRow>
+
+      <FieldRow>
         <Field id="dueDate" label="Due date" optional error={state.fieldErrors?.dueDate}>
           <Input
             id="dueDate"
@@ -135,9 +160,7 @@ function TaskFields({
             defaultValue={defaults?.dueDate ?? ""}
           />
         </Field>
-      </FieldRow>
 
-      <FieldRow>
         <Field id="milestoneId" label="Milestone" optional>
           <NativeSelect
             id="milestoneId"
@@ -152,22 +175,24 @@ function TaskFields({
             ))}
           </NativeSelect>
         </Field>
-
-        <Field id="assigneeId" label="Assignee" optional>
-          <NativeSelect
-            id="assigneeId"
-            name="assigneeId"
-            defaultValue={defaults?.assigneeId ?? ""}
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
       </FieldRow>
+
+      {/* Full width, as the odd one out of five — and the field that most wants
+          it, since its options are people's names. */}
+      <Field id="assigneeId" label="Assignee" optional>
+        <NativeSelect
+          id="assigneeId"
+          name="assigneeId"
+          defaultValue={defaults?.assigneeId ?? ""}
+        >
+          <option value="">Unassigned</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </Field>
     </>
   );
 }
@@ -954,7 +979,7 @@ export function AddMemberDialog({
           >
             <NativeSelect id="m-userId" name="userId" required defaultValue="">
               <option value="" disabled>
-                Choose someone…
+                Choose someoneâ€¦
               </option>
               {candidates.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
