@@ -72,6 +72,57 @@ test.describe("creating a task", () => {
     await expect(page.getByText(title)).toBeVisible();
   });
 
+  /**
+   * Priority, on a task this test sets itself.
+   *
+   * Every task in the hosted project carries the default, so there is nothing
+   * seeded to filter for — and `supabase/seed.sql`'s spread of priorities
+   * reaches a local stack only. A spec that assumed a seeded urgent would pass
+   * locally and fail in the one place it actually runs.
+   */
+  test("a priority set on the form reaches the board as a chip", async ({ page }) => {
+    const title = unique();
+    await page.goto(`/projects/${PROJECT.slug}/board`);
+
+    await page.getByRole("button", { name: "New task" }).click();
+    await page.getByLabel("Title").fill(title);
+    await page.selectOption("#priority", "urgent");
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
+
+    // "P0" is what the card shows; "Priority: Urgent" is what it says out loud.
+    const card = page.getByRole("article").filter({ hasText: title });
+    await expect(card).toContainText("P0");
+    await expect(card.getByText("Priority: Urgent")).toBeAttached();
+
+    // And it filters — the chip is not just decoration on the card.
+    await page.goto(`/projects/${PROJECT.slug}/board?priority=urgent`);
+    await expect(page.getByRole("article").filter({ hasText: title })).toHaveCount(1);
+
+    await page.goto(`/projects/${PROJECT.slug}/board?priority=low`);
+    await expect(page.getByRole("article").filter({ hasText: title })).toHaveCount(0);
+  });
+
+  test("the form reopens on the priority it was saved with", async ({ page }) => {
+    const title = unique();
+    await page.goto(`/projects/${PROJECT.slug}/board`);
+
+    await page.getByRole("button", { name: "New task" }).click();
+    await page.getByLabel("Title").fill(title);
+    await page.selectOption("#priority", "high");
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
+
+    // An edit dialog that reopened on the default would silently demote every
+    // task whose owner only came to change its title.
+    const card = page.getByRole("article").filter({ hasText: title });
+    await card.hover();
+    await card.getByRole("button", { name: "Actions for this task" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+
+    await expect(page.getByRole("dialog").locator("#priority")).toHaveValue("high");
+  });
+
   test("a created task counts toward the dashboard rollup", async ({ page }) => {
     const title = unique();
 

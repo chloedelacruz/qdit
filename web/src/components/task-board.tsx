@@ -28,6 +28,7 @@ import { toast } from "sonner";
 
 import { MemberChip, RowMeta } from "@/components/data-list";
 import { TaskRowActions } from "@/components/entity-row-actions";
+import { PriorityChip } from "@/components/rows";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskDetailSheet } from "@/components/task-detail";
 import { TaskStatusMenu } from "@/components/task-status-menu";
@@ -533,6 +534,12 @@ function Card({
         <span {...stopActivation}>
           <TaskStatusMenu taskId={task.id} status={task.status} />
         </span>
+
+        {/* Beside the status rather than in the meta line: a card's second line
+            is where the eye lands, and priority is the reason to look. Unlike
+            the list rows, no width is reserved — a card is its own column, so
+            nothing below it needs to line up. */}
+        <PriorityChip priority={task.priority} />
 
         <RowMeta className="min-w-0 flex-1" items={[task.milestoneTitle, task.dueDate]} />
         <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />

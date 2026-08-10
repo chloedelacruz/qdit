@@ -5,7 +5,7 @@ import { TaskRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { TaskListRow } from "@/components/rows";
-import { TASK_STATUS } from "@/lib/constants";
+import { TASK_PRIORITY, TASK_PRIORITY_ORDER, TASK_STATUS } from "@/lib/constants";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
@@ -49,7 +49,7 @@ export default async function AllTasksPage({
       <FilterBar
         filters={filters}
         placeholder="Search tasks…"
-        sorts={["due", "name"]}
+        sorts={["due", "priority", "name"]}
         facets={[
           {
             key: "project",
@@ -65,6 +65,15 @@ export default async function AllTasksPage({
             options: Object.entries(TASK_STATUS).map(([value, meta]) => ({
               value,
               label: meta.label,
+            })),
+          },
+          {
+            key: "priority",
+            label: "Priority",
+            // Most important first, matching the order the chips read in.
+            options: TASK_PRIORITY_ORDER.map((value) => ({
+              value,
+              label: TASK_PRIORITY[value].label,
             })),
           },
           {

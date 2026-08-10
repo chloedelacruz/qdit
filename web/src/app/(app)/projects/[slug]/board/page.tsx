@@ -5,6 +5,7 @@ import { CreateTaskDialog } from "@/components/entity-dialogs";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { TaskBoard } from "@/components/task-board";
+import { TASK_PRIORITY, TASK_PRIORITY_ORDER } from "@/lib/constants";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
   canContribute,
@@ -59,6 +60,14 @@ export default async function ProjectBoardPage({
         placeholder="Search tasks…"
         sorts={["due", "name"]}
         facets={[
+          {
+            key: "priority",
+            label: "Priority",
+            options: TASK_PRIORITY_ORDER.map((value) => ({
+              value,
+              label: TASK_PRIORITY[value].label,
+            })),
+          },
           {
             key: "assignee",
             label: "Assignee",

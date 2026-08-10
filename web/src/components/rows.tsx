@@ -10,7 +10,9 @@ import {
   MEMBER_ROLE,
   MILESTONE_STATUS,
   PROJECT_STATUS,
+  TASK_PRIORITY,
   type MemberRole,
+  type TaskPriority,
   type Tone,
 } from "@/lib/constants";
 import { NETWORK_LABELS } from "@/lib/stellar";
@@ -101,6 +103,13 @@ export function TaskListRow({
             The badge doubles as the control for moving the task. */}
         <span className="flex w-24 shrink-0">
           <TaskStatusMenu taskId={task.id} status={task.status} />
+        </span>
+
+        {/* Reserved too, and for the same reason — `PriorityChip` renders
+            nothing for the default, and an unreserved slot would step every
+            title left on the majority of rows. */}
+        <span className="flex w-9 shrink-0">
+          <PriorityChip priority={task.priority} />
         </span>
 
         <span className="min-w-0 flex-[2] truncate">{task.title}</span>
@@ -281,6 +290,34 @@ export function DeploymentListRow({
         {actions}
       </div>
     </ListRow>
+  );
+}
+
+/**
+ * A task's priority, as the P0–P3 chip the `task_priority` comment specifies.
+ *
+ * **Renders nothing for `medium`**, which is what makes it worth having. The
+ * column is `not null default 'medium'`, so a chip on every priority is a chip
+ * on every task — a column of identical badges carrying no information, on a
+ * surface whose entire job is scanning. Absent means normal; a chip means
+ * someone made a decision about this task.
+ *
+ * Callers reserve the width, so hiding the default does not shift the rows
+ * around it.
+ */
+export function PriorityChip({ priority }: { priority: TaskPriority }) {
+  if (priority === "medium") return null;
+
+  const meta = TASK_PRIORITY[priority];
+
+  return (
+    <StatusBadge
+      dot={false}
+      state={{ label: meta.short, tone: meta.tone }}
+      // "P0" is legible and meaningless read aloud.
+      srLabel={`Priority: ${meta.label}`}
+      className="shrink-0 px-1.5"
+    />
   );
 }
 

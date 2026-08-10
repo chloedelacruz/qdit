@@ -34,7 +34,7 @@ if (typeof window !== "undefined") {
 export const networks = {
   testnet: {
     networkPassphrase: "Test SDF Network ; September 2015",
-    contractId: "CAZYR4UI5EYAIUDNXYAYDVHGMUOELJHQNETOAPN3SMR5BMH6XV2FJRH6",
+    contractId: "CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG",
   }
 } as const
 
@@ -110,6 +110,7 @@ export type MilestoneStatus = {tag: "Proposed", values: void} | {tag: "Submitted
 
 
 
+
 export interface Client {
   /**
    * Construct and simulate a reject_milestone transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -152,6 +153,28 @@ export interface Client {
    */
   submit_milestone_proof: ({project_id, milestone_id, submitter, proof_hash}: {project_id: string, milestone_id: string, submitter: string, proof_hash: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
 
+  /**
+   * Construct and simulate a transfer_project_owner transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Hand a registered project to a new owner.
+   * 
+   * **Both parties must sign.** `current_owner` proves the right to give the
+   * project away; `new_owner` proves the destination is an address someone
+   * actually controls. Requiring only the first would let this function
+   * recreate the exact problem it exists to solve — a project pinned to an
+   * address nobody can sign for — and there is no admin path to undo that.
+   * 
+   * What this does and does not fix: it recovers a project registered to the
+   * **wrong but still controlled** address, and it makes planned handovers
+   * and key rotation possible. It cannot recover a **lost** key, because a
+   * lost key cannot sign as `current_owner`. Nothing in this contract can;
+   * that is the cost of having no admin address, and it is deliberate.
+   * 
+   * Milestone records are untouched. `submitter` is a historical fact about
+   * who submitted, and approve/reject read the owner from storage at call
+   * time, so they follow the new owner without any migration.
+   */
+  transfer_project_owner: ({project_id, current_owner, new_owner}: {project_id: string, current_owner: string, new_owner: string}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
@@ -178,11 +201,13 @@ export class Client extends ContractClient {
         "AAAABQAAAAAAAAAAAAAAEU1pbGVzdG9uZUFwcHJvdmVkAAAAAAAAAgAAAARxZGl0AAAAB2FwcHJvdmUAAAAABAAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAEAAAAAAAAADG1pbGVzdG9uZV9pZAAAABAAAAAAAAAAAAAAAAhhcHByb3ZlcgAAABMAAAAAAAAAAAAAAAd2ZXJzaW9uAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAAAAAAAAAAAAAEU1pbGVzdG9uZVJlamVjdGVkAAAAAAAAAgAAAARxZGl0AAAABnJlamVjdAAAAAAABAAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAEAAAAAAAAADG1pbGVzdG9uZV9pZAAAABAAAAAAAAAAAAAAAAhhcHByb3ZlcgAAABMAAAAAAAAAAAAAAAd2ZXJzaW9uAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAAAAAAAAAAAAAEVByb2plY3RSZWdpc3RlcmVkAAAAAAAAAgAAAARxZGl0AAAACHJlZ2lzdGVyAAAAAgAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAEAAAAAAAAABW93bmVyAAAAAAAAEwAAAAAAAAAC",
+        "AAAABQAAAUdFbWl0dGVkIHdoZW4gYSBwcm9qZWN0IGNoYW5nZXMgaGFuZHMuCgpCb3RoIHBhcnRpZXMgYXJlIGluIHRoZSBkYXRhIHJhdGhlciB0aGFuIGFzIHRvcGljczogYSBjb25zdW1lciB3YXRjaGluZyBvbmUKcHJvamVjdCBhbHJlYWR5IGhhcyBgcHJvamVjdF9pZGAgaW5kZXhlZCwgYW5kIGluZGV4aW5nIHRoZSBhZGRyZXNzZXMgd291bGQKaW52aXRlIHRyZWF0aW5nIHRoaXMgYXMgYSBxdWVyeWFibGUgb3duZXJzaGlwIGxvZywgd2hpY2ggaXQgaXMgbm90IOKAlCB0aGUKY3VycmVudCBvd25lciBpcyB3aGF0ZXZlciB0aGUgbGF0ZXN0IHRyYW5zZmVyIGxlZnQgaW4gc3RvcmFnZS4AAAAAAAAAABdQcm9qZWN0T3duZXJUcmFuc2ZlcnJlZAAAAAACAAAABHFkaXQAAAAIdHJhbnNmZXIAAAADAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAQAAAAAQAAAAAAAAAOcHJldmlvdXNfb3duZXIAAAAAABMAAAAAAAAAAAAAAAluZXdfb3duZXIAAAAAAAATAAAAAAAAAAI=",
         "AAAAAAAAAENSZWplY3QgYSBzdWJtaXR0ZWQgbWlsZXN0b25lLiBPbmx5IHRoZSBwcm9qZWN0IG93bmVyIG1heSBjYWxsIHRoaXMuAAAAABByZWplY3RfbWlsZXN0b25lAAAAAwAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAAAAAAMbWlsZXN0b25lX2lkAAAAEAAAAAAAAAAIYXBwcm92ZXIAAAATAAAAAQAAA+kAAAACAAAAAw==",
         "AAAAAAAAAERBcHByb3ZlIGEgc3VibWl0dGVkIG1pbGVzdG9uZS4gT25seSB0aGUgcHJvamVjdCBvd25lciBtYXkgY2FsbCB0aGlzLgAAABFhcHByb3ZlX21pbGVzdG9uZQAAAAAAAAMAAAAAAAAACnByb2plY3RfaWQAAAAAABAAAAAAAAAADG1pbGVzdG9uZV9pZAAAABAAAAAAAAAACGFwcHJvdmVyAAAAEwAAAAEAAAPpAAAAAgAAAAM=",
         "AAAAAAAAAO5SZWdpc3RlciBhIHByb2plY3QgcmVmZXJlbmNlIG93bmVkIGJ5IGBvd25lcmAuCgpSZXF1aXJlcyBgb3duZXJgIGF1dGguIEVycm9ycyB3aXRoIFtgRXJyb3I6OlByb2plY3RFeGlzdHNgXSBpZiB0aGUgaWQgaXMKdGFrZW4g4oCUIGRlbGliZXJhdGVseSwgcmF0aGVyIHRoYW4gdXBzZXJ0aW5nLCBzbyBhIGNsaWVudCBjYW4gdHJlYXQgdGhhdAplcnJvciBhcyAiYWxyZWFkeSByZWdpc3RlcmVkIiBhbmQgY2Fycnkgb24uAAAAAAASY3JlYXRlX3Byb2plY3RfcmVmAAAAAAACAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAQAAAAAAAAAAVvd25lcgAAAAAAABMAAAABAAAD6QAAAAIAAAAD",
         "AAAAAAAAAJxSZWFkIHRoZSBjdXJyZW50IHJlY29yZCBmb3IgYSBtaWxlc3RvbmUuCgpVbmF1dGhlbnRpY2F0ZWQ6IGFuIGFuY2hvcmVkIGhhc2ggaXMgcHVibGljIGJ5IGRlc2lnbiwgYW5kIHRoYXQgaXMgd2hhdAptYWtlcyBpdCBldmlkZW5jZSBhIHRoaXJkIHBhcnR5IGNhbiBjaGVjay4AAAAUZ2V0X21pbGVzdG9uZV9zdGF0dXMAAAACAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAQAAAAAAAAAAxtaWxlc3RvbmVfaWQAAAAQAAAAAQAAA+kAAAfQAAAAD01pbGVzdG9uZVJlY29yZAAAAAAD",
-        "AAAAAAAAAR9BdHRhY2ggYSBwcm9vZiBoYXNoIHRvIGEgbWlsZXN0b25lIGFuZCBtb3ZlIGl0IHRvIFtgTWlsZXN0b25lU3RhdHVzOjpTdWJtaXR0ZWRgXS4KClJlcXVpcmVzIGBzdWJtaXR0ZXJgIGF1dGguIFRoZSBtaWxlc3RvbmUgZG9lcyBub3QgbmVlZCB0byBleGlzdCBiZWZvcmVoYW5kOwphbiB1bnNlZW4gbWlsZXN0b25lIGlzIGltcGxpY2l0bHkgYFByb3Bvc2VkYC4gQSBtaWxlc3RvbmUgdGhhdCBoYXMgYWxyZWFkeQpiZWVuIGFwcHJvdmVkIGlzIHRlcm1pbmFsIGFuZCBjYW5ub3QgYmUgcmUtc3VibWl0dGVkLgAAAAAWc3VibWl0X21pbGVzdG9uZV9wcm9vZgAAAAAABAAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAAAAAAMbWlsZXN0b25lX2lkAAAAEAAAAAAAAAAJc3VibWl0dGVyAAAAAAAAEwAAAAAAAAAKcHJvb2ZfaGFzaAAAAAAD7gAAACAAAAABAAAD6QAAAAIAAAAD" ]),
+        "AAAAAAAAAR9BdHRhY2ggYSBwcm9vZiBoYXNoIHRvIGEgbWlsZXN0b25lIGFuZCBtb3ZlIGl0IHRvIFtgTWlsZXN0b25lU3RhdHVzOjpTdWJtaXR0ZWRgXS4KClJlcXVpcmVzIGBzdWJtaXR0ZXJgIGF1dGguIFRoZSBtaWxlc3RvbmUgZG9lcyBub3QgbmVlZCB0byBleGlzdCBiZWZvcmVoYW5kOwphbiB1bnNlZW4gbWlsZXN0b25lIGlzIGltcGxpY2l0bHkgYFByb3Bvc2VkYC4gQSBtaWxlc3RvbmUgdGhhdCBoYXMgYWxyZWFkeQpiZWVuIGFwcHJvdmVkIGlzIHRlcm1pbmFsIGFuZCBjYW5ub3QgYmUgcmUtc3VibWl0dGVkLgAAAAAWc3VibWl0X21pbGVzdG9uZV9wcm9vZgAAAAAABAAAAAAAAAAKcHJvamVjdF9pZAAAAAAAEAAAAAAAAAAMbWlsZXN0b25lX2lkAAAAEAAAAAAAAAAJc3VibWl0dGVyAAAAAAAAEwAAAAAAAAAKcHJvb2ZfaGFzaAAAAAAD7gAAACAAAAABAAAD6QAAAAIAAAAD",
+        "AAAAAAAAA7tIYW5kIGEgcmVnaXN0ZXJlZCBwcm9qZWN0IHRvIGEgbmV3IG93bmVyLgoKKipCb3RoIHBhcnRpZXMgbXVzdCBzaWduLioqIGBjdXJyZW50X293bmVyYCBwcm92ZXMgdGhlIHJpZ2h0IHRvIGdpdmUgdGhlCnByb2plY3QgYXdheTsgYG5ld19vd25lcmAgcHJvdmVzIHRoZSBkZXN0aW5hdGlvbiBpcyBhbiBhZGRyZXNzIHNvbWVvbmUKYWN0dWFsbHkgY29udHJvbHMuIFJlcXVpcmluZyBvbmx5IHRoZSBmaXJzdCB3b3VsZCBsZXQgdGhpcyBmdW5jdGlvbgpyZWNyZWF0ZSB0aGUgZXhhY3QgcHJvYmxlbSBpdCBleGlzdHMgdG8gc29sdmUg4oCUIGEgcHJvamVjdCBwaW5uZWQgdG8gYW4KYWRkcmVzcyBub2JvZHkgY2FuIHNpZ24gZm9yIOKAlCBhbmQgdGhlcmUgaXMgbm8gYWRtaW4gcGF0aCB0byB1bmRvIHRoYXQuCgpXaGF0IHRoaXMgZG9lcyBhbmQgZG9lcyBub3QgZml4OiBpdCByZWNvdmVycyBhIHByb2plY3QgcmVnaXN0ZXJlZCB0byB0aGUKKip3cm9uZyBidXQgc3RpbGwgY29udHJvbGxlZCoqIGFkZHJlc3MsIGFuZCBpdCBtYWtlcyBwbGFubmVkIGhhbmRvdmVycwphbmQga2V5IHJvdGF0aW9uIHBvc3NpYmxlLiBJdCBjYW5ub3QgcmVjb3ZlciBhICoqbG9zdCoqIGtleSwgYmVjYXVzZSBhCmxvc3Qga2V5IGNhbm5vdCBzaWduIGFzIGBjdXJyZW50X293bmVyYC4gTm90aGluZyBpbiB0aGlzIGNvbnRyYWN0IGNhbjsKdGhhdCBpcyB0aGUgY29zdCBvZiBoYXZpbmcgbm8gYWRtaW4gYWRkcmVzcywgYW5kIGl0IGlzIGRlbGliZXJhdGUuCgpNaWxlc3RvbmUgcmVjb3JkcyBhcmUgdW50b3VjaGVkLiBgc3VibWl0dGVyYCBpcyBhIGhpc3RvcmljYWwgZmFjdCBhYm91dAp3aG8gc3VibWl0dGVkLCBhbmQgYXBwcm92ZS9yZWplY3QgcmVhZCB0aGUgb3duZXIgZnJvbSBzdG9yYWdlIGF0IGNhbGwKdGltZSwgc28gdGhleSBmb2xsb3cgdGhlIG5ldyBvd25lciB3aXRob3V0IGFueSBtaWdyYXRpb24uAAAAABZ0cmFuc2Zlcl9wcm9qZWN0X293bmVyAAAAAAADAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAQAAAAAAAAAA1jdXJyZW50X293bmVyAAAAAAAAEwAAAAAAAAAJbmV3X293bmVyAAAAAAAAEwAAAAEAAAPpAAAAAgAAAAM=" ]),
       options
     )
   }
@@ -191,6 +216,7 @@ export class Client extends ContractClient {
         approve_milestone: this.txFromJSON<Result<void>>,
         create_project_ref: this.txFromJSON<Result<void>>,
         get_milestone_status: this.txFromJSON<Result<MilestoneRecord>>,
-        submit_milestone_proof: this.txFromJSON<Result<void>>
+        submit_milestone_proof: this.txFromJSON<Result<void>>,
+        transfer_project_owner: this.txFromJSON<Result<void>>
   }
 }

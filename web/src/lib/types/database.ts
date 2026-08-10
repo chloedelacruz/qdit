@@ -230,9 +230,9 @@ export type Database = {
           due_date: string | null
           order_index: number
           /**
-           * Live in the database, unused by the app — nothing reads or writes
-           * it, so every row holds the default. See
-           * `20260731000004_task_priority.sql` for what wiring it up needs.
+           * `not null default 'medium'`, so a task always has one and the app
+           * never has an "unset" case to render. `TASK_PRIORITY` in
+           * `constants.ts` holds the labels and the P0–P3 board notation.
            */
           priority: Database['public']['Enums']['task_priority']
           created_at: string
@@ -501,6 +501,20 @@ export type Database = {
         Args: { p_role: Database['public']['Enums']['member_role'] }
         Returns: number
       }
+      /**
+       * Resolves an email to a user and adds them to a project in one call.
+       * Raises rather than returning a failure: 42501 when the caller is not an
+       * admin of `p_project_id`, P0002 when no account uses the address, 23505
+       * when they are already a member.
+       */
+      add_project_member_by_email: {
+        Args: {
+          p_project_id: string
+          p_email: string
+          p_role: Database['public']['Enums']['member_role']
+        }
+        Returns: string
+      }
     }
 
     Enums: {
@@ -508,7 +522,7 @@ export type Database = {
       member_role: 'viewer' | 'member' | 'admin' | 'owner'
       milestone_status: 'proposed' | 'submitted' | 'approved' | 'rejected'
       task_status: 'todo' | 'in_progress' | 'done'
-      /** Ordered low -> urgent. Present in the schema, not yet in the UI. */
+      /** Ordered low -> urgent; rendered P3..P0, most urgent first. */
       task_priority: 'low' | 'medium' | 'high' | 'urgent'
       stellar_network: 'testnet' | 'mainnet'
       deployment_status:

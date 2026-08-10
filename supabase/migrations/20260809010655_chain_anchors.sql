@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260809000005_chain_anchors.sql
+-- 20260809010655_chain_anchors.sql
 --
 -- On-chain anchoring for the `milestone_proof` Soroban contract.
 --
@@ -143,7 +143,7 @@ create index projects_chain_contract_id_idx on public.projects (chain_contract_i
 -- 5. Row Level Security
 --
 -- Same derivation as every other table: membership via the SECURITY DEFINER
--- helpers in 20260731000002_rls.sql.
+-- helpers in 20260731133313_rls.sql.
 --
 -- There is no UPDATE policy and no DELETE policy, and that is the point. A row
 -- here asserts "this transaction happened". Editing one makes it lie, and

@@ -12,11 +12,14 @@ import {
   DEPLOYMENT_STATUS_ORDER,
   MEMBER_ROLE,
   PROJECT_STATUS,
+  TASK_PRIORITY,
+  TASK_PRIORITY_ORDER,
   TASK_STATUS,
   TASK_STATUS_ORDER,
 } from "@/lib/constants";
 import {
   addProjectMember,
+  addProjectMemberByEmail,
   createDeployment,
   createMilestone,
   createProject,
@@ -77,6 +80,7 @@ export type TaskDefaults = {
   title: string;
   description: string | null;
   status: string;
+  priority: string;
   milestoneId: string | null;
   assigneeId: string | null;
   dueDate: string | null;
@@ -116,6 +120,9 @@ function TaskFields({
         />
       </Field>
 
+      {/* Status and priority pair because they are the two questions that
+          classify a task rather than place it: where it is, and how much it
+          matters. */}
       <FieldRow>
         <Field id="status" label="Status">
           <NativeSelect id="status" name="status" defaultValue={defaults?.status ?? "todo"}>
@@ -127,6 +134,25 @@ function TaskFields({
           </NativeSelect>
         </Field>
 
+        {/* Not marked optional: the column is `not null default 'medium'`, so
+            there is no such thing as a task without one — leaving it alone
+            picks Medium rather than picking nothing. */}
+        <Field id="priority" label="Priority">
+          <NativeSelect
+            id="priority"
+            name="priority"
+            defaultValue={defaults?.priority ?? "medium"}
+          >
+            {TASK_PRIORITY_ORDER.map((priority) => (
+              <option key={priority} value={priority}>
+                {TASK_PRIORITY[priority].label}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+      </FieldRow>
+
+      <FieldRow>
         <Field id="dueDate" label="Due date" optional error={state.fieldErrors?.dueDate}>
           <Input
             id="dueDate"
@@ -135,9 +161,7 @@ function TaskFields({
             defaultValue={defaults?.dueDate ?? ""}
           />
         </Field>
-      </FieldRow>
 
-      <FieldRow>
         <Field id="milestoneId" label="Milestone" optional>
           <NativeSelect
             id="milestoneId"
@@ -152,22 +176,24 @@ function TaskFields({
             ))}
           </NativeSelect>
         </Field>
-
-        <Field id="assigneeId" label="Assignee" optional>
-          <NativeSelect
-            id="assigneeId"
-            name="assigneeId"
-            defaultValue={defaults?.assigneeId ?? ""}
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
       </FieldRow>
+
+      {/* Full width, as the odd one out of five — and the field that most wants
+          it, since its options are people's names. */}
+      <Field id="assigneeId" label="Assignee" optional>
+        <NativeSelect
+          id="assigneeId"
+          name="assigneeId"
+          defaultValue={defaults?.assigneeId ?? ""}
+        >
+          <option value="">Unassigned</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </Field>
     </>
   );
 }
@@ -907,13 +933,18 @@ function RoleField({ state, defaultValue }: { state: ActionState; defaultValue?:
 }
 
 /**
- * Adds someone to a project.
+ * Adds someone to a project, by email or by picking a known teammate.
  *
- * The picker is a select rather than an email box, and that is RLS talking
- * rather than a shortcut: `profiles` is readable only for yourself and people
- * `shares_project_with()` matches, so an arbitrary email cannot be resolved to
- * a user id by any query this client is allowed to make. `listAddableMembers()`
- * returns precisely the set that can be, minus whoever is already here.
+ * Two paths because neither subsumes the other. The picker only offers people
+ * `shares_project_with()` already matches — in a single-project workspace that
+ * is nobody, since the visible set *is* the roster — so it cannot grow a team
+ * past whoever was seeded. Email can reach anyone with an account, but it means
+ * knowing and typing an address, and `profiles` carries no email column, so the
+ * picker cannot show one to jog a memory.
+ *
+ * Email is the default because it is the one that always works. The picker is
+ * offered above it only when it has candidates; otherwise it is absent rather
+ * than present-and-empty.
  */
 export function AddMemberDialog({
   projectId,
@@ -924,6 +955,10 @@ export function AddMemberDialog({
   candidates: { id: string; name: string }[];
   label?: string;
 }) {
+  const [byEmail, setByEmail] = useState(true);
+  const canPick = candidates.length > 0;
+  const useEmail = byEmail || !canPick;
+
   return (
     <FormDialog
       trigger={
@@ -936,33 +971,59 @@ export function AddMemberDialog({
       description="Give someone access to this project and choose what they may do."
       submitLabel="Add member"
       successMessage="Member added"
-      action={addProjectMember}
+      // Two actions, one dialog: the email path resolves the address in a
+      // SECURITY DEFINER function, the picker already holds a user id and
+      // inserts directly. Sharing one action would mean branching on which
+      // field happened to be filled in.
+      action={useEmail ? addProjectMemberByEmail : addProjectMember}
     >
       {(state) => (
         <>
           <input type="hidden" name="projectId" value={projectId} />
 
-          <Field
-            id="m-userId"
-            label="Person"
-            hint={
-              candidates.length === 0
-                ? "Everyone you share a project with is already a member of this one."
-                : undefined
-            }
-            error={state.fieldErrors?.userId}
-          >
-            <NativeSelect id="m-userId" name="userId" required defaultValue="">
-              <option value="" disabled>
-                Choose someone…
-              </option>
-              {candidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
+          {useEmail ? (
+            <Field
+              id="m-email"
+              label="Email address"
+              hint="They need a qdit account already — this grants access, it does not send an invitation."
+              error={state.fieldErrors?.email}
+            >
+              <Input
+                id="m-email"
+                name="email"
+                type="email"
+                required
+                autoFocus
+                spellCheck={false}
+                placeholder="them@example.com"
+              />
+            </Field>
+          ) : (
+            <Field id="m-userId" label="Person" error={state.fieldErrors?.userId}>
+              <NativeSelect id="m-userId" name="userId" required defaultValue="">
+                <option value="" disabled>
+                  Choose someone…
                 </option>
-              ))}
-            </NativeSelect>
-          </Field>
+                {candidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
+
+          {canPick ? (
+            <button
+              type="button"
+              onClick={() => setByEmail((current) => !current)}
+              className="focus-ring transition-qdit -mt-1 self-start rounded-sm text-xs text-muted-foreground hover:text-primary"
+            >
+              {useEmail
+                ? `Or pick from ${candidates.length} teammate${candidates.length === 1 ? "" : "s"}`
+                : "Or add by email address"}
+            </button>
+          ) : null}
 
           <RoleField state={state} />
         </>

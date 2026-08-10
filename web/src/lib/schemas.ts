@@ -63,6 +63,10 @@ export const taskSchema = z.object({
   title: z.string().trim().min(1, "Required.").max(300, "Keep it under 300 characters."),
   description: z.string().trim().max(4000).optional().or(z.literal("")),
   status: z.enum(["todo", "in_progress", "done"]).default("todo"),
+  // `not null default 'medium'` in Postgres, so the default is stated here too
+  // rather than left to the column — a form that omits the field must still
+  // produce a legal value for the update path, which sends every column.
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   milestoneId: z.guid().optional().or(z.literal("")),
   assigneeId: z.guid().optional().or(z.literal("")),
   dueDate: z.iso.date("Use YYYY-MM-DD.").optional().or(z.literal("")),
@@ -190,6 +194,21 @@ export const projectMemberSchema = z.object({
   role: z.enum(ASSIGNABLE_ROLES),
 });
 
+/**
+ * Adding someone who is not already a teammate.
+ *
+ * The address is resolved server-side by `add_project_member_by_email`, because
+ * RLS makes a stranger's profile invisible to every query this client is
+ * allowed to make. Validated here only so an obvious typo is reported inline
+ * rather than after a round trip that will say "no account uses that email" and
+ * make the user wonder which of the two is wrong.
+ */
+export const projectMemberEmailSchema = z.object({
+  projectId: z.guid(),
+  email: z.email("Enter a valid email address."),
+  role: z.enum(ASSIGNABLE_ROLES),
+});
+
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
@@ -197,6 +216,7 @@ export type ProofInput = z.infer<typeof proofSchema>;
 export type DeploymentInput = z.infer<typeof deploymentSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type ProjectMemberInput = z.infer<typeof projectMemberSchema>;
+export type ProjectMemberEmailInput = z.infer<typeof projectMemberEmailSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
 export function slugify(value: string): string {
