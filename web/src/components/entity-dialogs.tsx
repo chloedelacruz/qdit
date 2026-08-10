@@ -3,7 +3,7 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
-import { Field, FieldRow, FormDialog, NativeSelect } from "@/components/form-dialog";
+import { Field, FieldRow, FormDialog, SelectField } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,20 +125,20 @@ function TaskFields({
           matters. */}
       <FieldRow>
         <Field id="status" label="Status">
-          <NativeSelect id="status" name="status" defaultValue={defaults?.status ?? "todo"}>
+          <SelectField id="status" name="status" defaultValue={defaults?.status ?? "todo"}>
             {TASK_STATUS_ORDER.map((status) => (
               <option key={status} value={status}>
                 {TASK_STATUS[status].label}
               </option>
             ))}
-          </NativeSelect>
+          </SelectField>
         </Field>
 
         {/* Not marked optional: the column is `not null default 'medium'`, so
             there is no such thing as a task without one — leaving it alone
             picks Medium rather than picking nothing. */}
         <Field id="priority" label="Priority">
-          <NativeSelect
+          <SelectField
             id="priority"
             name="priority"
             defaultValue={defaults?.priority ?? "medium"}
@@ -148,7 +148,7 @@ function TaskFields({
                 {TASK_PRIORITY[priority].label}
               </option>
             ))}
-          </NativeSelect>
+          </SelectField>
         </Field>
       </FieldRow>
 
@@ -163,7 +163,7 @@ function TaskFields({
         </Field>
 
         <Field id="milestoneId" label="Milestone" optional>
-          <NativeSelect
+          <SelectField
             id="milestoneId"
             name="milestoneId"
             defaultValue={defaults?.milestoneId ?? ""}
@@ -174,14 +174,14 @@ function TaskFields({
                 {milestone.title}
               </option>
             ))}
-          </NativeSelect>
+          </SelectField>
         </Field>
       </FieldRow>
 
       {/* Full width, as the odd one out of five — and the field that most wants
           it, since its options are people's names. */}
       <Field id="assigneeId" label="Assignee" optional>
-        <NativeSelect
+        <SelectField
           id="assigneeId"
           name="assigneeId"
           defaultValue={defaults?.assigneeId ?? ""}
@@ -192,7 +192,7 @@ function TaskFields({
               {member.name}
             </option>
           ))}
-        </NativeSelect>
+        </SelectField>
       </Field>
     </>
   );
@@ -302,13 +302,13 @@ function ProjectCommonFields({
       </Field>
 
       <Field id="status" label="Status">
-        <NativeSelect id="status" name="status" defaultValue={defaults?.status ?? "active"}>
+        <SelectField id="status" name="status" defaultValue={defaults?.status ?? "active"}>
           {Object.entries(PROJECT_STATUS).map(([value, meta]) => (
             <option key={value} value={value}>
               {meta.label}
             </option>
           ))}
-        </NativeSelect>
+        </SelectField>
       </Field>
 
       <FieldRow>
@@ -628,7 +628,7 @@ function ProofFields({
 
       <FieldRow>
         <Field id="p-network" label="Network">
-          <NativeSelect
+          <SelectField
             id="p-network"
             name="network"
             defaultValue={defaults?.network ?? "testnet"}
@@ -638,11 +638,11 @@ function ProofFields({
                 {label}
               </option>
             ))}
-          </NativeSelect>
+          </SelectField>
         </Field>
 
         <Field id="p-milestoneId" label="Milestone" optional>
-          <NativeSelect
+          <SelectField
             id="p-milestoneId"
             name="milestoneId"
             defaultValue={defaults?.milestoneId ?? ""}
@@ -653,7 +653,7 @@ function ProofFields({
                 {milestone.title ?? milestone.name}
               </option>
             ))}
-          </NativeSelect>
+          </SelectField>
         </Field>
       </FieldRow>
 
@@ -787,13 +787,13 @@ export function CreateDeploymentDialog({
 
           <FieldRow>
             <Field id="d-status" label="Status" error={state.fieldErrors?.status}>
-              <NativeSelect id="d-status" name="status" defaultValue="testnet">
+              <SelectField id="d-status" name="status" defaultValue="testnet">
                 {DEPLOYMENT_STATUS_ORDER.map((status) => (
                   <option key={status} value={status}>
                     {DEPLOYMENT_STATUS[status].label}
                   </option>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </Field>
 
             <Field
@@ -804,14 +804,14 @@ export function CreateDeploymentDialog({
               hint="Required once past Not Started."
               error={state.fieldErrors?.network}
             >
-              <NativeSelect id="d-network" name="network" defaultValue="testnet">
+              <SelectField id="d-network" name="network" defaultValue="testnet">
                 <option value="">None</option>
                 {Object.entries(NETWORK_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </Field>
           </FieldRow>
 
@@ -921,13 +921,13 @@ function RoleField({ state, defaultValue }: { state: ActionState; defaultValue?:
       hint={MEMBER_ROLE[(defaultValue as keyof typeof MEMBER_ROLE) ?? "member"]?.description}
       error={state.fieldErrors?.role}
     >
-      <NativeSelect id="m-role" name="role" defaultValue={defaultValue ?? "member"}>
+      <SelectField id="m-role" name="role" defaultValue={defaultValue ?? "member"}>
         {ASSIGNABLE_ROLES.map((role) => (
           <option key={role} value={role}>
             {MEMBER_ROLE[role].label}
           </option>
         ))}
-      </NativeSelect>
+      </SelectField>
     </Field>
   );
 }
@@ -1000,7 +1000,7 @@ export function AddMemberDialog({
             </Field>
           ) : (
             <Field id="m-userId" label="Person" error={state.fieldErrors?.userId}>
-              <NativeSelect id="m-userId" name="userId" required defaultValue="">
+              <SelectField id="m-userId" name="userId" defaultValue="">
                 <option value="" disabled>
                   Choose someone…
                 </option>
@@ -1009,7 +1009,7 @@ export function AddMemberDialog({
                     {candidate.name}
                   </option>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </Field>
           )}
 

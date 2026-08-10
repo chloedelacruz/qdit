@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { choose } from "./select";
 import { MEMBERS, PROJECT } from "./seed";
 
 /**
@@ -55,7 +56,7 @@ test.describe("creating a task", () => {
     await page.getByRole("button", { name: "New task" }).click();
     await page.getByLabel("Title").fill(title);
     await page.getByLabel("Due date").fill("2026-09-30");
-    await page.selectOption("#assigneeId", { label: MEMBERS.ben.name });
+    await choose(page, "assigneeId", MEMBERS.ben.name);
     await page.getByRole("button", { name: "Create task" }).click();
 
     // The dialog closes only once the server confirms.
@@ -86,7 +87,7 @@ test.describe("creating a task", () => {
 
     await page.getByRole("button", { name: "New task" }).click();
     await page.getByLabel("Title").fill(title);
-    await page.selectOption("#priority", "urgent");
+    await choose(page, "priority", "Urgent");
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
 
@@ -109,7 +110,7 @@ test.describe("creating a task", () => {
 
     await page.getByRole("button", { name: "New task" }).click();
     await page.getByLabel("Title").fill(title);
-    await page.selectOption("#priority", "high");
+    await choose(page, "priority", "High");
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
 
@@ -120,7 +121,10 @@ test.describe("creating a task", () => {
     await card.getByRole("button", { name: "Actions for this task" }).click();
     await page.getByRole("menuitem", { name: "Edit" }).click();
 
-    await expect(page.getByRole("dialog").locator("#priority")).toHaveValue("high");
+    // The trigger's text, not a `value`: the control is a button over a hidden
+    // input now, and what matters is that the user sees the saved priority
+    // rather than the default staring back at them.
+    await expect(page.getByRole("dialog").locator("#priority")).toHaveText("High");
   });
 
   test("a created task counts toward the dashboard rollup", async ({ page }) => {
