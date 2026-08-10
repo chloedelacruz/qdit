@@ -65,6 +65,39 @@ test.describe("theme", () => {
     closeTo(await paintedPrimary(), "#8B7CFF");
   });
 
+  /**
+   * The one property that decides whether native controls are readable.
+   *
+   * A `<select>`'s dropdown, a date field's calendar and the search input's
+   * clear button are painted by the browser, not from the DOM — they cannot be
+   * screenshotted, queried or styled. `color-scheme` is the only handle CSS
+   * has on them, and getting it wrong is invisible to every other kind of test:
+   * the page looks perfect until someone opens a select, and then reads light
+   * grey text on a white popup.
+   *
+   * So this asserts the property directly in both themes, on the surface that
+   * carries the most native controls.
+   */
+  test("native controls follow the theme, not the platform default", async ({ page }) => {
+    await page.goto("/projects");
+
+    const scheme = () =>
+      page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+
+    await expect(page.locator("html")).not.toHaveClass(/dark/);
+    expect(await scheme()).toBe("light");
+
+    await page.getByRole("button", { name: "Toggle theme" }).click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    expect(await scheme()).toBe("dark");
+
+    // And it survives into a dialog, which is where the selects actually live.
+    await page.getByRole("button", { name: "New project" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(await scheme()).toBe("dark");
+    await expect(page.locator("#status")).toBeVisible();
+  });
+
   test("renders without a hydration mismatch warning", async ({ page }) => {
     const errors: string[] = [];
     page.on("console", (message) => {
