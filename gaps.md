@@ -92,7 +92,7 @@ contract bug means deploying a new contract id and migrating
 `projects.chain_contract_id`. Decide this before mainnet, not after.
 
 **A lost owner key is still unrecoverable.** `transfer_project_owner` exists in
-the contract (§1.2), and it fixes the *wrong-but-controlled* address, planned
+the contract (§1), and it fixes the *wrong-but-controlled* address, planned
 handovers and key rotation. It cannot fix a genuinely lost key, because a lost
 key cannot sign as `current_owner`. Nothing in this contract can — that is the
 cost of having no admin address, and it is deliberate.
@@ -132,7 +132,7 @@ detail: proofs anchored on Testnet are not durable evidence, even though
   touch drag is awkward to assert. Better by construction than by verification.
 - **The anchoring flow end to end.** It needs a funded Testnet wallet and a
   browser extension, neither of which Playwright can drive. The contract side has
-  17 Rust tests and a live CLI walkthrough; the digest has Vitest coverage; the
+  26 Rust tests and a live CLI walkthrough; the digest has Vitest coverage; the
   middle — wallet signature to ledger — is manual.
 - **The server actions themselves.** Vitest covers the pure logic they depend on
   (milestone state machine, filter round trip, strkey validators, proof digest),
@@ -149,6 +149,27 @@ Not oversights.
 - **Deployment rows cannot be edited** — the log is append-only by design.
 - **One skipped spec** — `stellar-proof.spec.ts` needs a seeded project with no
   contract, and there isn't one.
+- **The e2e database is a fixture, not a workspace.** `TASK_TOTAL`,
+  `MILESTONE_TOTAL` and `PROOF_TOTAL` in `e2e/seed.ts` are constants, and they
+  are asserted against the *cross-project* views and the dashboard rollup — so
+  a task, milestone or proof created by hand **anywhere** in that Supabase
+  project fails those specs, not only one created in the seeded project. An
+  empty project on its own is fine; the project index spec is size-independent.
+
+  Worse than a failing spec: `reseed.setup.ts` deletes any task in the seeded
+  project whose title is not one of the five it knows, so **work added there by
+  hand is gone at the start of the next run**. It logs what it removed; it does
+  not ask.
+
+  Use a second Supabase project for real work and keep `E2E_*` pointed at the
+  fixture. Making the suite tolerant instead means deriving the totals at
+  runtime and loosening the dashboard tiles from exact values to relative ones,
+  which costs real precision — `Open milestones` asserting `2` catches a
+  regression that "some number" would not.
+
+  Note the config header's claim that "anything that must hold at any data size
+  is written to be size-independent" is true of paging and filtering, and not of
+  these totals.
 
 ## 6. Older risks, still true
 
