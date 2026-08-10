@@ -6,6 +6,8 @@ import {
   MILESTONE_OWNER_ONLY,
   MILESTONE_STATUS,
   MILESTONE_TRANSITIONS,
+  TASK_PRIORITY,
+  TASK_PRIORITY_ORDER,
   TASK_STATUS,
   TASK_STATUS_ORDER,
   milestoneActionLabel,
@@ -217,6 +219,48 @@ describe("status display metadata", () => {
     expect(TASK_STATUS_ORDER).toEqual(["todo", "in_progress", "done"]);
     for (const status of TASK_STATUS_ORDER) {
       expect(TASK_STATUS[status]).toBeDefined();
+    }
+  });
+
+  it("orders the priority picker most-important first, and covers every value", () => {
+    expect(TASK_PRIORITY_ORDER).toEqual(["urgent", "high", "medium", "low"]);
+    expect([...TASK_PRIORITY_ORDER].sort()).toEqual(Object.keys(TASK_PRIORITY).sort());
+  });
+
+  it("numbers priority P0-first, against the enum's own order", () => {
+    /**
+     * The one thing here that is easy to get backwards, and silent when it is.
+     *
+     * `task_priority` is declared low → urgent in
+     * 20260731135342_task_priority.sql, which is what makes Postgres sort it
+     * correctly and what `listTasks` relies on when it orders descending. The
+     * P-numbers run the other way, because P0 means the top one everywhere this
+     * notation is used. Flipping them would leave every query, every filter and
+     * every test passing while the board labelled urgent work "P3".
+     */
+    expect(TASK_PRIORITY.urgent.short).toBe("P0");
+    expect(TASK_PRIORITY.high.short).toBe("P1");
+    expect(TASK_PRIORITY.medium.short).toBe("P2");
+    expect(TASK_PRIORITY.low.short).toBe("P3");
+  });
+
+  it("colours only the two priorities that are a signal", () => {
+    // `medium` is the column default, so tinting it would tint essentially
+    // every task in the database — and a scale where every step is coloured is
+    // not a scale. PriorityChip declines to render medium at all for the same
+    // reason.
+    expect(TASK_PRIORITY.urgent.tone).toBe("destructive");
+    expect(TASK_PRIORITY.high.tone).toBe("warning");
+    expect(TASK_PRIORITY.medium.tone).toBe("neutral");
+    expect(TASK_PRIORITY.low.tone).toBe("neutral");
+  });
+
+  it("gives every priority both a word and an abbreviation", () => {
+    // The word is what the form, the facet and the detail panel say; the
+    // abbreviation is the board chip and the screen-reader fallback for it.
+    for (const priority of TASK_PRIORITY_ORDER) {
+      expect(TASK_PRIORITY[priority].label.length).toBeGreaterThan(0);
+      expect(TASK_PRIORITY[priority].short).toMatch(/^P[0-9]$/);
     }
   });
 

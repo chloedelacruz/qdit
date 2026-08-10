@@ -75,6 +75,7 @@ export function TaskRowActions({
             title: task.title,
             description: task.description,
             status: task.status,
+            priority: task.priority,
             milestoneId: task.milestoneId,
             assigneeId: task.assigneeId,
             dueDate: task.dueDate,

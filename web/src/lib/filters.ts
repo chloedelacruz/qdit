@@ -11,7 +11,7 @@
 /** Matches the `searchParams` prop shape — a Promise of this in Next 16. */
 export type SearchParams = { [key: string]: string | string[] | undefined };
 
-export const SORT_KEYS = ["updated", "name", "progress", "due"] as const;
+export const SORT_KEYS = ["updated", "name", "progress", "due", "priority"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
 export const SORT_LABELS: Record<SortKey, string> = {
@@ -19,12 +19,15 @@ export const SORT_LABELS: Record<SortKey, string> = {
   name: "Name",
   progress: "Progress",
   due: "Due date",
+  priority: "Priority",
 };
 
 export type Filters = {
   /** Free-text query. Also matches contract IDs and tx hashes. */
   q: string;
   status: string[];
+  /** `tasks.priority`. Tasks are the only entity that has one. */
+  priority: string[];
   assignee: string[];
   milestone: string[];
   network: string[];
@@ -39,6 +42,7 @@ export const DEFAULT_LIMIT = 25;
 export const EMPTY_FILTERS: Filters = {
   q: "",
   status: [],
+  priority: [],
   assignee: [],
   milestone: [],
   network: [],
@@ -50,6 +54,7 @@ export const EMPTY_FILTERS: Filters = {
 /** Facet keys, i.e. everything that renders as a multi-select in the bar. */
 export const FACET_KEYS = [
   "status",
+  "priority",
   "assignee",
   "milestone",
   "network",
@@ -77,6 +82,7 @@ export function parseFilters(params: SearchParams): Filters {
   return {
     q: readOne(params, "q"),
     status: readList(params, "status"),
+    priority: readList(params, "priority"),
     assignee: readList(params, "assignee"),
     milestone: readList(params, "milestone"),
     network: readList(params, "network"),

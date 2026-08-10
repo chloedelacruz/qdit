@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { TaskRowActions } from "@/components/entity-row-actions";
 import { MemberAvatar } from "@/components/rows";
+import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import {
   Sheet,
@@ -12,6 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { TASK_PRIORITY } from "@/lib/constants";
 import type { TaskRow } from "@/lib/queries";
 
 /**
@@ -115,6 +117,17 @@ export function TaskDetailSheet({
                       {shown.assigneeName}
                     </span>
                   </span>
+                </Field>
+
+                {/* The full word, not the P0–P3 chip. The abbreviation earns
+                    its place on a card that has no room to say "Urgent"; here
+                    the label column already names the field, so the value can
+                    simply be the value. */}
+                <Field label="Priority">
+                  <StatusBadge
+                    dot={false}
+                    state={TASK_PRIORITY[shown.priority]}
+                  />
                 </Field>
 
                 <Field label="Milestone">
