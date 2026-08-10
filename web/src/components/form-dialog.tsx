@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState, useRef, useState } from "react";
+import React, { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ActionState } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 
@@ -162,20 +169,123 @@ export function Field({
 }
 
 /**
- * A plain `<select>`, not the Radix one. Radix Select renders a button and a
- * portal — it submits nothing with a native form post, which is exactly how a
- * server action receives these forms. It would silently send an empty value.
+ * The form's select, built on Radix rather than a native `<select>`.
+ *
+ * A native select's dropdown is painted by the browser, not built from the
+ * DOM. That makes it unstylable, unselectable and absent from screenshots —
+ * and on Chrome it takes the popup's background from the control's own
+ * `background-color`, which here was translucent (`dark:bg-input/30`). Blended
+ * against the platform's white it produced a near-white popup carrying the
+ * dark theme's light `color`: options that were technically rendered and
+ * effectively invisible. `color-scheme: dark` alone does not fix it, and no
+ * stylesheet can reach the popup to try.
+ *
+ * Radix renders the list as real elements, so it takes `bg-popover` like every
+ * other overlay in the app, and a test can actually see it.
+ *
+ * **The value still has to reach `FormData`.** These forms post natively to a
+ * server action, and Radix's trigger is a button, which submits nothing. The
+ * hidden input below is what carries the value — deliberately ours rather than
+ * relying on Radix's internal form bubbling, so the contract is visible here.
+ *
+ * Accepts `<option>` children so it reads like the native element it replaces:
+ * the alternative was rewriting twenty-odd call sites into an options array,
+ * a much larger diff for the same markup.
  */
-export function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
+export function SelectField({
+  id,
+  name,
+  defaultValue,
+  value: controlledValue,
+  onValueChange,
+  className,
+  "aria-label": ariaLabel,
+  children,
+}: {
+  id?: string;
+  /** Omit when driving the value yourself — nothing is posted then. */
+  name?: string;
+  defaultValue?: string;
+  /** Controlled mode, for the pickers that are not inside a form. */
+  value?: string;
+  onValueChange?: (value: string) => void;
+  className?: string;
+  "aria-label"?: string;
+  children: React.ReactNode;
+}) {
+  const options = optionsFrom(children);
+  const [uncontrolled, setUncontrolled] = useState(defaultValue ?? "");
+
+  const value = controlledValue ?? uncontrolled;
+  const setValue = (next: string) => {
+    if (controlledValue === undefined) setUncontrolled(next);
+    onValueChange?.(next);
+  };
+
   return (
-    <select
-      {...props}
-      className={cn(
-        "focus-ring h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm transition-colors outline-none dark:bg-input/30",
-        className,
-      )}
-    />
+    <>
+      {/*
+        What the server actually receives. NONE maps back to "", which every
+        action already reads as "not set" via orNull().
+
+        No `required` here even where the old select had one: a hidden input is
+        barred from constraint validation, so it would be decoration. The
+        schemas are the gate — `userId: z.guid("Choose someone to add.")` — and
+        the form is `noValidate` regardless.
+      */}
+      {name ? <input type="hidden" name={name} value={value} /> : null}
+
+      <Select
+        value={value === "" ? NONE : value}
+        onValueChange={(next) => setValue(next === NONE ? "" : next)}
+      >
+        <SelectTrigger id={id} aria-label={ariaLabel} className={cn("h-8 w-full", className)}>
+          <SelectValue />
+        </SelectTrigger>
+
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem
+              key={option.value || NONE}
+              // Radix reserves "" to mean "cleared", and throws on an item that
+              // uses it, so the empty option travels under a sentinel and is
+              // translated back at both boundaries.
+              value={option.value === "" ? NONE : option.value}
+              disabled={option.disabled}
+            >
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
   );
+}
+
+/** Stands in for `<option value="">`, which Radix will not accept. */
+const NONE = "__none__";
+
+type ParsedOption = { value: string; label: string; disabled?: boolean };
+
+/**
+ * Reads `<option>` children into plain data.
+ *
+ * `React.Children.toArray` flattens the arrays that `.map()` produces at the
+ * call sites and drops nulls, so a caller can keep writing the markup it always
+ * wrote.
+ */
+function optionsFrom(children: React.ReactNode): ParsedOption[] {
+  return React.Children.toArray(children).flatMap((child) => {
+    if (!React.isValidElement(child)) return [];
+    const props = child.props as { value?: string; disabled?: boolean; children?: React.ReactNode };
+    return [
+      {
+        value: props.value ?? "",
+        label: typeof props.children === "string" ? props.children : String(props.children ?? ""),
+        disabled: props.disabled,
+      },
+    ];
+  });
 }
 
 /** Two-up row for fields that belong together, e.g. status + due date. */

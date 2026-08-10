@@ -66,19 +66,18 @@ test.describe("theme", () => {
   });
 
   /**
-   * The one property that decides whether native controls are readable.
+   * The property that decides whether browser-painted controls are readable.
    *
-   * A `<select>`'s dropdown, a date field's calendar and the search input's
-   * clear button are painted by the browser, not from the DOM — they cannot be
-   * screenshotted, queried or styled. `color-scheme` is the only handle CSS
-   * has on them, and getting it wrong is invisible to every other kind of test:
-   * the page looks perfect until someone opens a select, and then reads light
-   * grey text on a white popup.
+   * A date field's calendar, the search input's clear button and the
+   * scrollbars are drawn by the browser, not built from the DOM — they cannot
+   * be screenshotted, queried or styled, so `color-scheme` is the only handle
+   * CSS has on them and a regression is invisible to every other kind of test.
    *
-   * So this asserts the property directly in both themes, on the surface that
-   * carries the most native controls.
+   * The dropdowns used to be in that set and are not any more: `SelectField`
+   * builds its list from real elements precisely so it can be styled and
+   * asserted, which the test below this one does.
    */
-  test("native controls follow the theme, not the platform default", async ({ page }) => {
+  test("browser-painted controls follow the theme, not the platform", async ({ page }) => {
     await page.goto("/projects");
 
     const scheme = () =>
@@ -90,12 +89,74 @@ test.describe("theme", () => {
     await page.getByRole("button", { name: "Toggle theme" }).click();
     await expect(page.locator("html")).toHaveClass(/dark/);
     expect(await scheme()).toBe("dark");
+  });
 
-    // And it survives into a dialog, which is where the selects actually live.
+  /**
+   * The bug this replaced a native `<select>` to fix: options rendered as
+   * light grey on a white popup, unreadable and unreachable from CSS.
+   *
+   * Asserting the *painted* colours rather than class names, because the
+   * failure was precisely that the markup looked right. Contrast is computed
+   * from the option's own text and the surface behind it, so a future theme
+   * change that reintroduces a pale-on-pale list fails here.
+   */
+  test("dropdown options are readable in dark mode", async ({ page }) => {
+    await page.goto("/projects");
+    await page.getByRole("button", { name: "Toggle theme" }).click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+
     await page.getByRole("button", { name: "New project" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    expect(await scheme()).toBe("dark");
-    await expect(page.locator("#status")).toBeVisible();
+    await page.locator("#status").click();
+
+    const option = page.locator('[role="option"]').filter({ hasText: /^Paused$/ });
+    await expect(option).toBeVisible();
+
+    /**
+     * Rasterised through a canvas, not parsed. Chromium reports computed
+     * colours as `lab(...)` — the same reason the brand test above paints
+     * rather than compares strings — so reading digits out of the string
+     * yields numbers that are not sRGB at all.
+     */
+    const [text, surface] = await option.evaluate((el) => {
+      const toRgb = (colour: string) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = colour;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return [r, g, b] as [number, number, number];
+      };
+
+      // Walk up for the first ancestor that actually paints a background.
+      let node: HTMLElement | null = el as HTMLElement;
+      let background = "rgb(255, 255, 255)";
+      while (node) {
+        const value = getComputedStyle(node).backgroundColor;
+        if (value && !/rgba\(0, 0, 0, 0\)|transparent/.test(value)) {
+          background = value;
+          break;
+        }
+        node = node.parentElement;
+      }
+
+      return [toRgb(getComputedStyle(el).color), toRgb(background)];
+    });
+
+    const luminance = ([r, g, b]: [number, number, number]) => {
+      const channel = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+
+    const [lighter, darker] = [luminance(text), luminance(surface)].sort((a, b) => b - a);
+    const contrast = (lighter + 0.05) / (darker + 0.05);
+
+    // WCAG AA for body text. The bug measured near 1:1.
+    expect(contrast, `option rgb(${text}) on rgb(${surface})`).toBeGreaterThan(4.5);
   });
 
   test("renders without a hydration mismatch warning", async ({ page }) => {
