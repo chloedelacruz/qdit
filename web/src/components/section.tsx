@@ -4,8 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * A titled block of rows. Shared by the dashboard panels and the project
- * overview, which were previously two near-identical local copies.
+ * A titled block of rows, shared by the dashboard panels and the project
+ * overview so the two cannot drift into near-identical local copies.
  *
  * `priority` marks the page's primary object (spec §Visual Priority): it steps
  * the container up one elevation and gives the heading icon the accent. Exactly
