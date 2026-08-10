@@ -6,7 +6,7 @@ import { useState } from "react";
 import { HashLink } from "@/components/hash-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/form-dialog";
+import { SelectField } from "@/components/form-dialog";
 import type { VerifiedTx } from "@/app/api/verify-tx/route";
 import { isTxHash, NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import { cn } from "@/lib/utils";
@@ -72,9 +72,9 @@ export function VerifyTx() {
           className="min-w-0 flex-1"
         />
 
-        <NativeSelect
+        <SelectField
           value={network}
-          onChange={(event) => setNetwork(event.target.value as StellarNetwork)}
+          onValueChange={(next) => setNetwork(next as StellarNetwork)}
           aria-label="Network"
           className="w-32"
         >
@@ -83,7 +83,7 @@ export function VerifyTx() {
               {label}
             </option>
           ))}
-        </NativeSelect>
+        </SelectField>
 
         <Button type="submit" disabled={!valid || pending}>
           {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
