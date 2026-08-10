@@ -395,15 +395,20 @@ Behaviours worth knowing before editing the suite:
 
 ## Things that will bite
 
-- **`color-scheme` is the only styling hook on native controls.** A `<select>`'s
-  dropdown, a date field's calendar and a search input's clear button are painted
-  by the browser, not built from the DOM — they cannot be selected, screenshotted
-  or themed. Without `color-scheme` the browser assumes light and paints a white
-  popup while `color` is inherited from the dark theme, so the options render as
-  light grey on white: invisible, and unreachable from a stylesheet. It is
-  declared on `:root` and `.dark` in `globals.css`, and the two must stay in
-  step. `theme.spec.ts` asserts the computed value in both themes, because no
-  screenshot or DOM query can catch this.
+- **Browser-painted controls answer only to `color-scheme`.** A date field's
+  calendar, the search input's clear button and the scrollbars are drawn by the
+  browser, not built from the DOM — they cannot be selected, screenshotted or
+  themed. `color-scheme` is declared on `:root` and `.dark` in `globals.css` and
+  the two must stay in step.
+- **Dropdowns are deliberately not native.** A native `<select>`'s popup takes
+  its background from the control's own `background-color`, and ours was
+  translucent, so Chrome blended it toward white and painted the dark theme's
+  light text on it — invisible options, with no stylesheet able to reach them.
+  `color-scheme: dark` alone does **not** fix that. `SelectField` in
+  `form-dialog.tsx` builds the list from real elements instead, which is also
+  what lets `theme.spec.ts` measure the contrast. Its value reaches `FormData`
+  through a hidden input, because a Radix trigger is a button and submits
+  nothing.
 - **PostgREST does not see a new column until its schema cache reloads.** Every
   query naming one returns *nothing* — no error, no 400. It surfaces as an empty
   dashboard and "Not found" on every project route, which reads exactly like an

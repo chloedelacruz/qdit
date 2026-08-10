@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { choose } from "./select";
 import { MEMBERS, OUTSIDER, PROJECT } from "./seed";
 
 /**
@@ -62,15 +63,27 @@ test.describe("editing a task", () => {
     const title = unique("task");
 
     await page.goto(`/projects/${PROJECT.slug}/board`);
-    await page.getByRole("button", { name: "New task" }).click();
-    await page.getByLabel("Title").fill(title);
-    await page.getByRole("button", { name: "Create task" }).click();
-    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
 
     const todoCount = page.locator(
       '[data-slot="board-column"][data-status="todo"] [data-slot="board-count"]',
     );
+
+    /**
+     * Sampled *before* creating, and every later check is a retrying
+     * assertion rather than a bare read.
+     *
+     * The dialog closes when the action returns, but `revalidatePath` re-renders
+     * the tree afterwards, so reading the count the instant the dialog hides can
+     * catch the pre-create value. That made `before` one too low, and the final
+     * `before - 1` then failed against a count that was actually correct.
+     */
     const before = Number(await todoCount.innerText());
+
+    await page.getByRole("button", { name: "New task" }).click();
+    await page.getByLabel("Title").fill(title);
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
+    await expect(todoCount).toHaveText(String(before + 1));
 
     await openRowMenu(page, title, "task");
     await page.getByRole("menuitem", { name: "Delete" }).click();
@@ -88,7 +101,7 @@ test.describe("editing a task", () => {
     await expect(confirm).toBeHidden({ timeout: 20_000 });
 
     await expect(page.locator("article").filter({ hasText: title })).toHaveCount(0);
-    await expect(todoCount).toHaveText(String(before - 1));
+    await expect(todoCount).toHaveText(String(before));
   });
 
   test("cancelling the confirmation leaves the task alone", async ({ page }) => {
@@ -183,8 +196,8 @@ test.describe("recording a deployment", () => {
 
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Release notes").fill(notes);
-    await page.selectOption("#d-status", "ready_for_mainnet");
-    await page.selectOption("#d-network", "testnet");
+    await choose(page, "d-status", "Ready for Mainnet");
+    await choose(page, "d-network", "Testnet");
     await dialog.getByRole("button", { name: "Record deployment" }).click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
 
@@ -199,8 +212,8 @@ test.describe("recording a deployment", () => {
     await page.getByRole("button", { name: "Record deployment" }).click();
 
     const dialog = page.getByRole("dialog");
-    await page.selectOption("#d-status", "mainnet_live");
-    await page.selectOption("#d-network", "");
+    await choose(page, "d-status", "Mainnet Live");
+    await choose(page, "d-network", "None");
     await dialog.getByRole("button", { name: "Record deployment" }).click();
 
     // Reported inline against the field, not as a Postgres 23514 after the
@@ -261,7 +274,7 @@ test.describe("adding a member by email", () => {
     await page.getByRole("button", { name: "Add member" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Email address").fill(OUTSIDER.email);
-    await page.selectOption("#m-role", "member");
+    await choose(page, "m-role", "Member");
     await dialog.getByRole("button", { name: "Add member" }).click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
 
