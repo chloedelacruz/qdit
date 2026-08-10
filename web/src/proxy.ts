@@ -18,7 +18,7 @@ import { updateSession } from '@/lib/supabase/proxy'
  * matcher change can silently drop proxy coverage for a route, and Server
  * Functions are handled as POSTs to the route that uses them — so every page,
  * Route Handler and Server Action must still check the user itself. RLS in
- * `supabase/migrations/20260731000002_rls.sql` is the real boundary.
+ * `supabase/migrations/20260731133313_rls.sql` is the real boundary.
  */
 export async function proxy(request: NextRequest) {
   return await updateSession(request)

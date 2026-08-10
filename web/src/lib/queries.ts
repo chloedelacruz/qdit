@@ -11,7 +11,12 @@
  * yet" apart from "your filter matched nothing" without a second round trip.
  */
 
-import { TASK_STATUS_ORDER, type MemberRole, type TaskStatus } from "@/lib/constants";
+import {
+  TASK_STATUS_ORDER,
+  type MemberRole,
+  type TaskPriority,
+  type TaskStatus,
+} from "@/lib/constants";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
 import type { StellarNetwork } from "@/lib/stellar";
@@ -469,6 +474,7 @@ export type TaskRow = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   assigneeId: string | null;
   dueDate: string | null;
   projectName: string;
@@ -480,7 +486,7 @@ export type TaskRow = {
 };
 
 const TASK_SELECT = `
-  id, project_id, milestone_id, title, description, status, assignee_id, due_date,
+  id, project_id, milestone_id, title, description, status, priority, assignee_id, due_date,
   projects!inner(name, slug),
   milestones(title)
 `;
@@ -492,6 +498,7 @@ type TaskRecord = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   assignee_id: string | null;
   due_date: string | null;
   projects: { name: string; slug: string };
@@ -508,6 +515,7 @@ function toTask(row: TaskRecord, members: MemberMap): TaskRow {
     title: row.title,
     description: row.description,
     status: row.status,
+    priority: row.priority,
     assigneeId: row.assignee_id,
     dueDate: row.due_date,
     projectName: row.projects.name,
@@ -532,6 +540,7 @@ function taskQuery(
   if (filters.q) query = query.ilike("title", likeTerm(filters.q));
 
   query = applyIn(query, "status", filters.status);
+  query = applyIn(query, "priority", filters.priority);
   query = applyIn(query, "assignee_id", filters.assignee);
   query = applyIn(query, "milestone_id", filters.milestone);
   query = applyIn(query, "project_id", filters.project);
@@ -560,8 +569,17 @@ export async function listTasks(
   const ordered =
     filters.sort === "name"
       ? query.order("title")
-      : // Undated work sorts last: a missing due date is not "due first".
-        query.order("due_date", { ascending: true, nullsFirst: false }).order("title");
+      : filters.sort === "priority"
+        ? // `task_priority` is declared low → urgent, so Postgres sorts the
+          // enum in that order and descending is what puts P0 at the top. Due
+          // date breaks the tie, because within one priority the question is
+          // still which of these is due first.
+          query
+            .order("priority", { ascending: false })
+            .order("due_date", { ascending: true, nullsFirst: false })
+            .order("title")
+        : // Undated work sorts last: a missing due date is not "due first".
+          query.order("due_date", { ascending: true, nullsFirst: false }).order("title");
 
   const { data, count } = await ordered.limit(filters.limit);
 

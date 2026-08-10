@@ -191,7 +191,12 @@ on conflict (id) do update set
 -- `do update` rather than `do nothing`, because a seed that skips rows it
 -- already sees cannot repair one that has been edited since — and `status` in
 -- particular is one drag away from being wrong.
-insert into public.tasks (id, project_id, milestone_id, title, description, status, assignee_id, due_date, order_index)
+--
+-- The priorities below spread across the enum so the board's P0–P3 chips have
+-- something to show. They reach a local stack only — every task in the hosted
+-- project the Playwright suite runs against holds the default, so do not write
+-- an e2e that asserts a priority it did not set itself.
+insert into public.tasks (id, project_id, milestone_id, title, description, status, priority, assignee_id, due_date, order_index)
 values
   (
     'cccccccc-0000-4000-8000-000000000001',
@@ -200,6 +205,7 @@ values
     'Model the milestone state machine',
     'Proposed -> Submitted -> Approved | Rejected, with resubmission after reject.',
     'done',
+    'medium',
     '11111111-1111-1111-1111-111111111111',
     current_date - 20,
     0
@@ -211,6 +217,7 @@ values
     'Write contract unit tests',
     'Cover the unauthorized and invalid-transition error paths.',
     'done',
+    'low',
     '22222222-2222-2222-2222-222222222222',
     current_date - 16,
     1
@@ -222,6 +229,7 @@ values
     'Publish the WASM to Testnet',
     null,
     'in_progress',
+    'urgent',
     '11111111-1111-1111-1111-111111111111',
     current_date + 2,
     0
@@ -233,6 +241,7 @@ values
     'Build the task board',
     'Three columns with drag-free status changes for the MVP.',
     'todo',
+    'high',
     '22222222-2222-2222-2222-222222222222',
     current_date + 12,
     0
@@ -244,6 +253,7 @@ values
     'Draft the grant progress update',
     'Unlinked backlog item — not attached to any milestone.',
     'todo',
+    'low',
     null,
     null,
     0
@@ -253,6 +263,7 @@ on conflict (id) do update set
   title        = excluded.title,
   description  = excluded.description,
   status       = excluded.status,
+  priority     = excluded.priority,
   assignee_id  = excluded.assignee_id,
   due_date     = excluded.due_date,
   order_index  = excluded.order_index;

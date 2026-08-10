@@ -2,8 +2,8 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger},
-    Env, Event as _,
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    Env, Event as _, IntoVal,
 };
 
 /// Fixture: fresh env with auth mocked, contract registered, client + addresses.
@@ -553,4 +553,202 @@ fn milestones_and_projects_are_namespaced() {
             .try_approve_milestone(&other_project, &milestone(&f.env), &f.owner),
         Err(Ok(Error::NotAuthorized))
     );
+}
+
+// ---------------------------------------------------------------------------
+// Ownership transfer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn transfer_moves_approval_rights_to_the_new_owner() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+
+    f.client.create_project_ref(&project(&f.env), &f.owner);
+    f.client.submit_milestone_proof(
+        &project(&f.env),
+        &milestone(&f.env),
+        &f.builder,
+        &proof(&f.env, 3),
+    );
+
+    f.client
+        .transfer_project_owner(&project(&f.env), &f.owner, &successor);
+
+    // The successor can approve...
+    f.client
+        .approve_milestone(&project(&f.env), &milestone(&f.env), &successor);
+    assert_eq!(
+        f.client
+            .get_milestone_status(&project(&f.env), &milestone(&f.env))
+            .status,
+        MilestoneStatus::Approved
+    );
+}
+
+#[test]
+fn transfer_strips_approval_rights_from_the_old_owner() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+    let second_ms = String::from_str(&f.env, "d3d94468-02a4-4d1c-b3d4-c2b6f0b6d9a1");
+
+    f.client.create_project_ref(&project(&f.env), &f.owner);
+    f.client
+        .transfer_project_owner(&project(&f.env), &f.owner, &successor);
+    f.client
+        .submit_milestone_proof(&project(&f.env), &second_ms, &f.builder, &proof(&f.env, 4));
+
+    // ...and the previous owner cannot. Handing a project over has to actually
+    // hand it over, or the transfer is decoration.
+    assert_eq!(
+        f.client
+            .try_approve_milestone(&project(&f.env), &second_ms, &f.owner),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
+
+#[test]
+fn transfer_preserves_the_milestone_record() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+    let hash = proof(&f.env, 0x5c);
+
+    f.client.create_project_ref(&project(&f.env), &f.owner);
+    f.client
+        .submit_milestone_proof(&project(&f.env), &milestone(&f.env), &f.builder, &hash);
+    f.client
+        .transfer_project_owner(&project(&f.env), &f.owner, &successor);
+
+    // Ownership is a property of the project, not of the attestations under it.
+    // `submitter` is a historical fact and the version counter must not reset,
+    // or a transfer would launder the proof trail.
+    let record = f
+        .client
+        .get_milestone_status(&project(&f.env), &milestone(&f.env));
+    assert_eq!(record.submitter, f.builder);
+    assert_eq!(record.proof_hash, hash);
+    assert_eq!(record.version, 1);
+    assert_eq!(record.status, MilestoneStatus::Submitted);
+}
+
+#[test]
+fn transfer_by_non_owner_fails() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+
+    f.client.create_project_ref(&project(&f.env), &f.owner);
+
+    // The builder is authenticated — mock_all_auths satisfies require_auth — but
+    // is not the address in storage.
+    assert_eq!(
+        f.client
+            .try_transfer_project_owner(&project(&f.env), &f.builder, &successor),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
+
+#[test]
+fn transfer_on_unknown_project_errors() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+
+    assert_eq!(
+        f.client
+            .try_transfer_project_owner(&project(&f.env), &f.owner, &successor),
+        Err(Ok(Error::ProjectNotFound))
+    );
+}
+
+#[test]
+fn transfer_rejects_an_over_long_id() {
+    let f = setup();
+    let successor = Address::generate(&f.env);
+    // 65 characters — one past MAX_ID_LEN, spelled out because the crate is
+    // no_std and `str::repeat` is unavailable.
+    let long = String::from_str(
+        &f.env,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+
+    assert_eq!(
+        f.client
+            .try_transfer_project_owner(&long, &f.owner, &successor),
+        Err(Ok(Error::IdTooLong))
+    );
+}
+
+/// The whole point of requiring two signatures.
+///
+/// Only `current_owner` is authorized here, so the call must fail. Without
+/// `new_owner.require_auth()` this passes — and the function becomes able to
+/// pin a project to an address nobody controls, which is the exact failure it
+/// exists to undo, with no admin path to recover from it.
+#[test]
+fn transfer_requires_the_new_owner_to_sign_too() {
+    let env = Env::default();
+    env.ledger().set_timestamp(1_700_000_000);
+
+    let contract_id = env.register(MilestoneProofContract, ());
+    let client = MilestoneProofContractClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+    let successor = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.create_project_ref(&project(&env), &owner);
+
+    // Re-mock with only the current owner authorized.
+    env.set_auths(&[]);
+    env.mock_auths(&[MockAuth {
+        address: &owner,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "transfer_project_owner",
+            args: (project(&env), owner.clone(), successor.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    assert!(client
+        .try_transfer_project_owner(&project(&env), &owner, &successor)
+        .is_err());
+
+    // And the owner in storage is unchanged: the old owner can still approve.
+    env.mock_all_auths();
+    client.submit_milestone_proof(&project(&env), &milestone(&env), &owner, &proof(&env, 1));
+    client.approve_milestone(&project(&env), &milestone(&env), &owner);
+}
+
+#[test]
+fn transfer_emits_its_event() {
+    let f = setup();
+    let env = &f.env;
+    let successor = Address::generate(env);
+
+    f.client.create_project_ref(&project(env), &f.owner);
+    f.client
+        .transfer_project_owner(&project(env), &f.owner, &successor);
+
+    assert_eq!(
+        env.events().all(),
+        [ProjectOwnerTransferred {
+            project_id: project(env),
+            previous_owner: f.owner.clone(),
+            new_owner: successor.clone(),
+        }
+        .to_xdr(env, &f.client.address)],
+    );
+}
+
+#[test]
+fn a_failed_transfer_emits_nothing() {
+    let f = setup();
+    let env = &f.env;
+    let successor = Address::generate(env);
+
+    f.client.create_project_ref(&project(env), &f.owner);
+    let _ = f
+        .client
+        .try_transfer_project_owner(&project(env), &f.builder, &successor);
+
+    assert!(env.events().all().events().is_empty());
 }

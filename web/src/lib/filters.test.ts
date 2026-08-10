@@ -67,6 +67,15 @@ describe("parseFilters", () => {
     expect(parseFilters({ sort: "progress" }).sort).toBe("progress");
   });
 
+  it("reads the priority facet, which only the task surfaces offer", () => {
+    // The values are the `task_priority` enum's own, so what the URL carries is
+    // what `listTasks` hands to Postgres' `in`.
+    expect(parseFilters({ priority: "urgent,high" }).priority).toEqual([
+      "urgent",
+      "high",
+    ]);
+  });
+
   describe("limit", () => {
     it("defaults when absent, unparseable, zero or negative", () => {
       for (const limit of [undefined, "abc", "0", "-5", ""]) {
@@ -113,6 +122,7 @@ describe("round trip", () => {
     const input = filters({
       q: "contract",
       status: ["todo", "in_progress"],
+      priority: ["urgent", "high"],
       assignee: ["11111111-1111-1111-1111-111111111111"],
       milestone: ["22222222-2222-2222-2222-222222222222"],
       network: ["testnet"],
@@ -189,6 +199,13 @@ describe("activeFilterCount", () => {
   it("counts each facet value, plus the query as one", () => {
     const start = filters({ q: "x", status: ["todo", "done"], network: ["testnet"] });
     expect(activeFilterCount(start)).toBe(4);
+  });
+
+  it("counts priority too, so the Clear button's number stays honest", () => {
+    // Every facet has to be in FACET_KEYS for this to hold — a facet that
+    // filters but is not counted leaves the bar understating what it hid.
+    expect(activeFilterCount(filters({ priority: ["urgent"] }))).toBe(1);
+    expect(hasActiveFilters(filters({ priority: ["urgent"] }))).toBe(true);
   });
 
   it("is zero for the defaults", () => {

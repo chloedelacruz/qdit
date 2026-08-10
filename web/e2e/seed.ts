@@ -23,22 +23,37 @@ export const PROJECT = {
  * `TASKS.inProgress`, and `dashboard.spec.ts` asserts that same task appears
  * under "My open tasks", which only holds for tasks assigned to whoever is
  * signed in. The two can only both pass if the signed-in user *is* the owner
- * persona, so the real account took over the seeded "Ada Builder" role in the
- * hosted database on 2026-08-09: her memberships, task assignments, proofs and
- * deployments all moved across, and she is no longer on the project.
+ * persona, so the real account holds it in the hosted database: the memberships,
+ * task assignments, proofs and deployments all sit with it.
  *
- * `supabase/seed.sql` still creates Ada, because it seeds a local stack where
- * there is no real account to hand anything to. That divergence is deliberate;
- * see the e2e section of README.md.
+ * `supabase/seed.sql` creates "Ada Builder" for that role instead, because it
+ * seeds a local stack where there is no real account to hand anything to. That
+ * divergence is deliberate; see the e2e section of README.md.
  *
- * One useful side effect: `ada@qdit.test` now exists without belonging to the
- * seeded project, which is exactly the seed data the member-*add* path needed
- * and never had (gaps.md §2.1).
+ * Pointing `E2E_EMAIL` at anyone else — including Ada on the hosted project,
+ * where she holds no membership — fails ~50 specs on their empty states rather
+ * than on sign-in. `web/.env.example` describes the symptom.
  */
 export const MEMBERS = {
   owner: { name: "chloedelacruz", initials: "CH" },
   ben: { name: "Ben Reviewer", initials: "BR" },
   cleo: { name: "Cleo Observer", initials: "CO" },
+} as const;
+
+/**
+ * An account that exists and belongs to no project, for the invite-by-email
+ * path.
+ *
+ * That combination is what makes her the right subject: RLS hides a
+ * non-teammate's `profiles` row from every query the client can make, so she
+ * cannot be reached through the member picker at all. Adding her exercises
+ * `add_project_member_by_email` doing the one thing only it can do.
+ *
+ * No password here — the specs never sign in as her, they add her.
+ */
+export const OUTSIDER = {
+  email: "ada@qdit.test",
+  name: "Ada Builder",
 } as const;
 
 export const TASKS = {

@@ -13,6 +13,7 @@ Built against **soroban-sdk 27.0.4** and **stellar CLI 27.x**, targeting `wasm32
 | Function | Auth | Notes |
 | --- | --- | --- |
 | `create_project_ref(project_id: String, owner: Address)` | `owner` | Errors `ProjectExists` (1) if the id is taken. |
+| `transfer_project_owner(project_id: String, current_owner: Address, new_owner: Address)` | **both** | `current_owner` must equal the address in storage. Milestone records untouched. |
 | `submit_milestone_proof(project_id: String, milestone_id: String, submitter: Address, proof_hash: BytesN<32>)` | `submitter` | Sets status `Submitted`, increments `version`, stamps `env.ledger().timestamp()`. |
 | `approve_milestone(project_id: String, milestone_id: String, approver: Address)` | `approver`, must equal the project owner | Only valid from `Submitted`. |
 | `reject_milestone(project_id: String, milestone_id: String, approver: Address)` | `approver`, must equal the project owner | Only valid from `Submitted`. |
@@ -32,6 +33,23 @@ exactly 32 — no headroom, and a lossy-looking conversion at the call boundary.
 `String` takes the id as the app already has it. Ids are capped at 64 characters
 (`IdTooLong`) so a caller cannot make the ledger carry an unbounded key.
 
+### Why a transfer needs two signatures
+
+`transfer_project_owner` calls `require_auth()` on the outgoing owner *and* the
+incoming one. The outgoing signature proves the right to give the project away;
+the incoming signature proves the destination is an address someone actually
+controls.
+
+Requiring only the first would let this function recreate the exact problem it
+exists to solve. A project registered to an address nobody can sign for is stuck
+forever — there is no admin and no upgrade path — and a one-sided transfer could
+put a project into that state with a single typo, permanently. The cost is that
+a handover is a two-party transaction rather than a one-click action.
+
+It fixes a wrong-but-controlled address, a planned handover, and key rotation.
+It does **not** recover a lost key: a lost key cannot sign as `current_owner`.
+Nothing here can, and that is the deliberate price of having no admin address.
+
 ### `version`
 
 `MilestoneRecord.version` counts submissions, starting at 1. A re-submission
@@ -46,6 +64,7 @@ Every write emits one, and a failed call emits none. Uniform shape:
 | Topic 0 | Topic 1 | Topic 2 | Data |
 | --- | --- | --- | --- |
 | `qdit` | `register` | `project_id` | `owner` |
+| `qdit` | `transfer` | `project_id` | `previous_owner`, `new_owner` |
 | `qdit` | `submit` | `project_id` | `milestone_id`, `submitter`, `proof_hash`, `version` |
 | `qdit` | `approve` | `project_id` | `milestone_id`, `approver`, `version` |
 | `qdit` | `reject` | `project_id` | `milestone_id`, `approver`, `version` |
@@ -94,7 +113,7 @@ cargo fmt --all --check
 One-time identity and funding:
 
 ```sh
-stellar keys generate --global qdit-deployer --network testnet --fund
+stellar keys generate qdit-deployer --network testnet --fund
 stellar keys address qdit-deployer
 ```
 
@@ -119,20 +138,45 @@ The command prints the contract id (`C...`). Save it as
 | | |
 | --- | --- |
 | Network | Testnet (`Test SDF Network ; September 2015`) |
-| Contract ID | [`CAZYR4UI5EYAIUDNXYAYDVHGMUOELJHQNETOAPN3SMR5BMH6XV2FJRH6`](https://stellar.expert/explorer/testnet/contract/CAZYR4UI5EYAIUDNXYAYDVHGMUOELJHQNETOAPN3SMR5BMH6XV2FJRH6) |
-| WASM hash | `18e77bec96a4b2f346139fa8cecb65d75a08ef52432281565d50b954f23a2a8a` |
-| WASM upload tx | [`2ac00d00…86da42`](https://stellar.expert/explorer/testnet/tx/2ac00d000b8455af51ca0e57fd844119781fd45b92826ce14a94086a8986da42) |
-| Deploy tx | [`06f47068…f9ef1a48`](https://stellar.expert/explorer/testnet/tx/06f47068f44918c76f6c65721d03ea3d682b5da23101a4c4ef887698f9ef1a48) |
-| Deployer | `GDBBTFMMV6RKPIGDYGV4DCBA2BUZKWOUNVRFLNQ3GLGA3LIC7JF5MY2B` (`qdit-deployer`) |
-| Size | 8835 bytes optimized |
+| Contract ID | [`CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG`](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
+| WASM hash | `d4bbe221cbe9837cf277448d0fe3aa99cf0dd9213a98db15b671a34dadf2a8b4` |
+| WASM upload tx | [`1d1483f0…d92cf6`](https://stellar.expert/explorer/testnet/tx/1d1483f02b3e2233cb60d67ac4ad1e0fe57b96b5fa43d71867daf5c5d7d92cf6) |
+| Deploy tx | [`afcf108f…d780ddb`](https://stellar.expert/explorer/testnet/tx/afcf108fc640fac527e474f9593c050712a9b860ea5351bc43951f465d780ddb) |
+| Deployer | `GC5N7WGWHHZEJ2PEIYAREWKGNQSWR3CME2HXBXKOJ65F3MPL27R774JZ` (`qdit-deployer`) |
+| Size | 10777 bytes optimized (11899 unoptimized) |
+| Exported functions | 6 |
 
 The **WASM hash is the point of this table**: anyone can rebuild this source with
 `stellar contract build` and check the hash matches what is deployed. If it does
 not, the deployed bytes are not this code.
 
 Deployment is **not** upgradable — there is no admin address and no `upgrade`
-entry point, by choice. A bug means deploying a new contract id and migrating
+entry point, by choice. A bug means deploying a **new contract id** and migrating
 the `chain_contract_id` the app stores per project. Revisit before mainnet.
+
+Because there is no upgrade path, the cost of that migration scales with how much
+is already registered. It is near-zero while `projects.chain_contract_id` is null
+everywhere and `milestone_anchors` is empty; after the first `create_project_ref`
+each registered project has to be registered again under the new id, since its
+ownership stays behind in the old contract. **Check those two before assuming a
+redeploy is cheap.**
+
+### Verified live on this deployment
+
+Beyond the 26 unit tests, against the deployed contract:
+
+- `create_project_ref` emits `ProjectRegistered` and sets the owner.
+- `transfer_project_owner` **cannot be assembled without the incoming owner's
+  signature** — the CLI refuses with `Missing signing key for account G…` when
+  `new_owner` is an address it holds no key for. That is the two-signature rule
+  holding in production, not just in `mock_auths`.
+- After a transfer, the previous owner gets `Error(Contract, #4)` `NotAuthorized`
+  on the same project, so rights genuinely move rather than being shared.
+
+A caution learned while checking this: `stellar contract invoke` silently signs
+**every** auth entry it holds a local key for. A transfer between two identities
+that are both in your keystore therefore looks like it needed one signature. It
+did not — use an address you have no key for to see the requirement.
 
 ### TypeScript bindings
 
@@ -140,7 +184,7 @@ Generated from the deployed contract, never hand-written:
 
 ```sh
 stellar contract bindings typescript --network testnet \
-  --contract-id CAZYR4UI5EYAIUDNXYAYDVHGMUOELJHQNETOAPN3SMR5BMH6XV2FJRH6 \
+  --contract-id CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG \
   --output-dir /tmp/qdit-bindings
 cp /tmp/qdit-bindings/src/index.ts ../web/src/lib/chain/bindings.ts
 ```
