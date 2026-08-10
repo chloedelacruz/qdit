@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260731000002_rls.sql
+-- 20260731133313_rls.sql
 --
 -- Row Level Security. Every table in `public` is locked down; access is derived
 -- entirely from public.project_members.

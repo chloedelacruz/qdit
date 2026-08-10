@@ -1,9 +1,9 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260731000001_init.sql
+-- 20260731133219_init.sql
 --
 -- Enum types, tables, indexes and triggers for the off-chain data layer.
--- Row Level Security lives in 20260731000002_rls.sql.
+-- Row Level Security lives in 20260731133313_rls.sql.
 --
 -- Ordering inside this file matters:
 --   1. enum types          (referenced by table column definitions)
