@@ -113,6 +113,21 @@ pub struct ProjectRegistered {
     pub owner: Address,
 }
 
+/// Emitted when a project changes hands.
+///
+/// Both parties are in the data rather than as topics: a consumer watching one
+/// project already has `project_id` indexed, and indexing the addresses would
+/// invite treating this as a queryable ownership log, which it is not — the
+/// current owner is whatever the latest transfer left in storage.
+#[contractevent(topics = ["qdit", "transfer"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectOwnerTransferred {
+    #[topic]
+    pub project_id: String,
+    pub previous_owner: Address,
+    pub new_owner: Address,
+}
+
 #[contractevent(topics = ["qdit", "submit"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofSubmitted {
@@ -167,6 +182,57 @@ impl MilestoneProofContract {
         Self::bump(&env, &key);
 
         ProjectRegistered { project_id, owner }.publish(&env);
+        Ok(())
+    }
+
+    /// Hand a registered project to a new owner.
+    ///
+    /// **Both parties must sign.** `current_owner` proves the right to give the
+    /// project away; `new_owner` proves the destination is an address someone
+    /// actually controls. Requiring only the first would let this function
+    /// recreate the exact problem it exists to solve — a project pinned to an
+    /// address nobody can sign for — and there is no admin path to undo that.
+    ///
+    /// What this does and does not fix: it recovers a project registered to the
+    /// **wrong but still controlled** address, and it makes planned handovers
+    /// and key rotation possible. It cannot recover a **lost** key, because a
+    /// lost key cannot sign as `current_owner`. Nothing in this contract can;
+    /// that is the cost of having no admin address, and it is deliberate.
+    ///
+    /// Milestone records are untouched. `submitter` is a historical fact about
+    /// who submitted, and approve/reject read the owner from storage at call
+    /// time, so they follow the new owner without any migration.
+    pub fn transfer_project_owner(
+        env: Env,
+        project_id: String,
+        current_owner: Address,
+        new_owner: Address,
+    ) -> Result<(), Error> {
+        Self::check_id(&project_id)?;
+        current_owner.require_auth();
+        new_owner.require_auth();
+
+        let key = DataKey::Project(project_id.clone());
+        // Authorize against the owner in storage, never against the argument —
+        // the same rule `transition` follows.
+        let stored: Address = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ProjectNotFound)?;
+        if stored != current_owner {
+            return Err(Error::NotAuthorized);
+        }
+
+        env.storage().persistent().set(&key, &new_owner);
+        Self::bump(&env, &key);
+
+        ProjectOwnerTransferred {
+            project_id,
+            previous_owner: current_owner,
+            new_owner,
+        }
+        .publish(&env);
         Ok(())
     }
 
