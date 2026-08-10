@@ -194,6 +194,21 @@ export const projectMemberSchema = z.object({
   role: z.enum(ASSIGNABLE_ROLES),
 });
 
+/**
+ * Adding someone who is not already a teammate.
+ *
+ * The address is resolved server-side by `add_project_member_by_email`, because
+ * RLS makes a stranger's profile invisible to every query this client is
+ * allowed to make. Validated here only so an obvious typo is reported inline
+ * rather than after a round trip that will say "no account uses that email" and
+ * make the user wonder which of the two is wrong.
+ */
+export const projectMemberEmailSchema = z.object({
+  projectId: z.guid(),
+  email: z.email("Enter a valid email address."),
+  role: z.enum(ASSIGNABLE_ROLES),
+});
+
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
@@ -201,6 +216,7 @@ export type ProofInput = z.infer<typeof proofSchema>;
 export type DeploymentInput = z.infer<typeof deploymentSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type ProjectMemberInput = z.infer<typeof projectMemberSchema>;
+export type ProjectMemberEmailInput = z.infer<typeof projectMemberEmailSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
 export function slugify(value: string): string {

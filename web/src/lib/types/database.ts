@@ -501,6 +501,20 @@ export type Database = {
         Args: { p_role: Database['public']['Enums']['member_role'] }
         Returns: number
       }
+      /**
+       * Resolves an email to a user and adds them to a project in one call.
+       * Raises rather than returning a failure: 42501 when the caller is not an
+       * admin of `p_project_id`, P0002 when no account uses the address, 23505
+       * when they are already a member.
+       */
+      add_project_member_by_email: {
+        Args: {
+          p_project_id: string
+          p_email: string
+          p_role: Database['public']['Enums']['member_role']
+        }
+        Returns: string
+      }
     }
 
     Enums: {
