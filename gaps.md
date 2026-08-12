@@ -47,7 +47,7 @@ project cannot get permanently stuck, not because handovers are routine.
 **Migration versions match the hosted ledger.** Each filename in
 `supabase/migrations/` carries the version
 `supabase_migrations.schema_migrations` records for it, so a clean checkout sees
-all six as applied rather than trying to re-run them:
+all eight as applied rather than trying to re-run them:
 
 | Version | Name |
 |---|---|
@@ -57,6 +57,14 @@ all six as applied rather than trying to re-run them:
 | `20260731135342` | `task_priority` |
 | `20260809010655` | `chain_anchors` |
 | `20260810034700` | `member_invite_by_email` |
+| `20260812130728` | `wallet_identity` |
+| `20260812130752` | `member_invite_by_wallet` |
+
+The last two were applied through the Supabase MCP, which stamps its own
+version rather than taking one from a filename — so the files were **renamed to
+match the ledger afterwards**, not the other way round. They were authored as
+`…043000` and `…043100`. If you apply a migration that way again, expect to do
+the same rename, and check `schema_migrations` rather than assuming.
 
 **Keep it that way**, and note what it costs when you don't. A migration
 authored in the repo has to be applied by something that writes that ledger —

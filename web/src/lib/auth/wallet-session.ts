@@ -146,10 +146,22 @@ export async function signInWithWallet(address: string): Promise<WalletSignIn> {
  * the session-bound client. `generateLink` sends no mail; it only returns the
  * token that a magic link would have carried.
  *
- * The session is written as cookies rather than returned to the caller. doqtri
- * hands `access_token`/`refresh_token` back to the browser and calls
- * `setSession()`; a token that never reaches JavaScript cannot be read by
- * anything that gets injected into the page, and the browser does not need it.
+ * The session is written as cookies on this response rather than returned to
+ * the caller. doqtri hands `access_token`/`refresh_token` back to the browser
+ * and calls `setSession()`; skipping that means the token never travels through
+ * a response body the client has to receive, hold and pass on.
+ *
+ * It does **not** put the token beyond JavaScript's reach, and an earlier
+ * version of this comment claimed that it did. `@supabase/ssr` writes
+ * `sb-<ref>-auth-token` with `Path=/` and `SameSite=lax` and deliberately no
+ * `HttpOnly` — the browser client reads the session back out of
+ * `document.cookie`, which is how a Client Component has a session at all.
+ * Anything running on the page can read it either way.
+ *
+ * So what this buys is a smaller surface, not secrecy from the page: no token
+ * in a response body, and no window where the app holds one in memory before
+ * the cookie exists. Protection against injected script is CSP and not shipping
+ * the injection, exactly as it is for every other `@supabase/ssr` app.
  */
 async function mintSession(admin: SupabaseClient<Database>, email: string): Promise<void> {
   const { data, error } = await admin.auth.admin.generateLink({
@@ -187,7 +199,7 @@ export type LinkOutcome =
  * already permits exactly this and nothing more, so there is no reason to
  * reach for a key that permits everything.
  *
- * A `23505` is the unique index from `20260812043000_wallet_identity.sql`
+ * A `23505` is the unique index from `20260812130728_wallet_identity.sql`
  * saying another account already holds this address. Reporting that plainly is
  * safe — the caller just proved they control the wallet, so it tells them
  * something about themselves rather than about a stranger.

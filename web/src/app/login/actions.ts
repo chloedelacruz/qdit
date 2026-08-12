@@ -57,6 +57,20 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   redirect("/dashboard");
 }
 
+/**
+ * Retired, and kept.
+ *
+ * Nothing imports this. Accounts are created by connecting a wallet — see
+ * `lib/auth/wallet-session.ts` — so nothing asks someone to invent a password
+ * before they can look at the product. An email and password get *attached* to
+ * an account that already exists, which is a different operation with a
+ * different shape and a different home.
+ *
+ * It stays because the decision it encodes may be revisited, and because an
+ * unreferenced Server Action is inert: Next only registers actions reachable
+ * from the client bundle, so with nothing importing it there is no id and no
+ * endpoint to post to. Wire it to a form and it works exactly as it did.
+ */
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const parsed = parse(formData);
   if (!parsed.success) return fieldErrors(parsed.error);

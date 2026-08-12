@@ -1,19 +1,29 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signIn, signUp, type AuthState } from "./actions";
+import { signIn, type AuthState } from "./actions";
 
 const EMPTY: AuthState = {};
 
+/**
+ * Sign in with email and password — the recovery path, not the front door.
+ *
+ * This used to toggle between sign-in and sign-up. It no longer does, because
+ * an account is not something you fill in a form to get: connecting a wallet
+ * creates one. An email and password are attached afterwards, so that losing
+ * the wallet does not lose the workspace, and this form is how the person who
+ * lost it gets back in.
+ *
+ * So there is nothing here to sign *up* with. `signUp()` still exists in
+ * ./actions.ts and nothing imports it; the note above it says why.
+ */
 export function LoginForm() {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const action = mode === "signin" ? signIn : signUp;
-  const [state, formAction, pending] = useActionState(action, EMPTY);
+  const [state, formAction, pending] = useActionState(signIn, EMPTY);
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
@@ -41,9 +51,9 @@ export function LoginForm() {
           id="password"
           name="password"
           type="password"
-          // Tells a password manager whether to offer a saved credential or
-          // generate a new one.
-          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          // Always an existing credential now: this form only signs in, so a
+          // password manager should offer what it has rather than generate one.
+          autoComplete="current-password"
           required
           aria-invalid={state.fieldErrors?.password ? true : undefined}
           aria-describedby={state.fieldErrors?.password ? "password-error" : undefined}
@@ -67,21 +77,10 @@ export function LoginForm() {
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      <Button type="submit" variant="outline" className="w-full" disabled={pending}>
         {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-        {mode === "signin" ? "Sign in" : "Create account"}
+        Sign in
       </Button>
-
-      <p className="text-center text-xs text-muted-foreground">
-        {mode === "signin" ? "No account yet?" : "Already have an account?"}{" "}
-        <button
-          type="button"
-          className="transition-qdit focus-ring rounded text-foreground underline underline-offset-4 hover:text-primary"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-        >
-          {mode === "signin" ? "Create one" : "Sign in"}
-        </button>
-      </p>
     </form>
   );
 }

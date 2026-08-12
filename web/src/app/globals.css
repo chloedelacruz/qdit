@@ -489,6 +489,39 @@
   .truncate-hash {
     @apply overflow-hidden text-ellipsis whitespace-nowrap;
   }
+
+  /* --- Marketing surfaces ------------------------------------------------ */
+
+  /* Scroll reveal, used only by the landing page. Elements ship hidden and are
+     unhidden the first time they cross into view (`landing/reveal.tsx`). The
+     <noscript> rule on that page covers JS-off and the reduced-motion block
+     below covers the rest, so no copy is ever gated on this running. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    transition:
+      opacity 520ms var(--ease-qdit),
+      transform 520ms var(--ease-qdit);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  .reveal[data-shown="true"] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* A hairline that fades from nothing, through the accent, back to nothing.
+     Separates marketing bands without drawing a full-width rule across them. */
+  .rule-fade {
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      transparent,
+      var(--border-strong) 18%,
+      var(--border-strong) 82%,
+      transparent
+    );
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -508,5 +541,10 @@
 
   .stagger > * {
     animation: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
 }

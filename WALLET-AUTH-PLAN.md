@@ -137,10 +137,18 @@ supabase.auth.verifyOtp({ token_hash, type: "magiclink" })    // → session
 ```
 
 Run `verifyOtp` on the **SSR server client** inside the route handler, so the
-cookies are written server-side and no token ever reaches JavaScript. doqtri
-returns the tokens to the browser and calls `setSession()`; qdit does not need
-to, and a token that never reaches JS cannot be read by anything injected into
-the page.
+cookies are written server-side rather than the tokens being handed back for the
+browser to install. doqtri returns them and calls `setSession()`; qdit does not
+need to.
+
+**Corrected after testing against the real project.** An earlier draft of this
+section claimed the token therefore never reaches JavaScript. It does.
+`@supabase/ssr` writes `sb-<ref>-auth-token` with `Path=/` and `SameSite=lax`
+and deliberately **no `HttpOnly`** — the browser client reads the session back
+out of `document.cookie`, which is how a Client Component has a session at all.
+Setting the cookies server-side buys a smaller surface (no token in a response
+body, no window where the app holds one in memory before the cookie exists), not
+secrecy from the page.
 
 Note this is *not* doqtri's approach of deriving a password by HMAC and
 resetting the user's password to it. qdit has real accounts with real passwords
