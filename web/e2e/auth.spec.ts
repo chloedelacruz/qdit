@@ -34,16 +34,22 @@ test.describe("authentication", () => {
     await expect(page.getByText("Milestone Proof Registry")).toHaveCount(0);
   });
 
-  test("the login form offers both sign in and sign up", async ({ page }) => {
+  test("the wallet is the front door and email is the way back in", async ({ page }) => {
     await page.goto("/login");
 
+    await expect(page.getByRole("button", { name: "Connect wallet" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Lost your wallet?" })).toBeVisible();
+  });
 
-    await page.getByRole("button", { name: "Create one" }).click();
-    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+  test("there is no way to sign up with an email and password", async ({ page }) => {
+    await page.goto("/login");
 
-    await page.getByRole("button", { name: "Sign in" }).last().click();
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    // Accounts are created by connecting a wallet. An email and password get
+    // attached to an account that already exists, so a form offering to make
+    // one here would describe a flow that does not exist.
+    await expect(page.getByRole("button", { name: "Create one" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create account" })).toHaveCount(0);
   });
 
   test("invalid credentials are rejected without revealing which field was wrong", async ({
