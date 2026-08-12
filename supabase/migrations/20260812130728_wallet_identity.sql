@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260812043000_wallet_identity.sql
+-- 20260812130728_wallet_identity.sql
 --
 -- The wallet stops being an attestation key and becomes a credential.
 --
