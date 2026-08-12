@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260812043100_member_invite_by_wallet.sql
+-- 20260812130752_member_invite_by_wallet.sql
 --
 -- Adding someone to a project by their wallet address.
 --
@@ -90,7 +90,7 @@ begin
   end if;
 
   -- (4) Resolve through profiles rather than auth.users: the address lives on
-  -- the profile, and 20260812043000_wallet_identity.sql makes it unique, so
+  -- the profile, and 20260812130728_wallet_identity.sql makes it unique, so
   -- this can match at most one row.
   select p.id
     into v_user_id
