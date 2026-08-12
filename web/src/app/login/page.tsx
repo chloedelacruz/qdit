@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getUser } from "@/lib/supabase/server";
@@ -34,7 +35,37 @@ export default async function LoginPage() {
           </div>
 
           <div className="surface-primary rounded-xl border border-border-strong p-5">
-            <LoginForm />
+            <ConnectWalletButton className="w-full" />
+            <p className="mt-3 text-xs text-muted-foreground">
+              Connecting signs you in. If this wallet is new here, it gets an account.
+            </p>
+          </div>
+
+          {/*
+            Email and password are the *recovery* credential, not the entrance:
+            an account is created by connecting a wallet, and an address is
+            attached afterwards so a lost wallet is not a lost workspace. This
+            form is how someone in that position gets back in, which is why it
+            is here and why it is second.
+
+            There is no "create an account" alongside it any more. See the note
+            on signUp() in ./actions.ts.
+          */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <h2 className="mt-6 text-sm font-medium">Lost your wallet?</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Sign in with the email and password you added as a recovery method.
+            </p>
+
+            <div className="mt-4">
+              <LoginForm />
+            </div>
           </div>
         </div>
       </main>

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, Columns3, GitBranch, Link2, Milestone } from "lucide-react";
+import { Columns3, GitBranch, Link2, Milestone } from "lucide-react";
 
+import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { QditLogo, QditMark } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -57,17 +58,20 @@ export default function Home() {
             reconciliation before a grant report.
           </p>
 
+          {/* The front door, on the marketing surface rather than one click
+              behind it. Connecting is the whole of signing up: there is no form
+              to fill in first and no account to create beforehand. */}
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button asChild size="lg">
-              <Link href="/dashboard">
-                Open the dashboard
-                <ArrowRight data-icon="inline-end" />
-              </Link>
-            </Button>
+            <ConnectWalletButton />
             <Button asChild variant="ghost" size="lg">
               <Link href="/projects">Browse projects</Link>
             </Button>
           </div>
+
+          <p className="mt-4 max-w-md text-xs text-muted-foreground">
+            No password. Your wallet is the account — and once you are in, you can add
+            an email so losing the wallet does not mean losing the workspace.
+          </p>
         </section>
 
         <section className="grid gap-3 pb-20 sm:grid-cols-2">
