@@ -54,11 +54,25 @@ additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-enable_signup = true
+# Closed. Every account is created by the wallet registration flow, which runs
+# on the service role inside a Server Action and only after a signed challenge
+# has been verified. Nothing legitimate posts to the public signup endpoint any
+# more, and leaving it open let anyone mint an account — see section 3 of
+# 20260812235342_profile_username.sql for what that was worth when the profile
+# trigger still trusted client-supplied metadata.
+#
+# admin.createUser() is unaffected: the Auth admin API does not consult this.
+#
+# BEFORE FLIPPING THIS IN THE HOSTED PROJECT: run the local stack and sign in
+# with a wallet. Session minting goes through admin.generateLink({ type:
+# "magiclink" }) for an account that already exists, which should be indifferent
+# to the signup setting — should be, and this repo has not proved it. Local
+# first, hosted after.
+enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = true
+enable_signup = false
 double_confirm_changes = true
 # Local only: skip the confirmation round-trip so seeded logins work instantly.
 enable_confirmations = false

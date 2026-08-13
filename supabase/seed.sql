@@ -98,15 +98,27 @@ from auth.users u
 where u.email in ('ada@qdit.test', 'ben@qdit.test', 'cleo@qdit.test')
 on conflict do nothing;
 
--- Wallet addresses are not part of auth metadata, so patch the profiles the
--- on_auth_user_created trigger just produced.
+-- Wallet addresses and usernames are not part of the auth metadata written
+-- above, so patch the profiles the on_auth_user_created trigger just produced.
+--
+-- Re-running this file is safe despite profiles_freeze_wallet_address: the
+-- trigger rejects a *change* to an address that is already set, and these
+-- statements write the same constant every time, which is not a change.
 update public.profiles
-set wallet_address = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ'
+set wallet_address = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ',
+    username = 'ada'
 where id = '11111111-1111-1111-1111-111111111111';
 
 update public.profiles
-set wallet_address = 'GB6YPGW5JFMMP2QB2USQ33EUWTXVL4ZT5ITUNCY3YKVWOJPP57CANOF3'
+set wallet_address = 'GB6YPGW5JFMMP2QB2USQ33EUWTXVL4ZT5ITUNCY3YKVWOJPP57CANOF3',
+    username = 'ben'
 where id = '22222222-2222-2222-2222-222222222222';
+
+-- No wallet: cleo is the fixture for an account that predates the wallet flow,
+-- which is what keeps the one-time link in Settings covered by the seed.
+update public.profiles
+set username = 'cleo'
+where id = '33333333-3333-3333-3333-333333333333';
 
 
 -- ----------------------------------------------------------------------------

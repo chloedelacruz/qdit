@@ -4,31 +4,26 @@ import {
   PLACEHOLDER_EMAIL_DOMAIN,
   hasRecoveryCredential,
   isPlaceholderEmail,
-  placeholderEmail,
-  walletDisplayName,
 } from "@/lib/auth/wallet-identity";
+
+/**
+ * These two functions decide whether an account is sent to `/register` or to
+ * the dashboard, so the interesting cases are the ones where an address only
+ * looks like a placeholder.
+ *
+ * `placeholderEmail()` and `walletDisplayName()` used to be tested here and no
+ * longer exist — registration means nothing mints a placeholder address or
+ * names somebody after their own wallet. See the header of the module.
+ */
 
 const ADDRESS = "GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGSNFHEYVXM3XOJMDS674JZ";
 
-describe("placeholderEmail", () => {
-  it("is deterministic for one address", () => {
-    expect(placeholderEmail(ADDRESS)).toBe(placeholderEmail(ADDRESS));
-  });
-
-  it("lowercases, so the same wallet cannot produce two accounts", () => {
-    expect(placeholderEmail(ADDRESS)).toBe(
-      `${ADDRESS.toLowerCase()}@${PLACEHOLDER_EMAIL_DOMAIN}`,
-    );
-  });
-
-  it("ignores surrounding whitespace", () => {
-    expect(placeholderEmail(`  ${ADDRESS}\n`)).toBe(placeholderEmail(ADDRESS));
-  });
-});
+/** What the retired auto-create flow wrote into `auth.users`. */
+const PLACEHOLDER = `${ADDRESS.toLowerCase()}@${PLACEHOLDER_EMAIL_DOMAIN}`;
 
 describe("isPlaceholderEmail", () => {
-  it("recognises one it generated", () => {
-    expect(isPlaceholderEmail(placeholderEmail(ADDRESS))).toBe(true);
+  it("recognises one the retired flow would have written", () => {
+    expect(isPlaceholderEmail(PLACEHOLDER)).toBe(true);
   });
 
   it("does not fire on a real address", () => {
@@ -43,6 +38,11 @@ describe("isPlaceholderEmail", () => {
     expect(isPlaceholderEmail(`${PLACEHOLDER_EMAIL_DOMAIN}@example.com`)).toBe(false);
   });
 
+  it("is not fooled by a lookalike domain a registrant could actually own", () => {
+    expect(isPlaceholderEmail("ada@notwallet.qdit.local")).toBe(false);
+    expect(isPlaceholderEmail("ada@wallet.qdit.local.example.com")).toBe(false);
+  });
+
   it("treats a missing address as not-a-placeholder", () => {
     // Distinct from hasRecoveryCredential: null is not a placeholder, but it is
     // not a recovery credential either.
@@ -52,8 +52,8 @@ describe("isPlaceholderEmail", () => {
 });
 
 describe("hasRecoveryCredential", () => {
-  it("is false for a wallet account that has not attached an email", () => {
-    expect(hasRecoveryCredential(placeholderEmail(ADDRESS))).toBe(false);
+  it("is false for an account the retired flow created", () => {
+    expect(hasRecoveryCredential(PLACEHOLDER)).toBe(false);
   });
 
   it("is false when there is no address at all", () => {
@@ -63,15 +63,5 @@ describe("hasRecoveryCredential", () => {
 
   it("is true once a real address is attached", () => {
     expect(hasRecoveryCredential("ada@example.com")).toBe(true);
-  });
-});
-
-describe("walletDisplayName", () => {
-  it("keeps both ends, which is how addresses are compared by eye", () => {
-    expect(walletDisplayName(ADDRESS)).toBe("GCEZ…74JZ");
-  });
-
-  it("is short enough to sit inline in prose", () => {
-    expect(walletDisplayName(ADDRESS)).toHaveLength(9);
   });
 });

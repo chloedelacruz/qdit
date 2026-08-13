@@ -57,45 +57,20 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   redirect("/dashboard");
 }
 
-/**
- * Retired, and kept.
+/*
+ * `signUp()` was here, retired but kept in case the decision was revisited.
+ * It has been, and the answer is not this function.
  *
- * Nothing imports this. Accounts are created by connecting a wallet — see
- * `lib/auth/wallet-session.ts` — so nothing asks someone to invent a password
- * before they can look at the product. An email and password get *attached* to
- * an account that already exists, which is a different operation with a
- * different shape and a different home.
+ * Creating an account now needs a proved wallet, which means it needs a
+ * registration ticket, which this could never have had — it called
+ * `supabase.auth.signUp()`, the public endpoint, which
+ * `supabase/config.toml` now closes precisely so that nothing can create an
+ * account without going through `app/register/actions.ts`.
  *
- * It stays because the decision it encodes may be revisited, and because an
- * unreferenced Server Action is inert: Next only registers actions reachable
- * from the client bundle, so with nothing importing it there is no id and no
- * endpoint to post to. Wire it to a form and it works exactly as it did.
+ * Its replacement is `completeWalletRegistration()`, which asks for the same
+ * email and password plus a username, and binds them to the address the
+ * signature proved.
  */
-export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
-  const parsed = parse(formData);
-  if (!parsed.success) return fieldErrors(parsed.error);
-
-  const supabase = await createClient();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://127.0.0.1:3000";
-
-  const { data, error } = await supabase.auth.signUp({
-    ...parsed.data,
-    options: { emailRedirectTo: `${origin}/auth/callback` },
-  });
-
-  if (error) return { error: error.message };
-
-  // When email confirmation is enabled Supabase returns a user but no session.
-  // Saying so is the difference between "nothing happened" and "check inbox".
-  if (data.user && !data.session) {
-    return {
-      notice: "Check your inbox to confirm your address, then sign in.",
-    };
-  }
-
-  revalidatePath("/", "layout");
-  redirect("/dashboard");
-}
 
 export async function signOut() {
   const supabase = await createClient();
