@@ -30,14 +30,14 @@ enforced, and signs Soroban transactions against a contract deployed on Testnet.
 |---|---|
 | Database | 8 tables, 7 enums, triggers, indexes, 30 RLS policies across 11 migrations. Applied to a hosted project and seeded. |
 | Contract | 6 functions plus events, 26 tests. Deployed to Testnet and called from the app; `transfer_project_owner` is CLI-only (`gaps.md` §1). |
-| Web UI | Full CRUD, role-gated, over real Postgres, plus wallet-signed anchoring. |
+| Web UI | Full CRUD, role-gated, over real Postgres, plus wallet-signed anchoring and XLM payments. |
 
 | Check | Result |
 |---|---|
 | `npm run lint`, `npm run typecheck` | pass |
 | `npm run build` | pass, with and without a contract id in env |
-| `npm test` (Vitest) | 160 passed |
-| `npx playwright test` | 140 passed, 1 skipped |
+| `npm test` (Vitest) | 180 passed |
+| `npx playwright test` | 140 passed, 1 skipped — not re-run since `/wallet` landed; needs a `.env.local` |
 | `cargo test` | 26 passed |
 | `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all --check` | clean |
 | `stellar contract build` | 10777 bytes, hash `d4bbe221…f2a8b4` |
@@ -47,7 +47,37 @@ sign-in, sign-out and the auth gate; every read; create, edit and delete for
 projects, tasks, milestones and proofs; the milestone approval flow; deployment
 logging; profile and username; drag-and-drop on the board; transaction
 verification against Horizon; and anchoring a milestone's proof hash on chain
-with a connected wallet.
+with a connected wallet. `/wallet` connects and disconnects a Freighter wallet,
+reads its XLM balance from Horizon, and sends a Testnet payment end to end.
+
+## Screenshots
+
+All three are Stellar **Testnet**, signed with Freighter.
+
+### Wallet connected
+
+The address is read back from the wallet rather than stored — disconnect clears
+it here and in the extension, and signing out does both.
+
+![The wallet page with a Freighter wallet connected, showing the address and a
+disconnect button](docs/screenshots/wallet-connected.png)
+
+### Balance displayed
+
+Three figures, not one: an account cannot spend below its reserve, so the
+spendable number is the one the send form enforces.
+
+![The balance section showing total XLM, spendable and
+reserve](docs/screenshots/balance.png)
+
+### Transaction sent, and its result
+
+The hash stays on screen after the payment confirms, with a copy button and a
+link to stellar.expert — a payment that leaves nothing behind is
+indistinguishable from one that never happened.
+
+![A confirmed payment showing the amount sent, the transaction hash, the
+destination and the ledger number](docs/screenshots/payment-sent.png)
 
 ## How it is put together
 
@@ -168,8 +198,54 @@ is unusable, so scoping is the default rather than a filter.
 /milestones                    All milestones
 /deployments                   Current state per project
 /proofs                        Proof registry + identifier lookup
+/wallet                        Connect, XLM balance, send a payment
 /settings
 ```
+
+### Wallet, balance and payments
+
+`/wallet` is the wallet as a thing in itself. Everywhere else it appears
+mid-task — signing a challenge on the way in, or a proof on the way to the
+ledger — which left no answer to "is it connected, and what is in it".
+
+`src/lib/wallet.ts` is the only module that touches the wallet kit, and every
+import inside it is function-local: `@creit.tech/stellar-wallets-kit` reads
+`localStorage` during module evaluation, and `"use client"` does not mean
+"browser only". Connect opens the kit's chooser; disconnect drops the kit's
+stored address, and so does signing out.
+
+Balances come from `GET /api/balance` — a `fetch` against Horizon behind the auth
+gate, so it cannot be used as an open proxy. It returns three numbers, because
+"balance" is ambiguous on Stellar: the protocol will not let an account drop
+below a minimum tied to its subentry count, so `spendable` is the only one that
+answers "how much can I send". A 404 from Horizon means the account has no ledger
+entry yet, which on Testnet is one Friendbot click from being funded, so it comes
+back as `funded: false` rather than an error.
+
+Sending splits the same way anchoring does, and for the same reason — the key is
+in the browser:
+
+```
+preparePayment  → server: validate, load the account, build unsigned XDR
+(wallet)        → browser: sign the XDR string, nothing else
+sendPayment     → server: re-verify the envelope, submit to Horizon
+```
+
+`assertPayment` re-derives the destination, amount, asset and source from the
+signed envelope before submitting. A wallet signs whatever it is handed, and the
+client could have swapped the string — so the receipt on screen cannot describe a
+different transaction from the one that was sent.
+
+Paying an address that does not exist yet is silently a `createAccount` rather
+than a `payment`. The two are one act to the person typing an address, and the
+alternative is an `op_no_destination` they have to go and learn about.
+
+Amounts are `bigint` stroops throughout (`src/lib/stellar.ts`). Seven decimal
+places do not survive a round trip through a float, and a rounding error in a
+balance is a wrong balance.
+
+Nothing about a payment is written to Postgres. The ledger is the record; a
+second copy in a table is only something that can disagree with it.
 
 ### Data layer
 
