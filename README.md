@@ -28,7 +28,7 @@ enforced, and signs Soroban transactions against a contract deployed on Testnet.
 
 | Layer | State |
 |---|---|
-| Database | 8 tables, 7 enums, triggers, indexes, 30 RLS policies across 6 migrations. Applied to a hosted project and seeded. |
+| Database | 8 tables, 7 enums, triggers, indexes, 30 RLS policies across 11 migrations. Applied to a hosted project and seeded. |
 | Contract | 6 functions plus events, 26 tests. Deployed to Testnet and called from the app; `transfer_project_owner` is CLI-only (`gaps.md` §1). |
 | Web UI | Full CRUD, role-gated, over real Postgres, plus wallet-signed anchoring. |
 
@@ -36,17 +36,18 @@ enforced, and signs Soroban transactions against a contract deployed on Testnet.
 |---|---|
 | `npm run lint`, `npm run typecheck` | pass |
 | `npm run build` | pass, with and without a contract id in env |
-| `npm test` (Vitest) | 117 passed |
-| `npx playwright test` | 120 passed, 1 skipped |
+| `npm test` (Vitest) | 160 passed |
+| `npx playwright test` | 140 passed, 1 skipped |
 | `cargo test` | 26 passed |
 | `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all --check` | clean |
 | `stellar contract build` | 10777 bytes, hash `d4bbe221…f2a8b4` |
 
-Working end to end: sign in / sign up / sign out and the auth gate; every read;
-create, edit and delete for projects, tasks, milestones and proofs; the milestone
-approval flow; deployment logging; profile and wallet address; drag-and-drop on
-the board; transaction verification against Horizon; and anchoring a milestone's
-proof hash on chain with a connected wallet.
+Working end to end: connect-wallet sign-in, wallet registration, email recovery
+sign-in, sign-out and the auth gate; every read; create, edit and delete for
+projects, tasks, milestones and proofs; the milestone approval flow; deployment
+logging; profile and username; drag-and-drop on the board; transaction
+verification against Horizon; and anchoring a milestone's proof hash on chain
+with a connected wallet.
 
 ## How it is put together
 
@@ -69,26 +70,43 @@ server actions re-check — a hidden button is courtesy, not the boundary.
 Two paths, because neither covers the other. The picker offers people
 `shares_project_with()` already matches — in a single-project workspace that is
 nobody, since the visible set *is* the roster — so it cannot grow a team past
-whoever was seeded. Email reaches anyone with an account, but means knowing and
-typing an address, and `profiles` has no email column, so the picker cannot show
-one. Email is the default; the picker appears above it only when it has
-candidates.
+whoever was seeded. Typing an identifier reaches anyone with an account, but
+means knowing one, and RLS hides a stranger's `profiles` row entirely, so the
+picker cannot show anything to jog a memory. Typing is the default; the picker
+appears above it only when it has candidates.
 
-`add_project_member_by_email` is a `SECURITY DEFINER` function, and it
-deliberately breaks the rule the RLS migration states for its other helpers
+**One field takes a username, an email address or a wallet address.** The three
+formats cannot collide — a username is `[a-z0-9_]{3,30}`, so it holds no `@` and
+cannot look like a `G…` address, uppercase being forbidden by
+`profiles_username_format` — so `classifyMemberIdentifier()` decides which of
+three functions to call. A tab per kind would make an admin classify what they
+are holding before they may paste it.
+
+Which identifier is *primary* has already moved once. `member_invite_by_wallet`
+made the wallet address primary on the grounds that it was the only universal
+one, which was true when connecting a wallet auto-created an account with an
+unguessable placeholder email. Registration made it false: every account now has
+a username and a real email, and the wallet address is the partial one, since
+accounts predating that flow have none. Dispatching on shape means there is no
+primary left to get wrong.
+
+Each `add_project_member_by_*` is a `SECURITY DEFINER` function, and they
+deliberately break the rule the RLS migration states for its other helpers
 ("derives the subject from `auth.uid()` and never from an argument"). Resolving
 a stranger is the entire feature. The departure is paid for by authorizing the
-caller as an admin of the target project *before* the address is used, and by
+caller as an admin of the target project *before* the identifier is used, and by
 performing the insert itself rather than returning a user id — so it can only
-ever do the one thing the caller was already entitled to do, never act as an
-address-book lookup.
+ever do the one thing the caller was already entitled to do, never act as a
+directory lookup.
 
-It grants access; it does not send an invitation. The person must already have a
-qdit account. One consequence is stated rather than hidden: an admin can tell
+They grant access; they do not send an invitation. The person must already have
+a qdit account. One consequence is stated rather than hidden: an admin can tell
 "no account" from "already a member" from "added", so they can test whether an
-address has signed up. That is inherent to invite-by-email with no email
-delivery. If delivery is ever added, invert it — send to any address and stop
-answering the existence question.
+identifier is registered. That is inherent to inviting with no delivery. It is
+mildest for a username (a signup form answers the same question to anyone) and
+sharpest for email, where the identifier is personal data. If delivery is ever
+added, invert the email path — send to any address and stop answering the
+existence question.
 
 ### Milestone status
 
@@ -137,6 +155,8 @@ is unusable, so scoping is the default rather than a filter.
 
 ```
 /                              Landing page
+/login                         Connect wallet, or email recovery sign-in
+/register                      Wallet proved, account not yet made
 /dashboard                     Workspace rollup — every panel capped
 /projects                      Project index (filterable)
 /projects/[slug]               Project overview
@@ -263,8 +283,12 @@ anything that is not exactly one `invokeHostFunction` against the expected
 contract and function, and `signer_address` is read out of the verified
 transaction rather than from `profiles.wallet_address`.
 
-The wallet is an **attestation key, not a login.** Sessions stay with Supabase;
-connecting a wallet only decides which account signs.
+The wallet is a **credential and an attestation key.** Connecting it is how you
+sign in and how an account is created — an address the app has never seen leads
+to a registration form, not to a session. Sessions themselves stay with
+Supabase: a wallet session is an ordinary one with an ordinary `auth.uid()`, and
+no RLS policy has ever seen a wallet. The address is bound to the account once,
+at registration, and cannot be changed afterwards.
 
 Set `NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` to switch it on. **Leave it empty
 and the feature is absent rather than broken** — the controls simply do not

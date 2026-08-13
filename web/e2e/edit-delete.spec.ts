@@ -224,24 +224,52 @@ test.describe("recording a deployment", () => {
 });
 
 test.describe("profile", () => {
-  test("rejects a malformed wallet address before saving", async ({ page }) => {
+  /**
+   * This used to assert that a malformed address was rejected before saving.
+   * There is nothing left to reject: the field is gone, because an address
+   * that is typed is claimed and an address that arrives through a signed
+   * challenge is proved, and only the second kind may reach the column.
+   *
+   * So the assertion is now that the box does not exist — which is the stronger
+   * statement, and the one that fails if somebody puts it back.
+   */
+  test("offers no way to type a wallet address", async ({ page }) => {
     await page.goto("/settings");
     await page.getByRole("button", { name: "Edit profile" }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Wallet address").fill("not-a-stellar-address");
-    await dialog.getByRole("button", { name: "Save profile" }).click();
+    await expect(dialog.getByLabel("Display name")).toBeVisible();
+    await expect(dialog.getByLabel("Wallet address")).toHaveCount(0);
+    await expect(dialog.getByPlaceholder("G…")).toHaveCount(0);
+  });
 
-    await expect(dialog).toBeVisible();
-    await expect(
-      dialog.getByText("Wallet addresses start with G and are 56 characters."),
-    ).toBeVisible();
+  test("offers to bind a wallet, and never a box to type one into", async ({ page }) => {
+    await page.goto("/settings");
+
+    /*
+      The e2e account predates the wallet flow: it signed up with an email and
+      has no address on its profile. That is the case this asserts — the one
+      remaining way an address can be attached, and the only account shape that
+      can still do it.
+
+      The opposite state, an account whose address is bound and permanent, is
+      asserted in `wallet-auth.spec.ts` against an account that registers one
+      during the run. Neither test can cover both, because which branch renders
+      is a property of the account, not of the page.
+    */
+    await expect(page.getByRole("button", { name: "Connect wallet" })).toBeVisible();
+    await expect(page.getByPlaceholder("G…")).toHaveCount(0);
   });
 });
 
 /**
- * Invite-by-email — the only path that can reach someone outside the caller's
- * existing circle.
+ * Inviting by identifier — the only path that can reach someone outside the
+ * caller's existing circle.
+ *
+ * One field takes a username, an email address or a wallet address, and the
+ * server decides which it was given. These specs add the same person three
+ * ways, because "it does not matter which one you are holding" is the whole
+ * claim the single field makes.
  *
  * Runs against a project this spec creates rather than the seeded one, for two
  * reasons. Adding a member to the seeded project would move the roster
@@ -250,7 +278,9 @@ test.describe("profile", () => {
  * `e2e project …` is already one of that teardown's targets, so the whole thing
  * cleans itself up.
  */
-test.describe("adding a member by email", () => {
+test.describe("adding a member", () => {
+  /** The dialog's one identifier field. */
+  const FIELD = "Username, email or wallet address";
   /** `unique()` yields only lowercase and digits, so the dialog's slug is this. */
   const slugFor = (name: string) => name.replace(/[^a-z0-9]+/g, "-");
 
@@ -273,7 +303,7 @@ test.describe("adding a member by email", () => {
 
     await page.getByRole("button", { name: "Add member" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Email address").fill(OUTSIDER.email);
+    await dialog.getByLabel(FIELD).fill(OUTSIDER.email);
     await choose(page, "m-role", "Member");
     await dialog.getByRole("button", { name: "Add member" }).click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
@@ -286,6 +316,72 @@ test.describe("adding a member by email", () => {
     await expect(page.getByText(OUTSIDER.name)).toBeVisible();
   });
 
+  test("the same person, by username", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    await page.getByRole("button", { name: "Add member" }).click();
+
+    const dialog = page.getByRole("dialog");
+    // Typed the way a person capitalises a name. The function lowercases before
+    // it looks, because the column only ever holds lowercase.
+    await dialog.getByLabel(FIELD).fill(OUTSIDER.username.toUpperCase());
+    await dialog.getByRole("button", { name: "Add member" }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    await expect(page.getByText(OUTSIDER.name)).toBeVisible();
+  });
+
+  test("the same person, by wallet address", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    await page.getByRole("button", { name: "Add member" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(FIELD).fill(OUTSIDER.wallet);
+    await dialog.getByRole("button", { name: "Add member" }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+    await expect(page.getByText(OUTSIDER.name)).toBeVisible();
+  });
+
+  test("a username matching no account is reported on the field", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    await page.getByRole("button", { name: "Add member" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(FIELD).fill(`nobody_${Date.now()}`);
+    await dialog.getByRole("button", { name: "Add member" }).click();
+
+    // Names the kind it understood the input to be. "No account matches that"
+    // would leave the admin wondering whether it read a username at all.
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/No qdit account uses that username/)).toBeVisible();
+  });
+
+  test("a mistyped wallet address is reported as an address", async ({ page }) => {
+    const name = unique("project");
+    await createProject(page, name);
+
+    await page.goto(`/projects/${slugFor(name)}/members`);
+    await page.getByRole("button", { name: "Add member" }).click();
+
+    const dialog = page.getByRole("dialog");
+    // 56 characters starting with G, with an illegal base32 digit — a broken
+    // address, not a username that is far too long.
+    await dialog.getByLabel(FIELD).fill(`G1${OUTSIDER.wallet.slice(2)}`);
+    await dialog.getByRole("button", { name: "Add member" }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/start with G and are 56 characters/)).toBeVisible();
+  });
+
   test("an address matching no account is reported on the field", async ({ page }) => {
     const name = unique("project");
     await createProject(page, name);
@@ -294,7 +390,7 @@ test.describe("adding a member by email", () => {
     await page.getByRole("button", { name: "Add member" }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Email address").fill(`nobody-${Date.now()}@qdit.test`);
+    await dialog.getByLabel(FIELD).fill(`nobody-${Date.now()}@qdit.test`);
     await dialog.getByRole("button", { name: "Add member" }).click();
 
     // Inline on the field, not a toast: the email is the thing to correct, and
@@ -311,7 +407,7 @@ test.describe("adding a member by email", () => {
     for (const attempt of [1, 2]) {
       await page.getByRole("button", { name: "Add member" }).click();
       const dialog = page.getByRole("dialog");
-      await dialog.getByLabel("Email address").fill(OUTSIDER.email);
+      await dialog.getByLabel(FIELD).fill(OUTSIDER.email);
       await dialog.getByRole("button", { name: "Add member" }).click();
 
       if (attempt === 1) {

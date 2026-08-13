@@ -14,18 +14,24 @@ import { connectWallet, isRejectedError, signTransaction } from "@/lib/wallet";
  * The front door.
  *
  * Three steps, two of them invisible: pick a wallet, sign a challenge, spend
- * the signature. What the person sees is one button and then the dashboard.
+ * the signature.
  *
  *   1. `connectWallet()` opens the kit's chooser and returns an address.
  *   2. `POST /api/auth/wallet/challenge` returns a transaction the server
  *      signed, which the wallet signs too. It can never be submitted — the
  *      sequence number is 0 — so this costs nothing and touches no ledger.
- *   3. `POST /api/auth/wallet/verify` checks both signatures and sets the
- *      session cookies.
+ *   3. `POST /api/auth/wallet/verify` checks both signatures and answers with
+ *      either a session or a registration ticket.
  *
  * The signed challenge is all step 3 receives. The address is deliberately not
  * sent alongside it: the server reads it out of the transaction the signature
  * covers, so there is nothing for a caller to disagree with.
+ *
+ * What the person sees is one button and then either the dashboard or a short
+ * form. Which one is not this component's decision and must not be guessed at
+ * from anything local — a wallet that looks new to this browser may have an
+ * account, and the server is the only thing that knows. So step 3's `status` is
+ * routed on, and nothing else is.
  *
  * Nothing here writes a token. The session arrives as `Set-Cookie` from the
  * route handler, so `router.refresh()` is what makes the app notice it.
@@ -86,7 +92,7 @@ export function ConnectWalletButton({
       if (typeof xdr !== "string") throw new Error("The server issued no challenge.");
 
       const signedXdr = await signTransaction(xdr);
-      await post("/api/auth/wallet/verify", { signedXdr, intent });
+      const result = await post("/api/auth/wallet/verify", { signedXdr, intent });
 
       if (intent === "link") {
         toast.success("Wallet linked");
@@ -99,7 +105,13 @@ export function ConnectWalletButton({
       // Refresh before navigating: the cookies are new, and the layout that
       // decides whether to render the app or bounce to /login is server-side.
       router.refresh();
-      router.push(redirectTo);
+
+      // "signed-in" is the only status that goes anywhere but registration.
+      // "registration-required" means there is no account yet and the response
+      // carried a ticket to make one; "complete-account" means there is one,
+      // made by the retired auto-create flow, still missing the email and
+      // password it should have been born with.
+      router.push(result.status === "signed-in" ? redirectTo : "/register");
 
       // Deliberately not clearing `busy`. The navigation is what ends this
       // state, and re-enabling the button first invites a second click that

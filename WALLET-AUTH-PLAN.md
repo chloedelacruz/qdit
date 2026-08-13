@@ -1,5 +1,17 @@
 # Wallet is the front door
 
+> **§1, §4.3 and §5 of this document are superseded by
+> `WALLET-REGISTRATION-PLAN.md`, which is built.** Connecting a wallet no longer
+> creates an account: an unknown address gets a registration form, and the
+> account is created with a username, an email and a password bound to it. The
+> placeholder-email scheme in §4.3 and the dismissible recovery card in §5 were
+> designed here, and the card was never built — registration replaces both.
+>
+> Everything else below still describes the shipped system: the SEP-10 challenge
+> (§3), session minting (§4.2), the no-text-box rule for addresses (§6), the
+> unchanged RLS boundary (§12). §6.1 on rebinding is now wrong in its conclusion
+> — an address is immutable once set — and right about why the question matters.
+
 Plan for making **Connect wallet** the way people get into qdit, with email and
 password kept as a recovery credential rather than the entrance.
 
