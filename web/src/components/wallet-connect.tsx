@@ -1,33 +1,34 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
 
+import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { HashLink } from "@/components/hash-link";
-import { Button } from "@/components/ui/button";
-import { saveWalletAddress } from "@/lib/actions";
-import { ICON } from "@/lib/icons";
 import type { StellarNetwork } from "@/lib/stellar";
-import {
-  connectWallet,
-  disconnectWallet,
-  currentAddress,
-  isRejectedError,
-  onWalletState,
-} from "@/lib/wallet";
+import { currentAddress, onWalletState } from "@/lib/wallet";
 
 /**
- * Connects a Stellar wallet and records the address on the profile.
+ * Shows the wallet this account is bound to, and — for the accounts that
+ * predate the wallet flow — offers to bind one.
  *
- * Two addresses can disagree here, and the difference matters:
+ * ---------------------------------------------------------------------------
+ * THIS COMPONENT NO LONGER WRITES ANYTHING
+ * ---------------------------------------------------------------------------
+ * It used to call `saveWalletAddress()` with whatever address the kit reported,
+ * including a "Use this one" button that swapped the profile's address whenever
+ * the extension was on a different account. Both are gone:
  *
- *   `saved`     — `profiles.wallet_address`, what the server knows.
- *   `connected` — what the browser's wallet reports right now.
+ *   · the address is written by registration, which happens once, and by
+ *     `intent: "link"`, which is refused when one is already set;
+ *   · `profiles_freeze_wallet_address` rejects the update in the database
+ *     regardless of which client sends it.
  *
- * They drift whenever someone switches account inside their wallet extension.
- * The saved one is what other people see; the connected one is what will
- * actually sign. Showing only one of them would make a failed signature
- * inexplicable, so when they differ the component says so and offers to update.
+ * So a drifted extension is now something to *tell* somebody about rather than
+ * something to offer to fix. The two addresses still disagree for the same
+ * reason they always did — someone switched account inside their wallet — and
+ * the consequence has changed: it is no longer "your profile is out of date",
+ * it is "the thing about to sign is not the account you registered", which
+ * makes a failed signature explicable instead of mysterious.
  */
 export function WalletConnect({
   saved,
@@ -37,7 +38,6 @@ export function WalletConnect({
   network: StellarNetwork;
 }) {
   const [connected, setConnected] = useState<string | undefined>();
-  const [busy, startTransition] = useTransition();
 
   // The kit lives in the browser, so the connected address is unknown until
   // after hydration. Never render it during SSR.
@@ -61,79 +61,40 @@ export function WalletConnect({
     };
   }, []);
 
-  function persist(address: string) {
-    startTransition(async () => {
-      const result = await saveWalletAddress(address);
-      if (result.error) toast.error(result.error);
-      else toast.success("Wallet address saved");
-    });
-  }
-
-  function connect() {
-    startTransition(async () => {
-      try {
-        const address = await connectWallet();
-        setConnected(address);
-        if (address !== saved) persist(address);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // Closing the wallet chooser is a decision, not a failure.
-        if (!isRejectedError(message)) toast.error(message);
-      }
-    });
-  }
-
-  function disconnect() {
-    startTransition(async () => {
-      await disconnectWallet();
-      setConnected(undefined);
-    });
-  }
-
   const drifted = Boolean(connected && saved && connected !== saved);
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {saved ? (
-          <HashLink value={saved} kind="account" network={network} />
+          <>
+            <HashLink value={saved} kind="account" network={network} />
+            <span className="text-sm text-muted-foreground">
+              Signs you in. Cannot be changed.
+            </span>
+          </>
         ) : (
-          <span className="text-sm text-muted-foreground">
-            Not set — required to sign milestone proofs on-chain.
-          </span>
-        )}
-
-        {connected ? (
-          <Button variant="ghost" size="sm" onClick={disconnect} disabled={busy}>
-            Disconnect
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" onClick={connect} disabled={busy}>
-            <ICON.wallet aria-hidden />
-            {saved ? "Reconnect wallet" : "Connect wallet"}
-          </Button>
+          /*
+            No address yet — an account created before the wallet flow existed.
+            Connecting is the only way to bind one, and it binds exactly once:
+            the button proves the address with a signed challenge, which is the
+            difference between claiming a wallet and having one.
+          */
+          <ConnectWalletButton
+            intent="link"
+            label="Connect wallet"
+            size="sm"
+            variant="outline"
+          />
         )}
       </div>
 
       {drifted ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span className="text-muted-foreground">
-            Your wallet is on a different account:
-          </span>
-          <HashLink value={connected!} kind="account" network={network} />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => persist(connected!)}
-            disabled={busy}
-          >
-            Use this one
-          </Button>
-        </div>
-      ) : null}
-
-      {connected && !saved ? (
-        <p className="text-sm text-muted-foreground">Saving…</p>
+        <p className="text-sm text-muted-foreground">
+          Your wallet extension is on a different account (
+          <span className="font-mono text-xs">{connected}</span>). Switch it back
+          to the address above to sign proofs from this account.
+        </p>
       ) : null}
     </div>
   );

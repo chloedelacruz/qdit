@@ -44,21 +44,66 @@ project cannot get permanently stuck, not because handovers are routine.
 
 ## 2. Repository / hosted-database drift
 
-**Migration versions match the hosted ledger.** Each filename in
-`supabase/migrations/` carries the version
+**Migration versions match the hosted ledger, for the first eight.** Each
+filename in `supabase/migrations/` carries the version
 `supabase_migrations.schema_migrations` records for it, so a clean checkout sees
-all eight as applied rather than trying to re-run them:
+them as applied rather than trying to re-run them:
 
-| Version | Name |
-|---|---|
-| `20260731133219` | `init` |
-| `20260731133313` | `rls` |
-| `20260731133429` | `function_grants` |
-| `20260731135342` | `task_priority` |
-| `20260809010655` | `chain_anchors` |
-| `20260810034700` | `member_invite_by_email` |
-| `20260812130728` | `wallet_identity` |
-| `20260812130752` | `member_invite_by_wallet` |
+| Version | Name | Hosted |
+|---|---|---|
+| `20260731133219` | `init` | applied |
+| `20260731133313` | `rls` | applied |
+| `20260731133429` | `function_grants` | applied |
+| `20260731135342` | `task_priority` | applied |
+| `20260809010655` | `chain_anchors` | applied |
+| `20260810034700` | `member_invite_by_email` | applied |
+| `20260812130728` | `wallet_identity` | applied |
+| `20260812130752` | `member_invite_by_wallet` | applied |
+| `20260812235342` | `profile_username` | applied |
+| `20260812235413` | `wallet_address_immutable` | applied |
+| `20260813101400` | `member_invite_by_username` | applied |
+
+The last three were applied through the Supabase MCP as well, and stamped
+`…235342` / `…235413` / `…101400` against files authored as `20260813071500`,
+`20260813071600` and `20260813090000` — so they were renamed afterwards, exactly
+as the pair above them were. **That is now four times.** Assume it will happen
+again and check `schema_migrations` after every MCP apply.
+
+All six hosted profiles were backfilled with a username derived from their
+display name (`Ada Builder` → `ada_builder`); none collided, and none were left
+null. The one placeholder-email account got `gb7k_zc5d` from its own truncated
+address, which is replaced the moment it completes registration.
+
+**One step is hosted-only and has no migration: public signup is still on.**
+Turn it off in the dashboard (Authentication → Sign In / Providers → "Allow new
+users to sign up"); `supabase/config.toml` already does it for the local stack.
+Until that switch is flipped the `raw_app_meta_data` fix is carrying the whole
+defence alone — which it can, and it was verified in place against the hosted
+database (a signup forging `user_metadata.wallet_address` no longer reaches
+`profiles`), but it was not meant to be alone.
+
+**Do not flip it before testing sign-in locally.** Minting a session goes
+through `admin.generateLink({ type: "magiclink" })`, and nothing has yet proved
+that call is indifferent to the signup setting. The comment in `config.toml`
+says the same thing at the point of change.
+
+**Two GoTrue behaviours that will bite the next person**, both found by running
+`e2e/wallet-auth.spec.ts` rather than by reading:
+
+1. **`app_metadata` is not visible to `handle_new_user()`.** The admin create is
+   two steps: the `auth.users` row is inserted with `raw_app_meta_data` holding
+   only `{provider, providers}` — which is when the trigger fires — and the
+   custom `app_metadata` is merged in afterwards. `raw_user_meta_data` *is*
+   present at insert. So a column carried in from user metadata works, and one
+   carried in from app metadata silently arrives null. `wallet_address` is
+   therefore written explicitly by `bindWallet()` after the create; the trigger
+   keeps reading `app_metadata` because that read is the security boundary, not
+   the delivery mechanism.
+2. **supabase-js flattens Postgres errors raised inside that trigger to `{}`.**
+   No constraint name, no SQLSTATE, no detail — the raw REST endpoint returns all
+   three. Anything that needs to tell one unique-index violation from another has
+   to query for it, which is what `usernameTaken()` does. Do not add error-message
+   matching here and expect it to work.
 
 The last two were applied through the Supabase MCP, which stamps its own
 version rather than taking one from a filename — so the files were **renamed to

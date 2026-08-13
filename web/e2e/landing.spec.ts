@@ -21,11 +21,13 @@ test.describe("landing page", () => {
     await expect(page.getByRole("link", { name: "Verify a hash" })).toBeVisible();
   });
 
-  test("offers a signed-out visitor a way in without a password", async ({ page }) => {
-    // Connecting is the whole of signing up — no form first, no account to
-    // create beforehand — which is the claim the copy underneath it makes.
+  test("offers a signed-out visitor a way in", async ({ page }) => {
+    // Connecting is the *first step* of signing up rather than the whole of it:
+    // a wallet already registered lands in the app, a new one gets a short
+    // form. The copy underneath the button has to say so, because the previous
+    // version promised "no password" and an account now has one.
     await expect(page.getByRole("button", { name: "Connect wallet" }).first()).toBeEnabled();
-    await expect(page.getByText(/No password\. Your wallet is the account/)).toBeVisible();
+    await expect(page.getByText(/Your wallet is your identity here/)).toBeVisible();
 
     // Clicking opens a wallet extension chooser, which Playwright cannot drive.
     // What happens after the click is covered by the unit tests over

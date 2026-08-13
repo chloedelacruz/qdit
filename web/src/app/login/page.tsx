@@ -37,7 +37,8 @@ export default async function LoginPage() {
           <div className="surface-primary rounded-xl border border-border-strong p-5">
             <ConnectWalletButton className="w-full" />
             <p className="mt-3 text-xs text-muted-foreground">
-              Connecting signs you in. If this wallet is new here, it gets an account.
+              Connecting signs you in. A wallet that is new here goes to a short
+              form first — connecting alone no longer creates an account.
             </p>
           </div>
 

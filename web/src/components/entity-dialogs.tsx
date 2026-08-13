@@ -19,7 +19,7 @@ import {
 } from "@/lib/constants";
 import {
   addProjectMember,
-  addProjectMemberByEmail,
+  addProjectMemberByIdentifier,
   createDeployment,
   createMilestone,
   createProject,
@@ -847,55 +847,46 @@ export function CreateDeploymentDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * The caller's own profile. The wallet address matters beyond display: it is
- * the join between a Supabase user and a Stellar account, which is what the
- * contract authenticates against once submit/approve are wired up.
+ * The caller's own profile — which is now only their display name.
+ *
+ * The wallet address used to be a second field here, a free-text `G…` box that
+ * wrote straight to `profiles.wallet_address`. It is gone, and not because a
+ * typo was likely: an address that is typed is *claimed*, and one that arrives
+ * through a signed challenge is *proved*. Every address on every profile is now
+ * the second kind, which is what the member roster and the anchoring flow have
+ * been quietly assuming all along.
+ *
+ * The address is shown, and bound for the first time, in Settings via
+ * `WalletConnect`. After that it cannot be changed at all — see
+ * `profiles_freeze_wallet_address`.
  */
 export function EditProfileDialog({
   defaults,
   label = "Edit profile",
 }: {
-  defaults: { displayName: string; walletAddress: string | null };
+  defaults: { displayName: string };
   label?: string;
 }) {
   return (
     <FormDialog
       trigger={<Button variant="outline">{label}</Button>}
       title="Edit profile"
-      description="How you appear to teammates, and the Stellar account you sign with."
+      description="How you appear to teammates."
       submitLabel="Save profile"
       successMessage="Profile updated"
       action={updateProfile}
     >
       {(state) => (
-        <>
-          <Field id="displayName" label="Display name" error={state.fieldErrors?.displayName}>
-            <Input
-              id="displayName"
-              name="displayName"
-              required
-              autoFocus
-              maxLength={120}
-              defaultValue={defaults.displayName}
-            />
-          </Field>
-
-          <Field
-            id="walletAddress"
-            label="Wallet address"
-            optional
-            hint="Your Stellar account, used to sign milestone proofs."
-            error={state.fieldErrors?.walletAddress}
-          >
-            <Input
-              id="walletAddress"
-              name="walletAddress"
-              placeholder="G…"
-              spellCheck={false}
-              defaultValue={defaults.walletAddress ?? ""}
-            />
-          </Field>
-        </>
+        <Field id="displayName" label="Display name" error={state.fieldErrors?.displayName}>
+          <Input
+            id="displayName"
+            name="displayName"
+            required
+            autoFocus
+            maxLength={120}
+            defaultValue={defaults.displayName}
+          />
+        </Field>
       )}
     </FormDialog>
   );
@@ -933,16 +924,21 @@ function RoleField({ state, defaultValue }: { state: ActionState; defaultValue?:
 }
 
 /**
- * Adds someone to a project, by email or by picking a known teammate.
+ * Adds someone to a project, by identifier or by picking a known teammate.
  *
  * Two paths because neither subsumes the other. The picker only offers people
  * `shares_project_with()` already matches — in a single-project workspace that
  * is nobody, since the visible set *is* the roster — so it cannot grow a team
- * past whoever was seeded. Email can reach anyone with an account, but it means
- * knowing and typing an address, and `profiles` carries no email column, so the
- * picker cannot show one to jog a memory.
+ * past whoever was seeded. Typing an identifier can reach anyone with an
+ * account, but it means knowing one, and `profiles` is invisible to this client
+ * for strangers, so the picker cannot show anything to jog a memory.
  *
- * Email is the default because it is the one that always works. The picker is
+ * One field takes all three identifiers rather than a tab per kind: the formats
+ * cannot collide, so the server works out what it was given (see
+ * `classifyMemberIdentifier`). Three tabs would make an admin classify what
+ * they are holding before they may paste it.
+ *
+ * Typing is the default because it is the path that always works. The picker is
  * offered above it only when it has candidates; otherwise it is absent rather
  * than present-and-empty.
  */
@@ -955,9 +951,9 @@ export function AddMemberDialog({
   candidates: { id: string; name: string }[];
   label?: string;
 }) {
-  const [byEmail, setByEmail] = useState(true);
+  const [byIdentifier, setByIdentifier] = useState(true);
   const canPick = candidates.length > 0;
-  const useEmail = byEmail || !canPick;
+  const useIdentifier = byIdentifier || !canPick;
 
   return (
     <FormDialog
@@ -971,31 +967,34 @@ export function AddMemberDialog({
       description="Give someone access to this project and choose what they may do."
       submitLabel="Add member"
       successMessage="Member added"
-      // Two actions, one dialog: the email path resolves the address in a
+      // Two actions, one dialog: the typed path resolves the identifier in a
       // SECURITY DEFINER function, the picker already holds a user id and
       // inserts directly. Sharing one action would mean branching on which
       // field happened to be filled in.
-      action={useEmail ? addProjectMemberByEmail : addProjectMember}
+      action={useIdentifier ? addProjectMemberByIdentifier : addProjectMember}
     >
       {(state) => (
         <>
           <input type="hidden" name="projectId" value={projectId} />
 
-          {useEmail ? (
+          {useIdentifier ? (
             <Field
-              id="m-email"
-              label="Email address"
+              id="m-identifier"
+              label="Username, email or wallet address"
               hint="They need a qdit account already — this grants access, it does not send an invitation."
-              error={state.fieldErrors?.email}
+              error={state.fieldErrors?.identifier}
             >
               <Input
-                id="m-email"
-                name="email"
-                type="email"
+                id="m-identifier"
+                name="identifier"
+                // Deliberately not `type="email"`: the browser would refuse to
+                // submit a username or a G-address as "not an email", before
+                // the server ever saw which of the three it was.
                 required
                 autoFocus
+                autoCapitalize="none"
                 spellCheck={false}
-                placeholder="them@example.com"
+                placeholder="ada · them@example.com · G…"
               />
             </Field>
           ) : (
@@ -1016,12 +1015,12 @@ export function AddMemberDialog({
           {canPick ? (
             <button
               type="button"
-              onClick={() => setByEmail((current) => !current)}
+              onClick={() => setByIdentifier((current) => !current)}
               className="focus-ring transition-qdit -mt-1 self-start rounded-sm text-xs text-muted-foreground hover:text-primary"
             >
-              {useEmail
+              {useIdentifier
                 ? `Or pick from ${candidates.length} teammate${candidates.length === 1 ? "" : "s"}`
-                : "Or add by email address"}
+                : "Or add by username, email or wallet"}
             </button>
           ) : null}
 

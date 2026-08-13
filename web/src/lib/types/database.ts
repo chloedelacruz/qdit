@@ -34,7 +34,10 @@ export type Database = {
           id: string
           display_name: string | null
           avatar_url: string | null
+          /** Immutable once set — see profiles_freeze_wallet_address. */
           wallet_address: string | null
+          /** Unique, lowercase. Null on accounts predating registration. */
+          username: string | null
           created_at: string
         }
         Insert: {
@@ -43,13 +46,16 @@ export type Database = {
           display_name?: string | null
           avatar_url?: string | null
           wallet_address?: string | null
+          username?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           display_name?: string | null
           avatar_url?: string | null
+          /** Writable only while null; the freeze trigger rejects the rest. */
           wallet_address?: string | null
+          username?: string | null
           created_at?: string
         }
         Relationships: [
@@ -511,6 +517,31 @@ export type Database = {
         Args: {
           p_project_id: string
           p_email: string
+          p_role: Database['public']['Enums']['member_role']
+        }
+        Returns: string
+      }
+      /**
+       * The same, resolving a Stellar address through `profiles.wallet_address`.
+       * Adds 22023 to the raised set, for an argument that is not an address.
+       */
+      add_project_member_by_wallet: {
+        Args: {
+          p_project_id: string
+          p_address: string
+          p_role: Database['public']['Enums']['member_role']
+        }
+        Returns: string
+      }
+      /**
+       * The same, resolving through `profiles.username`. Lowercases its
+       * argument first, so a name typed the way a person capitalises it still
+       * matches. 22023 for a name that could not be one.
+       */
+      add_project_member_by_username: {
+        Args: {
+          p_project_id: string
+          p_username: string
           p_role: Database['public']['Enums']['member_role']
         }
         Returns: string

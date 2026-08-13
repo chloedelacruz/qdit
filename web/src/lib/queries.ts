@@ -122,6 +122,47 @@ export async function getCurrentUserId(): Promise<string | null> {
   return (await getUser())?.id ?? null;
 }
 
+/**
+ * The caller's own sign-in identity: the three things that open this account,
+ * plus the name attached to them.
+ *
+ * Separate from `Member` on purpose. `Member` is how somebody appears *to
+ * other people* — a name, initials, an avatar — and it is fetched for whole
+ * rosters at a time. This is the account itself, it is only ever about the
+ * caller, and it carries the email, which is not a roster field and should not
+ * become one by accident.
+ */
+export type OwnIdentity = {
+  id: string;
+  /** Null only in the moment between a session expiring and a redirect. */
+  email: string | null;
+  displayName: string;
+  /** Null on accounts created before registration existed. */
+  username: string | null;
+  /** Immutable once set — see profiles_freeze_wallet_address. */
+  walletAddress: string | null;
+};
+
+export async function getOwnIdentity(): Promise<OwnIdentity | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("display_name, username, wallet_address")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: data?.display_name?.trim() || "Unknown",
+    username: data?.username ?? null,
+    walletAddress: data?.wallet_address ?? null,
+  };
+}
+
 export type ProjectMember = Member & {
   role: MemberRole;
   joinedAt: string;

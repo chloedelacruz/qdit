@@ -28,6 +28,41 @@ export const credentialsSchema = z.object({
 
 export type Credentials = z.infer<typeof credentialsSchema>;
 
+/**
+ * `profiles.username` — the handle chosen when a wallet is registered.
+ *
+ * Lowercased here rather than merely rejected in upper case, because the
+ * database stores lowercase only: `profiles_username_format` refuses anything
+ * else, which is what lets a plain unique index be case-insensitive without a
+ * citext extension (see 20260812235342_profile_username.sql §1). Someone typing
+ * `Ada` means `ada` and should not be told off for it.
+ *
+ * The 3–30 bound and the character class mirror that CHECK exactly. A value
+ * that passes here cannot fail in Postgres with an opaque error.
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "At least 3 characters.")
+  .max(30, "Keep it under 30 characters.")
+  .regex(/^[a-z0-9_]+$/, "Lowercase letters, numbers and underscores only.");
+
+/**
+ * Everything the registration screen collects.
+ *
+ * Not the wallet address, deliberately — it comes from the signed ticket the
+ * browser is holding, never from the form. The same rule the verify route
+ * follows when it reads the address out of the transaction the signature covers
+ * rather than off the request body: a field the caller controls could disagree
+ * with what was proved, and then the server has to pick a side.
+ */
+export const walletRegistrationSchema = credentialsSchema.extend({
+  username: usernameSchema,
+});
+
+export type WalletRegistration = z.infer<typeof walletRegistrationSchema>;
+
 /** `projects.slug` — `^[a-z0-9]+(?:-[a-z0-9]+)*$`, globally unique. */
 export const slugSchema = z
   .string()
@@ -197,17 +232,73 @@ export const projectMemberSchema = z.object({
 /**
  * Adding someone who is not already a teammate.
  *
- * The address is resolved server-side by `add_project_member_by_email`, because
- * RLS makes a stranger's profile invisible to every query this client is
- * allowed to make. Validated here only so an obvious typo is reported inline
- * rather than after a round trip that will say "no account uses that email" and
- * make the user wonder which of the two is wrong.
+ * The identifier is resolved server-side by one of the three
+ * `add_project_member_by_*` functions, because RLS makes a stranger's profile
+ * invisible to every query this client is allowed to make. Validated here only
+ * so an obvious typo is reported inline rather than after a round trip that
+ * will say "no account uses that" and make the user wonder which of the two is
+ * wrong.
  */
-export const projectMemberEmailSchema = z.object({
+export const projectMemberIdentifierSchema = z.object({
   projectId: z.guid(),
-  email: z.email("Enter a valid email address."),
+  identifier: z.string().trim().min(1, "Required."),
   role: z.enum(ASSIGNABLE_ROLES),
 });
+
+export type ProjectMemberIdentifierInput = z.infer<typeof projectMemberIdentifierSchema>;
+
+export type MemberIdentifier =
+  | { kind: "wallet" | "email" | "username"; value: string }
+  | { kind: "invalid"; message: string };
+
+/** A Stellar account strkey: `G` and 55 more base32 characters. */
+const WALLET_SHAPE = /^G[A-Z2-7]{55}$/;
+
+/**
+ * Works out which of the three things somebody typed.
+ *
+ * One field rather than three tabs, because the three formats cannot collide:
+ * a username is `[a-z0-9_]{3,30}`, so it can hold no `@` and — uppercase being
+ * forbidden by `profiles_username_format` — can never look like a `G…` address.
+ * Making an admin declare which kind of identifier they hold before they may
+ * paste it is a question they never need to be asked.
+ *
+ * Order matters, and only in one place: a 56-character string beginning with a
+ * capital `G` is a wallet address someone got wrong, not a username that is far
+ * too long. Reporting it as the former is the difference between "check the
+ * address" and a sentence about underscores.
+ */
+export function classifyMemberIdentifier(raw: string): MemberIdentifier {
+  const value = raw.trim();
+
+  if (!value) return { kind: "invalid", message: "Required." };
+
+  if (WALLET_SHAPE.test(value)) return { kind: "wallet", value };
+
+  // Close enough to an address that it was meant to be one.
+  if (value.length === 56 && value.startsWith("G")) {
+    return {
+      kind: "invalid",
+      message: "Wallet addresses start with G and are 56 characters.",
+    };
+  }
+
+  if (value.includes("@")) {
+    const parsed = z.email().safeParse(value);
+    return parsed.success
+      ? { kind: "email", value: parsed.data }
+      : { kind: "invalid", message: "Enter a valid email address." };
+  }
+
+  const parsed = usernameSchema.safeParse(value);
+  return parsed.success
+    ? { kind: "username", value: parsed.data }
+    : {
+        kind: "invalid",
+        message:
+          "Enter a username, an email address, or a wallet address starting with G.",
+      };
+}
 
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
@@ -216,7 +307,6 @@ export type ProofInput = z.infer<typeof proofSchema>;
 export type DeploymentInput = z.infer<typeof deploymentSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type ProjectMemberInput = z.infer<typeof projectMemberSchema>;
-export type ProjectMemberEmailInput = z.infer<typeof projectMemberEmailSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
 export function slugify(value: string): string {

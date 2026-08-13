@@ -69,7 +69,31 @@ export default defineConfig({
       // visitor sees, so they must not depend on the setup project.
       name: "anon",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /(auth|landing)\.spec\.ts/,
+      // Anchored to a path separator: the unanchored form also matched
+      // `wallet-auth.spec.ts`, which would have run it here *as well as* in the
+      // `wallet` project below — twice, against one database, with the second
+      // run's teardown deleting the first's accounts mid-flight.
+      testMatch: /[\\/](auth|landing)\.spec\.ts$/,
+    },
+
+    {
+      /**
+       * Signed-out, like `anon`, but dependent on `setup` — and the dependency
+       * is the whole reason it is a separate project.
+       *
+       * These specs register real accounts, so they must be cleaned up, and the
+       * `cleanup` teardown hangs off `setup`. A teardown runs once its project
+       * and everything depending on that project have finished; `anon` depends
+       * on nothing, so a spec living there could still be creating accounts
+       * after cleanup had already swept.
+       *
+       * No `storageState`: a saved session would make the connect flow replace
+       * it, which is a different test than the one being written.
+       */
+      name: "wallet",
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["setup"],
+      testMatch: /wallet-auth\.spec\.ts$/,
     },
 
     {
@@ -138,6 +162,10 @@ export default defineConfig({
       NEXT_PUBLIC_STELLAR_NETWORK: "testnet",
       // Server-only; used by cleanup.teardown.ts, never sent to the browser.
       SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY ?? "",
+      // Signs SEP-10 challenges. Without it the challenge route answers 500 and
+      // `wallet-auth.spec.ts` cannot get as far as a signature — the wallet
+      // specs were the first thing here to need it.
+      STELLAR_AUTH_SERVER_SECRET: process.env.STELLAR_AUTH_SERVER_SECRET ?? "",
     },
   },
 });
