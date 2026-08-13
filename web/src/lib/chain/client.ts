@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Address, Networks, TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
+import type { Result } from "@stellar/stellar-sdk/contract";
 
 import { Client as MilestoneProofClient } from "@/lib/chain/bindings";
 import { SOROBAN_RPC_URL, type StellarNetwork } from "@/lib/stellar";
@@ -94,11 +95,59 @@ export async function buildUnsigned(request: BuildRequest): Promise<string> {
   // from drifting apart.
   const methods = client as unknown as Record<
     ChainMethod,
-    (args: Record<string, unknown>) => Promise<{ toXDR: () => string }>
+    (args: Record<string, unknown>) => Promise<AssembledWrite>
   >;
 
   const assembled = await methods[request.method](request.args);
+
+  /*
+   * A failed simulation has to be raised by hand.
+   *
+   * `AssembledTransaction.simulate()` does not throw when the contract rejects
+   * the call — it only *assembles* on success, and otherwise leaves `built`
+   * holding the raw transaction: no footprint, no resource fee. `toXDR()`
+   * returns that quite happily, so without this check the flow carries on,
+   * prompts for a signature, and the network refuses the transaction at
+   * submission. The user then sees "the network rejected the transaction" for
+   * what is really "this milestone is already approved".
+   *
+   * Simulating before signing is the whole point of the prepare step; this is
+   * what makes it mean anything.
+   */
+  if (assembled.simulation && rpc.Api.isSimulationError(assembled.simulation)) {
+    throw new Error(simulationFailure(assembled));
+  }
+
   return assembled.toXDR();
+}
+
+/** The parts of the bindings' `AssembledTransaction` this module relies on. */
+type AssembledWrite = {
+  toXDR: () => string;
+  simulation?: rpc.Api.SimulateTransactionResponse;
+  result: Result<void>;
+};
+
+/**
+ * Name what the contract actually objected to.
+ *
+ * Every write returns `Result<(), Error>`, so `result` decodes an
+ * `Error(Contract, #5)` back into the contract's own name — "InvalidStatus" —
+ * which `describe` in `actions.ts` turns into a sentence. Anything else is not
+ * a contract error at all (a host failure, an unfunded source, expired state),
+ * and there the raw simulation text is the only description available.
+ */
+function simulationFailure(assembled: AssembledWrite): string {
+  try {
+    const outcome = assembled.result;
+    if (outcome.isErr()) return outcome.unwrapErr().message;
+  } catch {
+    // `result` rethrows when the failure has no contract error to decode.
+  }
+
+  return assembled.simulation && rpc.Api.isSimulationError(assembled.simulation)
+    ? assembled.simulation.error
+    : "The transaction could not be simulated.";
 }
 
 export type SubmitResult = {
