@@ -46,5 +46,8 @@ export const WORKSPACE_NAV: NavItem[] = [
 ];
 
 export const FOOTER_NAV: NavItem[] = [
+  // Below the workspace nav with Settings, because it is about the person
+  // rather than the work — the same reason Settings sits here.
+  { href: "/wallet", label: "Wallet", icon: ICON.wallet },
   { href: "/settings", label: "Settings", icon: ICON.settings },
 ];
