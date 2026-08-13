@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
 import { listProjectOptions } from "@/lib/queries";
 import { getUser } from "@/lib/supabase/server";
 
@@ -18,6 +19,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // just avoids rendering an app shell full of empty lists to a signed-out
   // visitor, which reads as "broken" rather than "sign in".
   if (!user) redirect("/login");
+
+  /**
+   * Every account has an email and a password. This is where that stops being
+   * an intention and becomes true of accounts that already exist.
+   *
+   * Only the accounts the retired auto-create flow made can fail this — they
+   * hold a `…@wallet.qdit.local` address, which is unroutable by construction
+   * and therefore no way back in at all. Registration is where they get one,
+   * and there is nowhere else to go until they do.
+   *
+   * `/register` is outside this route group, so this cannot loop. It is not an
+   * authorization check either: these accounts have a real session and RLS
+   * treats them exactly as it always did. It is a redirect, and someone who
+   * hits the API directly is signed in and entitled to be.
+   */
+  if (!hasRecoveryCredential(user.email)) redirect("/register");
 
   return (
     <AppShell projects={projects} email={user.email ?? ""}>

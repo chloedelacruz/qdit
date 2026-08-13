@@ -68,7 +68,20 @@ export function rateLimit(key: string, { limit, windowMs }: RateLimit): boolean 
  * bucket. The first entry is the original client; the rest are proxies.
  */
 export function clientKey(request: Request, scope: string): string {
-  const forwarded = request.headers.get("x-forwarded-for");
+  return headerKey(request.headers, scope);
+}
+
+/**
+ * The same, for a caller that has headers but no `Request`.
+ *
+ * Server Actions are the reason: they are POST endpoints reachable by anyone
+ * who can send the POST — the framework says so plainly — so the one that
+ * creates accounts wants the same limiter the route handlers have. What it does
+ * not have is a `Request` object; `headers()` from `next/headers` is what it
+ * gets instead.
+ */
+export function headerKey(headers: Headers, scope: string): string {
+  const forwarded = headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || "unknown";
   return `${scope}:${ip}`;
 }

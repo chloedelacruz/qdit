@@ -63,3 +63,59 @@ teardown("remove rows created by the write-path specs", async () => {
     }
   }
 });
+
+/**
+ * Deletes the accounts `wallet-auth.spec.ts` registers.
+ *
+ * A separate teardown because it is a different API. The rows above live in
+ * PostgREST; an account lives in `auth.users`, which only the Auth admin API
+ * can remove — and removing it is what cascades the profile away, since
+ * `profiles.id references auth.users on delete cascade`.
+ *
+ * Matched on the `e2e-wallet-` email prefix rather than on ids collected during
+ * the run, so a crashed run is cleaned up by the next one. That prefix is the
+ * contract between the two files; changing it in one place breaks cleanup
+ * silently, which is why it is stated in both.
+ */
+teardown("remove accounts created by the wallet registration specs", async () => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secret = process.env.SUPABASE_SECRET_KEY;
+
+  if (!url || !secret) {
+    console.warn("[teardown] SUPABASE_SECRET_KEY not set — leaving e2e accounts in place.");
+    return;
+  }
+
+  const headers = { apikey: secret, Authorization: `Bearer ${secret}` };
+
+  // The admin list endpoint has no server-side filter, so the prefix match
+  // happens here. 200 per page is its maximum and is far more than a run makes.
+  const listed = await fetch(`${url}/auth/v1/admin/users?per_page=200`, { headers });
+
+  if (!listed.ok) {
+    console.warn(
+      `[teardown] could not list accounts: ${listed.status} ${await listed.text()}`,
+    );
+    return;
+  }
+
+  const { users } = (await listed.json()) as { users: { id: string; email?: string }[] };
+  const mine = users.filter((user) => user.email?.startsWith("e2e-wallet-"));
+
+  for (const user of mine) {
+    const deleted = await fetch(`${url}/auth/v1/admin/users/${user.id}`, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!deleted.ok) {
+      console.warn(
+        `[teardown] could not delete ${user.email}: ${deleted.status} ${await deleted.text()}`,
+      );
+    }
+  }
+
+  if (mine.length > 0) {
+    console.log(`[teardown] removed ${mine.length} e2e wallet account(s).`);
+  }
+});

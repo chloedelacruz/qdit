@@ -135,8 +135,9 @@ export default function Home() {
               </Reveal>
 
               {/* The front door, on the marketing surface rather than one click
-                  behind it. Connecting is the whole of signing up: there is no
-                  form to fill in first and no account to create beforehand. */}
+                  behind it. Connecting is the first step of signing up rather
+                  than the whole of it: a wallet already registered lands in the
+                  app, a new one gets a short form. */}
               <Reveal delay={180}>
                 <div className="mt-8 flex flex-wrap items-center gap-3">
                   <ConnectWalletButton />
@@ -146,8 +147,8 @@ export default function Home() {
                 </div>
 
                 <p className="mt-5 max-w-md text-xs text-muted-foreground">
-                  No password. Your wallet is the account — and once you are in, you can add an
-                  email so losing the wallet does not mean losing the workspace.
+                  Your wallet is your identity here. Registering takes a username, an email and
+                  a password once — so losing the wallet does not mean losing the workspace.
                 </p>
               </Reveal>
             </div>

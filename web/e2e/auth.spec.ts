@@ -45,11 +45,52 @@ test.describe("authentication", () => {
   test("there is no way to sign up with an email and password", async ({ page }) => {
     await page.goto("/login");
 
-    // Accounts are created by connecting a wallet. An email and password get
-    // attached to an account that already exists, so a form offering to make
-    // one here would describe a flow that does not exist.
+    // Accounts start with a wallet. The email and password are chosen on
+    // /register, which is unreachable without a proved address, so a form
+    // offering to make an account here would describe a flow that does not
+    // exist — and `supabase/config.toml` has closed the endpoint it would post
+    // to.
     await expect(page.getByRole("button", { name: "Create one" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create account" })).toHaveCount(0);
+  });
+
+  test("/register is unreachable without a proved wallet", async ({ page }) => {
+    // The registration ticket is what says an address was proved, and it is set
+    // by the verify route and nothing else. Without one there is no address to
+    // register and no form to render.
+    await page.goto("/register");
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sign in to qdit");
+  });
+
+  test("a forged ticket cookie does not open registration", async ({
+    page,
+    context,
+    // The suite's own base URL, not a literal: the port is configurable and
+    // `PLAYWRIGHT_BASE_URL` can move the host entirely.
+    baseURL,
+  }) => {
+    // Signed with a key the server does not have. The page must treat it the
+    // same as no ticket at all — an unsigned address is a claim, and claiming
+    // an address is the thing the whole challenge flow exists to prevent.
+    await context.addCookies([
+      {
+        name: "qdit-wallet-ticket",
+        value: [
+          Buffer.from(
+            "GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGSNFHEYVXM3XOJMDS674JZ",
+          ).toString("base64url"),
+          String(Math.floor(Date.now() / 1000) + 3600),
+          "not-a-real-signature",
+        ].join("."),
+        url: baseURL!,
+      },
+    ]);
+
+    await page.goto("/register");
+
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   test("invalid credentials are rejected without revealing which field was wrong", async ({

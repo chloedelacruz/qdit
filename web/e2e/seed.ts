@@ -41,19 +41,25 @@ export const MEMBERS = {
 } as const;
 
 /**
- * An account that exists and belongs to no project, for the invite-by-email
- * path.
+ * An account that exists and belongs to no project, for the invite paths.
  *
  * That combination is what makes her the right subject: RLS hides a
  * non-teammate's `profiles` row from every query the client can make, so she
- * cannot be reached through the member picker at all. Adding her exercises
- * `add_project_member_by_email` doing the one thing only it can do.
+ * cannot be reached through the member picker at all. Adding her exercises the
+ * `add_project_member_by_*` functions doing the one thing only they can do.
+ *
+ * All three of her identifiers are here because all three resolve to her, and
+ * the point of the single field in `AddMemberDialog` is that it does not matter
+ * which one an admin happens to be holding.
  *
  * No password here — the specs never sign in as her, they add her.
  */
 export const OUTSIDER = {
   email: "ada@qdit.test",
   name: "Ada Builder",
+  /** Backfilled from `Ada Builder` by 20260812235342_profile_username.sql. */
+  username: "ada_builder",
+  wallet: "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ",
 } as const;
 
 export const TASKS = {

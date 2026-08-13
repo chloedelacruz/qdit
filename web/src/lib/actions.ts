@@ -7,7 +7,8 @@ import {
   deploymentSchema,
   milestoneSchema,
   profileSchema,
-  projectMemberEmailSchema,
+  classifyMemberIdentifier,
+  projectMemberIdentifierSchema,
   projectMemberSchema,
   projectSchema,
   projectUpdateSchema,
@@ -651,57 +652,107 @@ export async function addProjectMember(
 }
 
 /**
- * Adds someone by email address, including someone the caller has never shared
- * a project with.
+ * Adds someone by username, email address or wallet address — including someone
+ * the caller has never shared a project with.
  *
- * The resolution happens inside `add_project_member_by_email`, a SECURITY
- * DEFINER function, because RLS makes a stranger's `profiles` row invisible to
- * every query this client is allowed to make — there is no id to insert. That
- * function authorizes the caller as an admin of the target project *before* it
- * looks the address up, and performs the insert itself rather than handing back
- * a user id, so it cannot be turned into an address-book lookup. Its header
- * carries the full argument.
+ * The resolution happens inside one of three SECURITY DEFINER functions,
+ * because RLS makes a stranger's `profiles` row invisible to every query this
+ * client is allowed to make — there is no id to insert. Each of them authorizes
+ * the caller as an admin of the target project *before* it looks the identifier
+ * up, and performs the insert itself rather than handing back a user id, so
+ * none can be turned into a directory. Their headers carry the full argument.
  *
- * The three failures below are the ones a user can act on, so each gets its own
+ * ---------------------------------------------------------------------------
+ * WHY ONE ACTION AND ONE FIELD RATHER THAN THREE OF EACH
+ * ---------------------------------------------------------------------------
+ * The three formats are mutually exclusive by construction — see
+ * `classifyMemberIdentifier` — so the server can tell what it was given. Asking
+ * an admin to pick "by email / by wallet / by username" before they may paste
+ * something is asking them to classify it on the app's behalf, and they can
+ * already see what they are holding.
+ *
+ * Which one is *primary* has moved once already and would have moved again:
+ * `member_invite_by_wallet` made the wallet address primary on the grounds that
+ * it was the only universal identifier, which registration then made false.
+ * Dispatching on shape means there is no primary to get wrong.
+ *
+ * The failures below are the ones a user can act on, so each gets its own
  * sentence rather than a generic "could not add member". They are distinguished
  * by SQLSTATE rather than by message text, which is free to be reworded.
  */
-export async function addProjectMemberByEmail(
+export async function addProjectMemberByIdentifier(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const parsed = projectMemberEmailSchema.safeParse({
+  const parsed = projectMemberIdentifierSchema.safeParse({
     projectId: String(formData.get("projectId") ?? ""),
-    email: String(formData.get("email") ?? "").trim(),
+    identifier: String(formData.get("identifier") ?? ""),
     role: String(formData.get("role") || "member"),
   });
 
   if (!parsed.success) return toFieldErrors(parsed.error);
 
+  const subject = classifyMemberIdentifier(parsed.data.identifier);
+
+  if (subject.kind === "invalid") {
+    return { fieldErrors: { identifier: subject.message } };
+  }
+
   const supabase = await createClient();
-  const { error } = await supabase.rpc("add_project_member_by_email", {
-    p_project_id: parsed.data.projectId,
-    p_email: parsed.data.email,
-    p_role: parsed.data.role,
-  });
+
+  // One call per shape. The argument names differ, so this is a switch rather
+  // than a lookup table — and a table would have to be typed as the union of
+  // three Args shapes to satisfy the generated client anyway.
+  const { error } =
+    subject.kind === "wallet"
+      ? await supabase.rpc("add_project_member_by_wallet", {
+          p_project_id: parsed.data.projectId,
+          p_address: subject.value,
+          p_role: parsed.data.role,
+        })
+      : subject.kind === "email"
+        ? await supabase.rpc("add_project_member_by_email", {
+            p_project_id: parsed.data.projectId,
+            p_email: subject.value,
+            p_role: parsed.data.role,
+          })
+        : await supabase.rpc("add_project_member_by_username", {
+            p_project_id: parsed.data.projectId,
+            p_username: subject.value,
+            p_role: parsed.data.role,
+          });
 
   if (error) {
     // 42501 insufficient_privilege — not an admin of this project.
     if (error.code === "42501") {
       return { error: "You need admin rights on this project to add members." };
     }
-    // P0002 no_data_found — the address resolved to nobody.
+
+    // P0002 no_data_found — the identifier resolved to nobody. Named by kind,
+    // because "no account matches that" leaves the admin wondering whether the
+    // app even understood which of the three they typed.
     if (error.code === "P0002") {
-      return {
-        fieldErrors: {
-          email: "No qdit account uses that email. They need to sign up first.",
-        },
-      };
+      const missing = {
+        wallet: "No qdit account has linked that wallet address.",
+        email: "No qdit account uses that email. They need to sign up first.",
+        username: "No qdit account uses that username.",
+      } as const;
+
+      return { fieldErrors: { identifier: missing[subject.kind] } };
     }
+
+    // 22023 invalid_parameter_value — the function's own shape check. Reachable
+    // only if this file and the migrations disagree about what a valid
+    // identifier looks like, which is worth surfacing rather than hiding.
+    if (error.code === "22023") {
+      return { fieldErrors: { identifier: friendly(error.message, error.code) } };
+    }
+
     // 23505 unique_violation — (project_id, user_id) is the primary key.
     if (error.code === "23505") {
       return { error: "They are already a member of this project." };
     }
+
     return { error: friendly(error.message, error.code) };
   }
 
@@ -783,6 +834,24 @@ export async function removeProjectMember(
 /**
  * The caller's own profile. `profiles: update own` is the policy, so this needs
  * no role check — RLS cannot be talked into writing anyone else's row.
+ *
+ * ---------------------------------------------------------------------------
+ * THE WALLET ADDRESS IS NOT HERE ANY MORE
+ * ---------------------------------------------------------------------------
+ * It used to be: `EditProfileDialog` had a free-text `G…` box and this action
+ * wrote whatever came out of it. Typing an address claims one; signing a
+ * challenge proves one — and every address on every profile is now a proved
+ * one, because the only things that write the column are registration and the
+ * one-time link in `linkWalletToProfile`.
+ *
+ * Dropping it from the *action* and not merely from the form is the same
+ * defence `projectMemberSchema` applies to the `owner` role: a hand-made POST
+ * cannot set what is never read. And below both,
+ * `profiles_freeze_wallet_address` refuses the write outright, so this is the
+ * polite layer rather than the load-bearing one.
+ *
+ * `profileSchema.walletAddress` stays. The server still validates the shape of
+ * an address elsewhere; nothing feeds it from a form.
  */
 export async function updateProfile(
   _prev: ActionState,
@@ -790,7 +859,6 @@ export async function updateProfile(
 ): Promise<ActionState> {
   const parsed = profileSchema.safeParse({
     displayName: String(formData.get("displayName") ?? ""),
-    walletAddress: String(formData.get("walletAddress") ?? ""),
   });
 
   if (!parsed.success) return toFieldErrors(parsed.error);
@@ -801,10 +869,7 @@ export async function updateProfile(
   const supabase = await createClient();
   const { error } = await supabase
     .from("profiles")
-    .update({
-      display_name: parsed.data.displayName,
-      wallet_address: orNull(formData.get("walletAddress")),
-    })
+    .update({ display_name: parsed.data.displayName })
     .eq("id", user.id);
 
   if (error) return { error: friendly(error.message, error.code) };
@@ -813,37 +878,17 @@ export async function updateProfile(
   return { ok: true };
 }
 
-/**
- * Records the address a connected wallet reported.
+/*
+ * `saveWalletAddress()` was here and is deleted.
  *
- * Separate from `updateProfile` because the wallet flow has no form: the user
- * clicks Connect, picks a wallet, and the address arrives from the kit. Making
- * them retype it into the profile dialog would be the only way it could be
- * wrong.
+ * It took a bare address and wrote it to the caller's profile — no signature,
+ * no proof, just whatever the wallet kit had reported. Its own comment argued
+ * that a form field would be "the only way it could be wrong", which was true
+ * of typos and silent about everything else: the address was a claim either
+ * way, and the account it named did not have to belong to the person claiming
+ * it.
  *
- * This does **not** prove control of the key, and does not need to. The address
- * is a convenience — it prefills the signer and lets the UI say which account
- * will be asked to sign. What proves control is the signature on the anchoring
- * transaction, and `submitMilestoneAnchor` reads the signer back out of the
- * verified transaction rather than from here.
+ * Its replacement is `POST /api/auth/wallet/verify` with `intent: "link"`,
+ * which accepts the same address only when it arrives inside a signed
+ * challenge, and only once per account.
  */
-export async function saveWalletAddress(address: string): Promise<ActionState> {
-  const parsed = profileSchema.shape.walletAddress.safeParse(address);
-  if (!parsed.success) {
-    return { error: "That is not a Stellar account address." };
-  }
-
-  const user = await getUser();
-  if (!user) return { error: "Your session expired. Sign in again." };
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("profiles")
-    .update({ wallet_address: address })
-    .eq("id", user.id);
-
-  if (error) return { error: friendly(error.message, error.code) };
-
-  revalidateAll();
-  return { ok: true };
-}
