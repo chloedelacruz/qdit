@@ -112,27 +112,17 @@ export function RowActions({
 
   return (
     /**
-     * `stopPropagation` only — never `preventDefault` here.
+     * No click guards here, deliberately.
      *
-     * The row is a Link, and React bubbles events from a portal along the React
-     * tree rather than the DOM tree. Both dialogs below are portalled to
-     * `body`, so their clicks still pass through this handler: stopping
-     * propagation keeps them from reaching the Link's onClick, but calling
-     * `preventDefault` would also cancel the submit button's default action and
-     * the edit form would silently never post.
-     *
-     * Preventing the anchor's own navigation is the trigger's job instead.
+     * A linked row puts its `<Link>` *beside* this content rather than around
+     * it (see `ListRow`), and `RowControl` lifts this trigger above that
+     * overlay. So neither this button nor the dialogs portalled out of it have
+     * a link ancestor left to navigate, in the DOM tree or in React's.
      */
-    <span
-      className={cn("shrink-0", className)}
-      onClick={(event) => event.stopPropagation()}
-    >
+    <span className={cn("shrink-0", className)}>
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`Actions for this ${label}`}
-          // This button really is inside the anchor, so its click would follow
-          // the link. Radix still opens the menu — its own handler runs after.
-          onClick={(event) => event.preventDefault()}
           className={cn(
             "focus-ring transition-qdit grid size-6 place-items-center rounded-md text-muted-foreground",
             "hover:bg-muted hover:text-foreground",
