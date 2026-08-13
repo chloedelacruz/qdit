@@ -43,6 +43,7 @@ test.describe("mobile navigation", () => {
       "All milestones",
       "All deployments",
       "Proof registry",
+      "Wallet",
       "Settings",
     ]) {
       await expect(sheet.getByRole("link", { name: label, exact: true })).toBeVisible();

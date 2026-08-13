@@ -6,9 +6,14 @@ import {
   SOROBAN_RPC_URL,
   accountUrl,
   contractUrl,
+  formatXlm,
+  fromStroops,
   isContractId,
   isTxHash,
+  isValidAmount,
   isWalletAddress,
+  minimumBalanceStroops,
+  toStroops,
   truncateHash,
   txUrl,
 } from "@/lib/stellar";
@@ -202,5 +207,124 @@ describe("truncateHash", () => {
 
   it("trims before measuring", () => {
     expect(truncateHash("  GABC  ")).toBe("GABC");
+  });
+});
+
+/**
+ * The amount helpers exist because XLM has seven decimal places and JavaScript
+ * numbers do not have them to spare. Every case below is one where `parseFloat`
+ * would have been subtly wrong — and a subtly wrong amount is a payment for the
+ * wrong sum, which the ledger will happily make permanent.
+ */
+
+describe("toStroops", () => {
+  it("converts whole XLM", () => {
+    expect(toStroops("1")).toBe(10_000_000n);
+  });
+
+  it("pads a short fraction to seven places", () => {
+    expect(toStroops("1.5")).toBe(15_000_000n);
+    expect(toStroops("0.1")).toBe(1_000_000n);
+  });
+
+  it("keeps all seven decimal places", () => {
+    expect(toStroops("0.0000001")).toBe(1n);
+  });
+
+  it("survives amounts a float would round", () => {
+    // 0.1 + 0.2 !== 0.3 in binary floating point; in stroops it is exact.
+    expect(toStroops("0.1") + toStroops("0.2")).toBe(toStroops("0.3"));
+    expect(toStroops("9999999.9999999")).toBe(99_999_999_999_999n);
+  });
+
+  it("returns zero for anything unparseable, rather than throwing", () => {
+    // Display paths call this on whatever is in the input box.
+    expect(toStroops("")).toBe(0n);
+    expect(toStroops("abc")).toBe(0n);
+    expect(toStroops("-1")).toBe(0n);
+    expect(toStroops("1.23456789")).toBe(0n); // eight decimal places
+  });
+});
+
+describe("fromStroops", () => {
+  it("round-trips through toStroops", () => {
+    for (const amount of ["1.0000000", "0.0000001", "10000.5000000"]) {
+      expect(fromStroops(toStroops(amount))).toBe(amount);
+    }
+  });
+
+  it("always writes seven decimal places, as Horizon does", () => {
+    expect(fromStroops(10_000_000n)).toBe("1.0000000");
+    expect(fromStroops(1n)).toBe("0.0000001");
+    expect(fromStroops(0n)).toBe("0.0000000");
+  });
+
+  it("handles a negative result, which a spendable calculation can produce", () => {
+    expect(fromStroops(-5_000_000n)).toBe("-0.5000000");
+  });
+});
+
+describe("isValidAmount", () => {
+  it("accepts what the network accepts", () => {
+    expect(isValidAmount("1")).toBe(true);
+    expect(isValidAmount("0.0000001")).toBe(true);
+    expect(isValidAmount(" 12.5 ")).toBe(true);
+  });
+
+  it("rejects zero, which is not a payment", () => {
+    expect(isValidAmount("0")).toBe(false);
+    expect(isValidAmount("0.0000000")).toBe(false);
+  });
+
+  it("rejects more precision than a stroop", () => {
+    expect(isValidAmount("1.12345678")).toBe(false);
+  });
+
+  it("rejects signs, exponents and empty input", () => {
+    expect(isValidAmount("-1")).toBe(false);
+    expect(isValidAmount("1e5")).toBe(false);
+    expect(isValidAmount("")).toBe(false);
+  });
+});
+
+describe("formatXlm", () => {
+  it("groups thousands", () => {
+    expect(formatXlm("10000.0000000")).toBe("10,000.00");
+    expect(formatXlm("1234567.8900000")).toBe("1,234,567.89");
+  });
+
+  it("keeps two decimal places when the rest are zeros", () => {
+    expect(formatXlm("1.0000000")).toBe("1.00");
+    expect(formatXlm("0.0000000")).toBe("0.00");
+  });
+
+  it("never rounds precision away", () => {
+    // Showing this as 10,000.00 would tell someone they have more than they do.
+    expect(formatXlm("9999.9999999")).toBe("9,999.9999999");
+  });
+
+  it("handles a value with no fraction at all", () => {
+    expect(formatXlm("42")).toBe("42.00");
+  });
+});
+
+describe("minimumBalanceStroops", () => {
+  it("is two base reserves for a plain account", () => {
+    expect(minimumBalanceStroops(0)).toBe(10_000_000n);
+  });
+
+  it("adds one base reserve per subentry", () => {
+    expect(minimumBalanceStroops(2)).toBe(20_000_000n);
+  });
+
+  it("counts sponsored entries against whoever is paying for them", () => {
+    expect(minimumBalanceStroops(0, 3, 0)).toBe(25_000_000n);
+    expect(minimumBalanceStroops(3, 0, 3)).toBe(10_000_000n);
+  });
+
+  it("never falls below the account's own two reserves", () => {
+    // num_sponsored can exceed subentry_count; the floor is what stops that
+    // from reporting an account that can spend more than it holds.
+    expect(minimumBalanceStroops(0, 0, 10)).toBe(10_000_000n);
   });
 });

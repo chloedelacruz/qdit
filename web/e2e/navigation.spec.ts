@@ -9,6 +9,7 @@ const WORKSPACE_ROUTES = [
   ["/milestones", "All milestones"],
   ["/deployments", "All deployments"],
   ["/proofs", "Proof registry"],
+  ["/wallet", "Wallet"],
   ["/settings", "Settings"],
 ] as const;
 

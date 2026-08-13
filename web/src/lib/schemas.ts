@@ -208,6 +208,41 @@ export const profileSchema = z.object({
 });
 
 /**
+ * A native XLM payment.
+ *
+ * The only schema here that guards a ledger rather than a table, which changes
+ * what "validation" is for. A bad row can be edited; a bad payment is final, so
+ * the constraints are about the two mistakes that cost money — a mistyped
+ * address and a mistyped amount — rather than about what Postgres will accept.
+ *
+ * `amount` stays a string all the way to the SDK. Seven decimal places do not
+ * survive a round trip through a float, and a balance that is off by a rounding
+ * error is a wrong balance (see `toStroops` in `lib/stellar.ts`).
+ */
+export const paymentSchema = z.object({
+  destination: z
+    .string()
+    .trim()
+    .regex(/^G[A-Z2-7]{55}$/, "Wallet addresses start with G and are 56 characters."),
+  amount: z
+    .string()
+    .trim()
+    .regex(/^\d{1,15}(\.\d{1,7})?$/, "Enter an amount, up to 7 decimal places.")
+    .refine((value) => Number(value) > 0, "Enter an amount greater than zero."),
+  // Horizon rejects a text memo over 28 *bytes*, and a character is not a byte
+  // once anyone types an emoji — so measure what the network measures.
+  memo: z
+    .string()
+    .trim()
+    .refine(
+      (value) => new TextEncoder().encode(value).length <= 28,
+      "A memo is at most 28 bytes.",
+    )
+    .optional()
+    .or(z.literal("")),
+});
+
+/**
  * `project_members`. One row is a person plus what they may do in one project.
  *
  * `owner` is deliberately absent from the assignable roles. The owner row is
@@ -306,6 +341,7 @@ export type MilestoneInput = z.infer<typeof milestoneSchema>;
 export type ProofInput = z.infer<typeof proofSchema>;
 export type DeploymentInput = z.infer<typeof deploymentSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
+export type PaymentInput = z.infer<typeof paymentSchema>;
 export type ProjectMemberInput = z.infer<typeof projectMemberSchema>;
 
 /** Turns a name into a candidate slug, so the form can prefill it. */
