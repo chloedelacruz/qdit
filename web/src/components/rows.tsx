@@ -1,5 +1,5 @@
 import { HashLink } from "@/components/hash-link";
-import { ListRow, MemberChip, RowMeta } from "@/components/data-list";
+import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
 import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
@@ -54,7 +54,7 @@ export function ProjectListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${project.slug}`}>
+    <ListRow href={`/projects/${project.slug}`} label={project.name}>
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{project.name}</span>
 
@@ -81,7 +81,7 @@ export function ProjectListRow({
           <StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} dot={false} />
         </span>
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
     </ListRow>
   );
@@ -97,13 +97,13 @@ export function TaskListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${task.projectSlug}/board`}>
+    <ListRow href={`/projects/${task.projectSlug}/board`} label={task.title}>
       <div className={LINE}>
         {/* Reserved so titles start on a common left edge regardless of status.
             The badge doubles as the control for moving the task. */}
-        <span className="flex w-24 shrink-0">
+        <RowControl className="w-24">
           <TaskStatusMenu taskId={task.id} status={task.status} />
-        </span>
+        </RowControl>
 
         {/* Reserved too, and for the same reason — `PriorityChip` renders
             nothing for the default, and an unreserved slot would step every
@@ -134,7 +134,7 @@ export function TaskListRow({
           name={task.assigneeName}
         />
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
     </ListRow>
   );
@@ -153,7 +153,10 @@ export function MilestoneListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${milestone.projectSlug}/milestones`}>
+    <ListRow
+      href={`/projects/${milestone.projectSlug}/milestones`}
+      label={milestone.title}
+    >
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{milestone.title}</span>
 
@@ -177,16 +180,20 @@ export function MilestoneListRow({
           approved here and unanchored there.
         */}
         {milestone.anchor ? (
-          <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+          // Carries the explorer link and a copy button, both of which have to
+          // out-rank the row's own link rather than sit inside it.
+          <RowControl>
+            <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+          </RowControl>
         ) : null}
 
-        <span className="flex w-24 shrink-0 justify-end">
+        <RowControl className="w-24 justify-end">
           {statusControl ?? (
             <StatusBadge state={MILESTONE_STATUS[milestone.status]} dot={false} />
           )}
-        </span>
+        </RowControl>
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
     </ListRow>
   );

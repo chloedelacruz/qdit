@@ -80,11 +80,6 @@ export function MilestoneStatusMenu({
           pending && "opacity-60",
           className,
         )}
-        onClick={(event) => {
-          // Milestone rows link to the project's milestone page.
-          event.preventDefault();
-          event.stopPropagation();
-        }}
       >
         <StatusBadge state={MILESTONE_STATUS[optimistic]} dot={false} />
       </DropdownMenuTrigger>

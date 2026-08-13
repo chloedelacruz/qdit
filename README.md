@@ -21,6 +21,63 @@ supabase/    SQL migrations, RLS policies, local config
 materials/   Brand source material
 ```
 
+## Quick start — run it locally
+
+**Prerequisites**
+
+| Need | Why |
+| --- | --- |
+| Node.js 20.9+ and npm | Next.js 16 |
+| A Supabase project, or the [Supabase CLI](https://supabase.com/docs/guides/cli) for a local stack | every read and write goes through Postgres with RLS |
+| [Freighter](https://www.freighter.app/) set to **Stellar Testnet** | sign-in, anchoring and payments are wallet-signed |
+| Rust + [Stellar CLI](https://developers.stellar.org/docs/tools/cli) — optional | only to build or redeploy the contract |
+
+**Run the app**
+
+```bash
+git clone https://github.com/chloedelacruz/qdit.git
+cd qdit/web                    # install from web/, not the repo root
+cp .env.example .env.local     # fill in your Supabase project values
+npm install
+npm run dev                    # http://127.0.0.1:3000
+```
+
+`npm install` from the repo root *appears* to work, because Node resolves
+upward. Install from `web/`.
+
+**What `.env.local` needs**
+
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | publishable key — RLS is what protects the data, not this key |
+| `NEXT_PUBLIC_SITE_URL` | `http://127.0.0.1:3000` locally |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | `testnet` |
+| `NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` | `CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG` — **leave empty and anchoring is absent rather than broken** |
+| `SUPABASE_SECRET_KEY` | server-only; required for wallet sign-in |
+| `STELLAR_AUTH_SERVER_SECRET` | server-only; signs the SEP-10 challenge. An ordinary keypair, generated once and never funded |
+
+Every variable is documented inline in [`web/.env.example`](./web/.env.example).
+
+**Database**
+
+```bash
+supabase start           # local stack
+supabase db reset        # apply migrations + seed
+```
+
+Never apply `seed.sql` to a hosted project — see the security note under
+[Database](#database).
+
+**First run**
+
+Open `/login`, connect Freighter, and register a username and email. Fund the
+account from Friendbot if it is new, then `/wallet` shows the balance and can
+send a Testnet payment.
+
+Other commands: `npm run build`, `npm run lint`, `npm run typecheck`,
+`npm test`. Contracts and end-to-end tests have their own sections below.
+
 ## Where things stand
 
 All three layers are joined. The UI reads and writes a hosted Postgres with RLS
@@ -50,34 +107,107 @@ verification against Horizon; and anchoring a milestone's proof hash on chain
 with a connected wallet. `/wallet` connects and disconnects a Freighter wallet,
 reads its XLM balance from Horizon, and sends a Testnet payment end to end.
 
-## Screenshots
+## Screenshots — Stellar wallet integration (testnet)
 
-All three are Stellar **Testnet**, signed with Freighter.
+End-to-end wallet flow on **Stellar Testnet**, signed with Freighter and
+verified on-chain. Source images live in
+[`docs/screenshots/stellar_wallet_integration/`](docs/screenshots/stellar_wallet_integration).
 
-### Wallet connected
+| Field | Value |
+| --- | --- |
+| Network | Stellar Testnet (`Test SDF Network ; September 2015`) |
+| Wallet | [`GCZFICVAJ4KEI45HPFDI27HH4SG7XBYNUDSJRKKRIERF6GLY3HV6QM4F`](https://stellar.expert/explorer/testnet/account/GCZFICVAJ4KEI45HPFDI27HH4SG7XBYNUDSJRKKRIERF6GLY3HV6QM4F) |
+| Contract | [`CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG`](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
 
-The address is read back from the wallet rather than stored — disconnect clears
-it here and in the extension, and signing out does both.
+### 1. Wallet setup
 
-![The wallet page with a Freighter wallet connected, showing the address and a
-disconnect button](docs/screenshots/wallet-connected.png)
+Freighter installed, switched to **Stellar Testnet**, and funded from Friendbot
+with **10,000 XLM**.
 
-### Balance displayed
+<img src="docs/screenshots/stellar_wallet_integration/wallet_setup.png" alt="Freighter on Stellar Testnet funded with 10,000 XLM" width="360" />
 
-Three figures, not one: an account cannot spend below its reserve, so the
-spendable number is the one the send form enforces.
+| Field | Value |
+| --- | --- |
+| Network | Stellar Testnet |
+| Account | [`GCZFICVAJ4KEI45HPFDI27HH4SG7XBYNUDSJRKKRIERF6GLY3HV6QM4F`](https://stellar.expert/explorer/testnet/account/GCZFICVAJ4KEI45HPFDI27HH4SG7XBYNUDSJRKKRIERF6GLY3HV6QM4F) |
+| Created | 2026-08-13 20:51:51 UTC (Friendbot) |
+| Initial balance | 10,000 XLM |
 
-![The balance section showing total XLM, spendable and
-reserve](docs/screenshots/balance.png)
+The app links the same Friendbot for an unfunded account rather than erroring —
+`friendbotUrl()` in `src/lib/wallet.ts`, reached from the `funded: false` state.
 
-### Transaction sent, and its result
+### 2. Wallet connected
 
-The hash stays on screen after the payment confirms, with a copy button and a
-link to stellar.expert — a payment that leaves nothing behind is
-indistinguishable from one that never happened.
+The wallet is the credential: connecting it is how you sign in, and an address
+the app has never seen leads to `/register` rather than to a session.
 
-![A confirmed payment showing the amount sent, the transaction hash, the
-destination and the ledger number](docs/screenshots/payment-sent.png)
+![The qdit landing page, live on Stellar Testnet, with Connect wallet as the way in](docs/screenshots/stellar_wallet_integration/connect_wallet.png)
+
+| Behaviour | Code |
+| --- | --- |
+| **Connect** — opens the kit's chooser, returns the public key | `connectWallet()` in `src/lib/wallet.ts` |
+| Challenge exchange — SEP-10 signature → Supabase session | `src/app/api/auth/wallet/` |
+| **Disconnect** — drops the kit's stored address; sign-out does both | `disconnectWallet()`, called from `/wallet` and from sign-out |
+| Live address changes | `onWalletState()` (kit `STATE_UPDATED` event) |
+| Connected address, balance and send form | `/wallet` — `src/app/(app)/wallet/page.tsx` |
+
+The address on `/wallet` is read back from the wallet rather than stored, so the
+page cannot claim a connection the extension does not agree with.
+`@creit.tech/stellar-wallets-kit` is imported inside each function because it
+touches `localStorage` during module evaluation, which breaks server rendering
+of client components.
+
+### 3. Balance displayed
+
+The connected account's XLM balance, read from testnet Horizon by
+`GET /api/balance` and confirmed on Stellar Expert after the transaction below:
+
+![Account balance on Stellar Expert testnet](docs/screenshots/stellar_wallet_integration/balance_handling.png)
+
+| Field | Value |
+| --- | --- |
+| Balance | `9,999.9059307 XLM` — 10,000 minus fees for 3 payments |
+| Total payments | 3 |
+| Reported as | `balance`, `reserve`, `spendable` |
+
+Three figures, not one: the protocol will not let an account drop below a
+minimum tied to its subentry count, so `spendable` — balance minus reserve minus
+fee headroom — is the only one that answers "how much can I send", and it is the
+number the send form enforces. A 404 from Horizon comes back as `funded: false`
+rather than an error, because on Testnet that is one Friendbot click from being
+funded.
+
+### 4. Successful testnet transaction, and its result
+
+A milestone approval anchored on-chain — `approve_milestone` invoked on the
+deployed `milestone_proof` contract, signed in the browser with Freighter:
+
+![Successful transaction on Stellar Expert testnet](docs/screenshots/stellar_wallet_integration/transaction.png)
+
+| Field | Value |
+| --- | --- |
+| **Status** | ✅ Successful |
+| **Transaction hash** | [`4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5`](https://stellar.expert/explorer/testnet/tx/4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5) |
+| Ledger | 4126783 |
+| Processed | 2026-08-13 21:08:02 UTC |
+| Source account | [`GCZFIC…V6QM4F`](https://stellar.expert/explorer/testnet/account/GCZFICVAJ4KEI45HPFDI27HH4SG7XBYNUDSJRKKRIERF6GLY3HV6QM4F) |
+| Invoked | `approve_milestone(project_id, milestone_id, approver)` on [`CBP3NKXC…MB7M4OHVG`](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
+| Max fee | 0.0020525 XLM |
+| Fee charged | 0.0010703 XLM |
+| Transaction size | 976 bytes |
+
+**The result is shown back to the user, not just written to a ledger.** Once
+`submitMilestoneAnchor` confirms, the milestone keeps its receipt on screen —
+proof digest, transaction hash, signer, network, ledger and a
+`Succeeded — checked against Horizon` line, with a copy button and a link to the
+explorer. The same panel is what the landing page above previews. A transaction
+that leaves nothing behind is indistinguishable from one that never happened, so
+the hash stays put rather than flashing past in a toast.
+
+Failures are shown the same way. Simulation runs *before* the wallet is asked to
+sign, so a contract error surfaces as a message instead of a paid-for failed
+transaction, and a rejected signature is reported as a rejection
+(`isRejectedError()`) rather than as a crash.
 
 ## How it is put together
 
@@ -168,14 +298,8 @@ Two things about it are deliberate:
 
 ## Web app
 
-```bash
-cd web
-cp .env.example .env.local     # fill in your Supabase project values
-npm install                    # from web/, not the repo root
-npm run dev
-```
-
-Other commands: `npm run build`, `npm run lint`, `npm run typecheck`, `npm test`.
+Setup and environment variables are under
+[Quick start](#quick-start--run-it-locally).
 
 ### Routes
 
