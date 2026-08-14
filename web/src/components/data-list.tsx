@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/page-header";
+import { RowLink } from "@/components/row-link";
 import {
   DEFAULT_LIMIT,
   serialiseFilters,
@@ -57,14 +58,12 @@ export function ListRow({ href, label, active, className, children }: ListRowPro
         Positioned, so it paints above the static row content and takes the
         click anywhere on the row. Anything inside the row that must stay
         clickable therefore has to sit above it — see `RowControl`.
+
+        `RowLink` also drops the anchor when it would point at the current page,
+        which the shared row components otherwise do on every project-scoped
+        list — see the note there.
       */}
-      {href ? (
-        <Link
-          href={href}
-          aria-label={label}
-          className="focus-ring absolute inset-0"
-        />
-      ) : null}
+      {href ? <RowLink href={href} label={label} /> : null}
 
       {children}
     </div>
