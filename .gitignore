@@ -39,3 +39,8 @@ CLAUDE.local.md
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Pitch deck — the shared copy lives in Google Slides, linked from the README.
+# These are local exports, regenerated rather than tracked.
+docs/qdit-pitch-deck.pptx
+docs/qdit-pitch-deck.pdf
