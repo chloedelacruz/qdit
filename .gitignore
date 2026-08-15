@@ -55,3 +55,27 @@ docs/qdit-pitch-deck.pdf
 # submission — what ships is the summary in the README, not the scratch.
 _secret
 _level5
+
+# Demo wallets — generated Testnet keypairs, secret keys included. Worthless by
+# construction, and still not something to commit.
+web/scripts/demo/.wallets.json
+
+# The demo-video pipeline, in full: the Remotion project that composites the
+# walkthrough, and the Playwright harness that records it. Kept out of the
+# repository deliberately — it is production tooling for one deliverable
+# (a video that ships as a link), not part of the app, and its captures are
+# hundreds of megabytes of regenerable screen recording.
+video/
+web/scripts/record/
+web/scripts/demo/make-signer.mjs
+
+# The demo workspace itself: the SQL that stages one recording session and
+# carries the seeded cast verbatim, and the script that mints its keypairs.
+web/scripts/demo/seed-demo.sql
+web/scripts/demo/clean-demo.sql
+web/scripts/demo/reset-aurora.sql
+web/scripts/demo/wallets.mjs
+
+# Feedback write-up, kept local for now. Removed from history deliberately —
+# untrack rather than delete, so it stays available to re-add.
+docs/feedback-iteration.md

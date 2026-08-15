@@ -12,7 +12,10 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "demo:wallets": "node scripts/demo/wallets.mjs",
+    "demo:seed": "node scripts/demo/seed.mjs",
+    "demo:clean": "node scripts/demo/seed.mjs --clean"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.5.0",
