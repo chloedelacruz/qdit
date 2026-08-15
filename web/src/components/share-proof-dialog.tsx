@@ -73,17 +73,18 @@ export function ShareProofDialog({
           <DialogDescription>{milestoneTitle}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
-          {/*
-            `min-w-0` is load-bearing.
+        {/*
+          `min-w-0` here, on the grid item itself.
 
-            `DialogContent` is a grid, and a grid item defaults to
-            `min-width: auto` — it refuses to shrink below its content's
-            min-content width. A URL is one unbreakable string, so this row grew
-            to the full length of it and overflowed the dialog, ellipsis and all.
-            The `truncate` on the span inside cannot help while its ancestor is
-            still being sized by the same text.
-          */}
+          `DialogContent` is a grid, and a grid item defaults to
+          `min-width: auto` — it will not shrink below its content's min-content
+          width. A URL is one unbreakable string, so this whole column sized
+          itself to the length of it and overflowed the panel, taking the
+          description paragraph with it: the text wrapped at the wrong width
+          rather than the dialog's. Putting `min-w-0` on the row *inside* did
+          nothing, because the element being over-sized is this one.
+        */}
+        <div className="min-w-0 space-y-3 text-sm">
           <div className="well flex min-w-0 items-center gap-2 rounded-md border border-border py-1.5 pr-1.5 pl-3">
             <span data-slot="hash" className="min-w-0 flex-1 truncate text-xs">
               {url}
