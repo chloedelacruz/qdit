@@ -939,3 +939,38 @@ export async function updateProfile(
  * which accepts the same address only when it arrives inside a signed
  * challenge, and only once per account.
  */
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks notifications read.
+ *
+ * With no ids, marks everything unread as read — what opening the bell means.
+ * With ids, marks just those, for a click that goes straight to a milestone.
+ *
+ * No ownership check, deliberately. The `notifications: mark own as read`
+ * policy matches on `recipient_id = auth.uid()` in both USING and WITH CHECK,
+ * so a request naming somebody else's row updates nothing. Restating the rule
+ * here would put it in two places to drift apart, and the weaker of the two
+ * would be the one people trusted.
+ */
+export async function markNotificationsRead(ids?: string[]): Promise<ActionState> {
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .is("read_at", null);
+
+  if (ids && ids.length > 0) query = query.in("id", ids);
+
+  const { error } = await query;
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}

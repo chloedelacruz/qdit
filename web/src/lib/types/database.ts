@@ -546,6 +546,53 @@ export type Database = {
           },
         ]
       }
+
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          project_id: string
+          milestone_id: string | null
+          kind: Database['public']['Enums']['notification_kind']
+          body: string
+          actor_id: string | null
+          read_at: string | null
+          created_at: string
+        }
+        /**
+         * Written by `notify_milestone_status()`, never by a client — there is
+         * no INSERT policy on this table. Present only because the Database
+         * generic requires the key.
+         */
+        Insert: Record<string, never>
+        /** Marking read is the only edit the UPDATE policy permits. */
+        Update: {
+          read_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_recipient_id_fkey'
+            columns: ['recipient_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -619,6 +666,11 @@ export type Database = {
         | 'mainnet_live'
       /** Named for the milestone_proof function the transaction invoked. */
       anchor_action: 'submit' | 'approve' | 'reject'
+      /** Named for what happened, never for what the reader should do. */
+      notification_kind:
+        | 'milestone_submitted'
+        | 'milestone_approved'
+        | 'milestone_rejected'
     }
 
     CompositeTypes: Record<string, never>

@@ -1291,3 +1291,71 @@ export async function getWorkspaceSummary(): Promise<WorkspaceSummary> {
     myOpenTaskCount: mine.count ?? 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type NotificationRow = {
+  id: string;
+  kind: "milestone_submitted" | "milestone_approved" | "milestone_rejected";
+  body: string;
+  projectSlug: string;
+  milestoneId: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+/**
+ * The bell's contents: this account's notifications, newest first.
+ *
+ * RLS does the scoping — `notifications: read own` matches on
+ * `recipient_id = auth.uid()` — so there is no user filter here and adding one
+ * would only invite the belief that the filter is what protects the table.
+ *
+ * Capped rather than paginated. A bell is for what happened recently; anything
+ * older is a question about a milestone, and the milestone is where it should
+ * be asked.
+ */
+export async function listNotifications(limit = 20): Promise<NotificationRow[]> {
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("notifications")
+    .select("id, kind, body, milestone_id, read_at, created_at, projects!inner(slug)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  type Record = {
+    id: string;
+    kind: NotificationRow["kind"];
+    body: string;
+    milestone_id: string | null;
+    read_at: string | null;
+    created_at: string;
+    projects: { slug: string } | { slug: string }[];
+  };
+
+  return ((data ?? []) as unknown as Record[]).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    body: row.body,
+    // PostgREST describes a many-to-one embed as an array in some shapes.
+    projectSlug: (Array.isArray(row.projects) ? row.projects[0] : row.projects).slug,
+    milestoneId: row.milestone_id,
+    readAt: row.read_at,
+    createdAt: row.created_at,
+  }));
+}
+
+/** How many are unread. Its own query, because it is rendered on every page. */
+export async function countUnreadNotifications(): Promise<number> {
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .is("read_at", null);
+
+  return count ?? 0;
+}
