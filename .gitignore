@@ -55,3 +55,7 @@ docs/qdit-pitch-deck.pdf
 # submission — what ships is the summary in the README, not the scratch.
 _secret
 _level5
+
+# Demo wallets — generated Testnet keypairs, secret keys included. Worthless by
+# construction, and still not something to commit.
+web/scripts/demo/.wallets.json
