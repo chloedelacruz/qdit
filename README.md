@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
-  <a href="https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
+  <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing"><img src="https://img.shields.io/badge/User_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="User feedback responses" /></a>
 </p>
