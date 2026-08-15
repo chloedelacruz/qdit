@@ -65,7 +65,7 @@ export function MilestoneHistoryDialog({
           /* min-w-0 for the same reason the share dialog needs it: a reason can
               contain a long unbroken string, and a grid item will not shrink
               below its content. */
-          <ScrollArea className="max-h-96 min-w-0">
+          <ScrollArea className="min-w-0" viewportClassName="max-h-96">
             <ol className="space-y-3 pr-3">
               {entries.map((entry) => (
                 <li

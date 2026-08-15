@@ -105,7 +105,7 @@ export function NotificationBell({
             land here.
           </p>
         ) : (
-          <ScrollArea className="max-h-80">
+          <ScrollArea viewportClassName="max-h-80">
             <ul>
               {notifications.map((notification) => (
                 <li key={notification.id}>
