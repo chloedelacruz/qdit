@@ -8,7 +8,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ICON } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { connectWallet, isRejectedError, signTransaction } from "@/lib/wallet";
+import {
+  connectWallet,
+  isRejectedError,
+  signTransaction,
+  walletNetwork,
+  wrongNetworkMessage,
+  APP_NETWORK,
+} from "@/lib/wallet";
 
 /**
  * The front door.
@@ -87,6 +94,25 @@ export function ConnectWalletButton({
 
     try {
       const address = await connectWallet();
+
+      /*
+        Check the network before spending a challenge on it.
+
+        A wallet left on Mainnet — which is where they all ship — signs the
+        challenge with the wrong passphrase, and the verify route rejects the
+        signature. Correct, and useless as an explanation: what someone sees is
+        a sign-in that failed for no stated reason, and the tester who hit this
+        assumed the site was down. Asking first turns it into a sentence that
+        names both networks and the fix.
+
+        `undefined` means the wallet declined to say. That is not grounds to
+        block a sign-in — the signature check downstream is the real gate.
+      */
+      const network = await walletNetwork();
+      if (network !== undefined && network !== APP_NETWORK) {
+        throw new Error(wrongNetworkMessage(network));
+      }
+
       const { xdr } = await post("/api/auth/wallet/challenge", { address });
 
       if (typeof xdr !== "string") throw new Error("The server issued no challenge.");

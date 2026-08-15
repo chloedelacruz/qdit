@@ -35,6 +35,31 @@ export const SOROBAN_RPC_URL: Record<StellarNetwork, string> = {
 };
 
 /**
+ * Network passphrases, verbatim from SEP-0001.
+ *
+ * The passphrase is how a wallet says which network it is on — it is mixed into
+ * every signature, so a Mainnet wallet signing a Testnet transaction produces
+ * bytes the network rejects. Kept here rather than read from the wallet kit's
+ * enum so that plain comparisons stay dependency-free and testable.
+ */
+export const NETWORK_PASSPHRASE: Record<StellarNetwork, string> = {
+  testnet: "Test SDF Network ; September 2015",
+  mainnet: "Public Global Stellar Network ; September 2015",
+};
+
+/**
+ * Which of the two networks a passphrase belongs to, or null for the ones qdit
+ * does not run on — Futurenet, a sandbox, someone's standalone quickstart.
+ * "Not ours" and "unknown" are the same problem from the user's side, and the
+ * message that follows says so by name.
+ */
+export function networkFromPassphrase(passphrase: string): StellarNetwork | null {
+  if (passphrase === NETWORK_PASSPHRASE.testnet) return "testnet";
+  if (passphrase === NETWORK_PASSPHRASE.mainnet) return "mainnet";
+  return null;
+}
+
+/**
  * Strkeys are base32 (RFC 4648 alphabet, no padding) and fixed-length:
  * contracts are 56 chars starting with C, accounts 56 starting with G.
  */

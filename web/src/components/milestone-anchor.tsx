@@ -22,13 +22,15 @@ import {
 import { ICON } from "@/lib/icons";
 import type { MilestoneAnchor } from "@/lib/queries";
 import type { StellarNetwork } from "@/lib/stellar";
+import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import {
   connectWallet,
   currentAddress,
-  friendbotUrl,
   isRejectedError,
   isUnfundedError,
   signTransaction,
+  walletNetwork,
+  wrongNetworkMessage,
 } from "@/lib/wallet";
 
 const VERB: Record<AnchorAction, string> = {
@@ -107,6 +109,17 @@ export function MilestoneAnchorDialog({
         // has not decided to sign yet.
         setStage("preparing");
         const signer = (await currentAddress()) ?? (await connectWallet());
+
+        // Ask the wallet what network it is on before building anything for it.
+        // Signing on the wrong one produces an RPC error about a missing
+        // account, which reads as "this is broken" rather than "switch
+        // networks" — and cost a tester most of an evening.
+        const walletOn = await walletNetwork();
+        if (walletOn !== undefined && walletOn !== network) {
+          setError(wrongNetworkMessage(walletOn));
+          setStage("idle");
+          return;
+        }
 
         const prepared = await prepareMilestoneAnchor(milestoneId, action, signer);
         if (!prepared.ok) {
@@ -191,22 +204,22 @@ export function MilestoneAnchorDialog({
           ) : null}
 
           {unfunded ? (
-            <p className="text-warning">
-              That account does not exist on {network} yet, so it cannot pay a fee.{" "}
+            <div className="space-y-2">
+              <p className="text-warning">
+                That account does not exist on {network} yet, so it cannot pay a fee.
+              </p>
               {network === "testnet" ? (
-                <a
-                  className="underline underline-offset-2"
-                  href={friendbotUrl(unfunded)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Fund it with Friendbot
-                </a>
+                // Funding here, in the dialog, rather than in a second tab that
+                // returns JSON and leaves the anchor half-finished behind it.
+                <FundTestnetButton
+                  address={unfunded}
+                  onFunded={() => setUnfunded(null)}
+                  label="Fund it with Friendbot"
+                />
               ) : (
-                "Fund it before signing."
+                <p className="text-muted-foreground">Fund it before signing.</p>
               )}
-              , then try again.
-            </p>
+            </div>
           ) : null}
 
           {error ? <p className="text-destructive">{error}</p> : null}
