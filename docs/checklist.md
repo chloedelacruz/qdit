@@ -70,7 +70,7 @@ Figures the levels keep asking for, in one place. Update here first.
 
 | # | Requirement | Status | Where |
 | --- | --- | --- | --- |
-| 3.1 | Public GitHub repository | ⚠️ | repo exists, **still private** — see Blockers |
+| 3.1 | Public GitHub repository | ⚠️ | repo exists, **still private** — history is clean, flip the switch |
 | 3.2 | README with complete documentation | ✅ | README |
 | 3.3 | Minimum 15+ meaningful commits | ✅ | 90, across 6 merged pull requests |
 | 3.4 | **Live demo link** | ❌ | **blocking** |
@@ -193,23 +193,24 @@ none.
 - **Community contribution link** — `CONTRIBUTING.md` plus issue templates, and turn on
   GitHub Discussions. An afternoon's work.
 
-Note both files were removed in the public-repo cleanup that deleted every `.md` except the
-README, so they need writing fresh rather than restoring.
+Note both files were purged from history in the public-repo cleanup, so they need writing
+fresh rather than restoring.
 
 ---
 
 ## Blockers, in the order worth doing them
 
-1. **Scrub the git history, then make the repo public.** `supabase/seed.sql` carries
-   `qdit-local-dev` in plaintext and it is still in history — deleting the file did not remove
-   it. Needs `git filter-repo` or BFG plus a force-push, and every credential it touched
-   rotated. Making the repo public before this exposes it. Blocks 3.1, 4.1, 5.1, 6.1.
-2. **Deploy to Vercel.** Unblocks 3.4, 4.4, 5.3, and makes 4.8 possible at all.
-3. **Enable analytics on the deployment.** Unblocks 4.8 and 5.7.
-4. **Run a tester cohort** — ten first, then fifty. Unblocks 4.10, 4.11, 5.6, 5.9.
-5. **Write the user guide and `CONTRIBUTING.md`.** Unblocks 6.11 and 6.12 independently of
+1. ~~**Scrub the git history.**~~ Done. `git filter-repo` purged twelve planning and spec
+   markdown files from every commit and replaced the seeded fixture password throughout, so
+   the only markdown that has ever existed in this history is the README and this file. The
+   rewrite pruned eleven commits that touched nothing else, leaving 86.
+2. **Make the repository public.** Nothing blocks it now. Unblocks 3.1, 4.1, 5.1, 6.1.
+3. **Deploy to Vercel.** Unblocks 3.4, 4.4, 5.3, and makes 4.8 possible at all.
+4. **Enable analytics on the deployment.** Unblocks 4.8 and 5.7.
+5. **Run a tester cohort** — ten first, then fifty. Unblocks 4.10, 4.11, 5.6, 5.9.
+6. **Write the user guide and `CONTRIBUTING.md`.** Unblocks 6.11 and 6.12 independently of
    everything else.
-6. **Settle the upgrade path, then deploy to mainnet.** Unblocks 6.3 to 6.6.
-7. **Commission or write the security review; publish the launch post.** 6.7 and 6.8.
+7. **Settle the upgrade path, then deploy to mainnet.** Unblocks 6.3 to 6.6.
+8. **Commission or write the security review; publish the launch post.** 6.7 and 6.8.
 
-Items 5 and 7's launch post are the only ones that do not depend on anything above them.
+Item 6 and item 8's launch post are the only ones that do not depend on anything above them.
