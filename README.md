@@ -101,7 +101,7 @@ screenshot.
 | Asset | Link |
 | --- | --- |
 | **Live app** — running on Stellar Testnet | [qdit.atalusan.com](https://qdit.atalusan.com) |
-| **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing) |
+| **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing) |
 | **Pitch deck** — 14 slides, problem → architecture → proof | [Open in Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) |
 | **User feedback** — 20 responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing) |
 | **Live testnet transaction** — `approve_milestone`, ledger 4126783 | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5) |
