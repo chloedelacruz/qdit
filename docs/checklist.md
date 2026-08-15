@@ -3,18 +3,18 @@
 Audited against the repository on **2026-08-15**. Every ✅ below is something a judge can
 open and check; every ❌ is genuinely absent, not merely undocumented.
 
-**Where the repo stands:** Levels 1 and 2 are complete. Level 3 needs one item. Levels 4
-to 6 need real users, a mainnet deployment and a security review — work that takes
-calendar time, not an afternoon of writing.
+**Where the repo stands:** Levels 1, 2 and 3 are complete and submittable. Levels 4 to 6
+need real users, a mainnet deployment and a security review — work that takes calendar
+time, not an afternoon of writing.
 
 | Level | Complete | Blocking |
 | --- | --- | --- |
 | 1 | 6 / 6 | — |
 | 2 | 4 / 4 | — |
-| 3 | 9 / 10 | Live demo link |
-| 4 | 7 / 10 | Analytics · 10+ wallet interactions · feedback summary |
-| 5 | 5 / 9 | 50+ users · analytics · feedback iteration (live demo shared with L3) |
-| 6 | 4 / 11 | Mainnet · 20+ mainnet users · audit · launch post · user guide · community link |
+| 3 | **10 / 10** | — |
+| 4 | 8 / 11 | Analytics · 10+ wallet interactions · feedback summary |
+| 5 | 6 / 9 | 50+ users · analytics · feedback iteration |
+| 6 | 5 / 12 | Mainnet · 20+ mainnet users · audit · launch post · user guide · community link |
 
 ---
 
@@ -24,7 +24,7 @@ Figures the levels keep asking for, in one place. Update here first.
 
 | Fact | Value | Verify |
 | --- | --- | --- |
-| Commits | **90** | `git rev-list --count HEAD` |
+| Commits | **89** | `git rev-list --count HEAD` |
 | Vitest | **183 passed**, 9 files | `cd web && npm test` |
 | Soroban tests | **26 passed** | `cd contracts && cargo test` |
 | Playwright | 140 passed, 1 skipped | not in CI — needs `.env.local` |
@@ -36,7 +36,7 @@ Figures the levels keep asking for, in one place. Update here first.
 | Distinct wallets on chain | **2** (deployer + signer) | see Level 4 below |
 | Demo video | [Google Drive](https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing) | |
 | Pitch deck | [Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) | |
-| Live demo URL | none | not deployed |
+| Live demo URL | **https://qdit.atalusan.com** | Vercel, Root Directory `web/` |
 
 ---
 
@@ -57,23 +57,23 @@ Figures the levels keep asking for, in one place. Update here first.
 
 | # | Requirement | Status | Where |
 | --- | --- | --- | --- |
-| 2.1 | Live demo link *(optional at this level)* | ❌ | not deployed — see 3.4 |
+| 2.1 | Live demo link *(optional at this level)* | ✅ | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | 2.2 | Screenshot: wallet options available | ✅ | `screenshots/stellar_wallet_integration/wallet_options_available.png` |
 | 2.3 | Deployed contract address | ✅ | README → Deployed contracts |
 | 2.4 | Transaction hash, verifiable on explorer | ✅ | README → Stellar wallet integration §4 |
 
-2.1 is marked optional in the brief, so this level passes without it.
+2.1 is marked optional in the brief; it is satisfied anyway.
 
 ---
 
-## Level 3 — one item short
+## Level 3 — complete
 
 | # | Requirement | Status | Where |
 | --- | --- | --- | --- |
-| 3.1 | Public GitHub repository | ⚠️ | repo exists, **still private** — history is clean, flip the switch |
+| 3.1 | Public GitHub repository | ✅ | [github.com/chloedelacruz/qdit](https://github.com/chloedelacruz/qdit) |
 | 3.2 | README with complete documentation | ✅ | README |
-| 3.3 | Minimum 15+ meaningful commits | ✅ | 90, across 6 merged pull requests |
-| 3.4 | **Live demo link** | ❌ | **blocking** |
+| 3.3 | Minimum 15+ meaningful commits | ✅ | 89, across 6 merged pull requests |
+| 3.4 | Live demo link | ✅ | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | 3.5 | Contract deployment address | ✅ | README → Deployed contracts |
 | 3.6 | Transaction hash for contract interaction | ✅ | `approve_milestone`, ledger 4,126,783 |
 | 3.7 | Screenshot: mobile responsive UI | ✅ | `screenshots/submission/mobile.png` |
@@ -81,9 +81,14 @@ Figures the levels keep asking for, in one place. Update here first.
 | 3.9 | Screenshot: test output, 3+ passing | ✅ | `screenshots/submission/tests.png` — 183 + 26 |
 | 3.10 | Demo video link (1–2 min) | ✅ | README badge and Demo table |
 
-**To close 3.4:** deploy `web/` to Vercel — Root Directory `web/`, the seven variables from
-`web/.env.example`. `NEXT_PUBLIC_*` values are inlined at build time, so set them before the
-first build. Then add the URL to the README badge row, the link row and the Demo table.
+Deployed on Vercel with Root Directory `web/`. `NEXT_PUBLIC_*` values are inlined at build
+time, so changing any of them in the Vercel dashboard needs a fresh build before it takes
+effect — editing and not redeploying is the failure mode to watch for.
+
+**Worth confirming by hand:** sign in on the live site and open a milestone's ⋯ menu. If
+`NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` was not set at build time the anchoring controls
+do not render at all — by design, absent rather than broken — and anchoring is the core
+claim this submission rests on.
 
 ---
 
@@ -91,10 +96,10 @@ first build. Then add the URL to the README badge row, the link row and the Demo
 
 | # | Requirement | Status | Notes |
 | --- | --- | --- | --- |
-| 4.1 | Public GitHub repository | ⚠️ | still private |
+| 4.1 | Public GitHub repository | ✅ | public |
 | 4.2 | README with complete documentation | ✅ | |
 | 4.3 | Minimum 15+ meaningful commits | ✅ | 90 |
-| 4.4 | Live demo link | ❌ | same blocker as 3.4 |
+| 4.4 | Live demo link | ✅ | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | 4.5 | Contract deployment address | ✅ | testnet |
 | 4.6 | Screenshot: product UI | ✅ | landing, `/wallet`, `/proofs` already in README |
 | 4.7 | Screenshot: mobile responsive design | ✅ | `screenshots/submission/mobile.png` |
@@ -106,7 +111,7 @@ first build. Then add the URL to the README badge row, the link row and the Demo
 ### What 4.8 needs
 
 Nothing is instrumented today — no Vercel Analytics, Sentry, PostHog or Plausible in
-`web/package.json`. Cheapest honest route once the app is deployed: enable **Vercel
+`web/package.json`. Now that it is deployed, the cheapest honest route is to enable **Vercel
 Analytics** plus the Vercel deployment and function logs, and screenshot both. Supabase's
 own dashboard also gives query and auth charts that count as monitoring.
 
@@ -123,13 +128,13 @@ a 1–5 rating and free text, then summarise counts, the average and the themes.
 
 ---
 
-## Level 5 — four items short
+## Level 5 — three items short
 
 | # | Requirement | Status | Notes |
 | --- | --- | --- | --- |
-| 5.1 | Public GitHub repository | ⚠️ | still private |
+| 5.1 | Public GitHub repository | ✅ | public |
 | 5.2 | Minimum 20+ meaningful commits | ✅ | 90 |
-| 5.3 | Live deployed application | ❌ | same blocker as 3.4 |
+| 5.3 | Live deployed application | ✅ | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | 5.4 | PPT / pitch deck link | ✅ | Google Slides — linked from the README |
 | 5.5 | Demo video link | ✅ | |
 | 5.6 | **Proof of 50+ users** | ❌ | scale-up of 4.10 |
@@ -153,7 +158,7 @@ Mainnet level. The largest gap, and the one with a real prerequisite in the code
 
 | # | Requirement | Status | Notes |
 | --- | --- | --- | --- |
-| 6.1 | Public GitHub repository | ⚠️ | still private |
+| 6.1 | Public GitHub repository | ✅ | public |
 | 6.2 | Minimum 30+ meaningful commits | ✅ | 90 |
 | 6.3 | **Live mainnet application** | ❌ | blocked on the upgrade path decision |
 | 6.4 | **Mainnet contract addresses** | ❌ | not deployed |
@@ -215,8 +220,8 @@ fresh rather than restoring.
    call: the password was a local-stack fixture and was rotated long before this, and the
    notes are working documents rather than secrets. Revisit if anything genuinely sensitive
    ever lands in a pull request.
-2. **Make the repository public.** Nothing blocks it. Unblocks 3.1, 4.1, 5.1, 6.1.
-3. **Deploy to Vercel.** Unblocks 3.4, 4.4, 5.3, and makes 4.8 possible at all.
+2. ~~**Make the repository public.**~~ Done.
+3. ~~**Deploy to Vercel.**~~ Done — https://qdit.atalusan.com, which completes level 3.
 4. **Enable analytics on the deployment.** Unblocks 4.8 and 5.7.
 5. **Run a tester cohort** — ten first, then fifty. Unblocks 4.10, 4.11, 5.6, 5.9.
 6. **Write the user guide and `CONTRIBUTING.md`.** Unblocks 6.11 and 6.12 independently of
