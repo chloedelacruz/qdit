@@ -18,6 +18,7 @@
   <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
   <a href="https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
+  <a href="https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing"><img src="https://img.shields.io/badge/User_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="User feedback responses" /></a>
 </p>
 
 <p align="center">
@@ -28,6 +29,7 @@
   <a href="https://qdit.atalusan.com">Live demo</a> ·
   <a href="https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing">Demo video</a> ·
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing">Pitch deck</a> ·
+  <a href="https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing">User feedback responses</a> ·
   <a href="https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG">Testnet contract on Stellar Expert</a>
 </p>
 
@@ -101,6 +103,7 @@ screenshot.
 | **Live app** — running on Stellar Testnet | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1auBXzTmkw0Lvs7eq_WAqJD12DT0kDx1e/view?usp=sharing) |
 | **Pitch deck** — 14 slides, problem → architecture → proof | [Open in Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) |
+| **User feedback** — 20 responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing) |
 | **Live testnet transaction** — `approve_milestone`, ledger 4126783 | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5) |
 | **Deployed contract** — `milestone_proof`, 6 functions | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
 
@@ -188,49 +191,156 @@ Beyond the 26 contract unit tests, checked against the deployed contract itself:
 
 ---
 
-## Next phase — the open decisions
+## User feedback — survey responses
 
-Each item is a known open decision — a scope call rather than a task waiting to be done.
-Nothing here blocks the current build; the order is what the next goal makes relevant.
+Twenty testers ran the live app on Stellar Testnet on 13–14 August 2026 and filled the
+feedback form (wallet address, email, name, product rating, free-text answer to *“what
+would you change or improve?”*).
 
-### 1. Owner handover from the app (not the CLI)
+📊 **[Open the responses in Google Sheets](https://docs.google.com/spreadsheets/d/1v0WbxRlLKGasNZS17Frk4Z6fQAndpqHD69dvzeUOtCQ/edit?usp=sharing)**
 
-- `transfer_project_owner` is reachable only from the Stellar CLI today
-- A handover needs two signatures, so the UI has to hold a half-signed envelope between two people
-- Until then a wrong-but-controlled owner address is fixable only by someone with CLI access
+| Sheet | Contents |
+| --- | --- |
+| `Form Responses 1` | Timestamp · email · name · Stellar wallet · rating (1–5) · free-text feedback |
 
-### 2. Settle the upgrade path before mainnet
+### Results
 
-- No admin address and no `upgrade` entry point, by choice
-- A bug therefore means a new contract id and a per-project migration of `chain_contract_id`
-- Cost scales with how many projects are already registered — check that before assuming a redeploy is cheap
+| Metric | Value |
+| --- | --- |
+| Responses | **20 / 20** |
+| Average rating | **3.70 / 5** |
+| Promoters (4–5) | 11 (55%) |
+| Passives (3) | 6 (30%) |
+| Detractors (1–2) | 3 (15%) |
 
-### 3. Make chain state visible everywhere
+| Rating | Count | Share |
+| -: | -: | -: |
+| ★★★★★ | 7 | 35% |
+| ★★★★☆ | 4 | 20% |
+| ★★★☆☆ | 6 | 30% |
+| ★★☆☆☆ | 2 | 10% |
+| ★☆☆☆☆ | 1 | 5% |
 
-- Anchor state and `stale` mismatches show on the milestone, but not on the board or dashboard
-- Version history per milestone, read back from the ledger rather than the database
-- A public audit page per project, readable logged out
+**What testers liked:** the `/proofs` verifier (“pasted my tx hash in /proofs and it came
+back Succeeded with the ledger number, that part is genuinely cool”), the receipt that
+outlives a session (“receipt survived a refresh and a re login which i did not expect”),
+the three-tile balance (“the spendable vs total thing on the wallet page is nice”), and
+the state machine behaving exactly as documented — reject, resubmit, `version` 2, approve.
 
-### 4. Harden the public API surface
+**What hurt the score:** nothing on chain. Every rating below 3★ is a communication gap —
+a rejection with no reason attached, a submission sitting silent for two days, a member
+invite with no delivery, and a cold start that needs Freighter, the right network and
+Friendbot with none of it written down. Not one tester reported a wrong chain result.
 
-- Rate-limit `/api/verify-tx` before onboarding at any scale
-- `/api/balance` is behind the auth gate so it cannot be used as an open proxy — keep it that way
+| Theme | Mentions | Worst rating raising it |
+| --- | -: | -: |
+| Status changes are silent — no notification, no email | 5 | 1★ |
+| Rejection carries no reason, resubmit is hidden | 3 | 2★ |
+| Cold start undocumented — Freighter, testnet, Friendbot | 3 | 1★ |
+| Nothing shareable with an outside reviewer (login wall) | 2 | 3★ |
+| Fees invisible before signing; mainnet cost unknown | 2 | 4★ |
+| Anchor state not on the board; no version history | 2 | 4★ |
+| Wallet-only sign-in blocks non-crypto teammates | 1 | 5★ |
+| Member invite sends nothing | 1 | 2★ |
+| Owner handover needs the CLI | 1 | 5★ |
+| Mobile density, light-mode contrast, slow loads | 3 | 3★ |
 
-### 5. Invitations with delivery
+---
 
-- `add_project_member_by_*` grants access; it does not send an invitation, so the person must already have an account
-- An admin can currently distinguish “no account” from “already a member” — inherent to inviting with no delivery
-- Adding delivery lets the email path invert: send to any address and stop answering the existence question
+## Next phase — what we build from this feedback
 
-### 6. Mobile + polish
+Each item is scoped from the responses above, collected against
+[`c2d0f0e`](https://github.com/chloedelacruz/qdit/commit/c2d0f0e) — the commit live at
+`qdit.atalusan.com` during the test.
 
-- The sidebar already becomes a sheet below `lg`; the rest of the density pass is desktop-first
-- Light-mode contrast pass, keyboard shortcuts
-- Mainnet fee estimates documented before the mainnet deploy
+### 1. A rejection has to say why (3 mentions, both 2★ responses)
 
-**Priority order:** upgrade path → handover → chain visibility → rate limiting →
-invitations → mobile. The two contract decisions come first because they are the only
-ones that get more expensive the longer they wait.
+> “my submit got rejected and the app just says rejected. thats it. no reason no comment
+> nothing. i had to message the owner and ask bro what did i do wrong”
+> “theres now a permanent public record that says i failed and literally nothing anywhere
+> that says why, and i PAID a fee to put it there”
+
+- Reviewer comment on reject and approve, stored in Postgres and covered by the milestone hash
+- Resubmit becomes a visible button on a rejected milestone — today it hides inside the status-badge dropdown, and testers read the rejection as a dead end
+- The chain keeps only the digest, so a reason costs no extra ledger space — it changes what the hash commits to, which means `milestone-hash.ts` and its pinned test change with it
+
+### 2. Tell people when the status changes (5 mentions, including the 1★)
+
+> “i submitted it 2 days ago and its still just sitting there. no email no notif nothing,
+> i dont even know if anyone saw it”
+> “no notif when it flipped, found out by accident”
+
+- Owner gets a notification on submit; submitter gets one on approve/reject
+- In-app inbox first, email second — both read the same event, so a missed email is recoverable
+- A submitted milestone needs an age indicator, so “waiting” is visible without asking
+
+### 3. A link an outside reviewer can open (2 mentions)
+
+> “i still cant send our grant person a link they can just open. everything needs a login
+> so im back to screenshots which is the exact thing this is supposed to kill”
+> “publishing the hash only is the right call, i can verify without touching ur db. but i
+> cant give an outside reviewer anything that isnt behind a login. public view please”
+
+- Public audit page per project, readable logged out: milestone, status, digest, transaction, ledger
+- It publishes the digest, not the data — the same thing the chain already carries
+- Rate-limit `/api/verify-tx` in the same change; a public page is the moment that matters. `/api/balance` stays behind the auth gate so it cannot be used as an open proxy
+
+### 4. Survive a cold start (3 mentions, the 1★ and a 5★)
+
+> “took me almost an hour just to get IN. installed freighter, wrong network, then it kept
+> saying account doesnt exist, then someone in the gc told me abt friendbot which is not
+> written anywhere”
+> “watched a friend try it cold and he was stuck on connect wallet for 15 mins thinking
+> the site was broken. just add a 3 step checklist before the connect button”
+
+- Three-step checklist on the landing page before the connect button: install Freighter → switch to Testnet → fund from Friendbot
+- Detect the wrong network and say so — “account does not exist” today means the wallet is on mainnet, and one tester nearly quit over it
+- The `funded: false` state already links Friendbot; that link has to appear before the failure, not after
+
+### 5. Email sign-in, wallet when it is needed (1 mention, from a 5★)
+
+> “my only real issue is wallet only login. i tried getting our ops person on it and she
+> noped out at install a browser extension… rn the crypto part is a wall at the front door
+> instead of a feature”
+
+- Email/password sign-in, wallet linked later at the first anchor
+- The address is already bound once at registration and never changes — linking later keeps that rule, it only moves when it happens
+- Anchoring stays additive, so an unlinked member can still run the board
+
+### 6. Show the chain state everywhere (2 mentions)
+
+> “board doesnt show anything about whats anchored, had to click into every milestone one
+> by one. just put a lil badge on the cards”
+> “the whole point for me is showing someone hey v1 got rejected on this date and v2 got
+> approved on this date… the data is on chain already u just arent reading it back”
+
+- Anchor and `stale` badges on board cards and the dashboard, not only on the milestone
+- Version history per milestone read back from the ledger rather than the database
+- Cost before the wallet popup: simulation already returns the fee, so show it (“show the fee before the popup pls”)
+
+### 7. Invitations, handover and mainnet cost
+
+> “i tried adding my co op partner as a member and it just said he has no account. ok?? so
+> send him one?”
+> “handing over a project needs the CLI, nobody on my team is opening a terminal for that”
+> “if we run 40 milestones a quarter thats a real number and rn i cant even estimate it bc
+> the app never shows a cost”
+
+- `add_project_member_by_*` grants access but delivers nothing. Adding delivery also lets the email path invert: send to any address and stop answering the account-existence question
+- `transfer_project_owner` needs two signatures, so the UI has to hold a half-signed envelope between two people. Until then a wrong-but-controlled owner is fixable only from the CLI
+- Document mainnet fee estimates per milestone lifecycle before the mainnet deploy
+
+### 8. Mobile + polish (3 mentions)
+
+- Board density on phone — “on phone the board is cramped and i keep hitting the wrong row”
+- Light-mode contrast pass, starting with the grey hash text one tester called unreadable
+- Load time on the board, keyboard shortcuts
+
+**Priority order:** rejection reasons → notifications → public audit page + rate limiting →
+cold-start onboarding → email sign-in → chain visibility → invitations and handover →
+mobile, with the upgrade path settled before any mainnet deploy. Communication gaps come
+first: they produced every score below 3★ while the contract itself was never the
+complaint.
 
 ---
 
@@ -718,6 +828,8 @@ enforces on-chain, and a silent divergence between the two is the expensive kind
 
 ## Roadmap (near-term)
 
+- [ ] Reviewer comment on approve/reject, and a visible resubmit button on a rejected milestone
+- [ ] Notify on submit, approve and reject — in-app first, email second
 - [ ] Settle the contract upgrade path, then deploy to mainnet
 - [ ] Drive `transfer_project_owner` from the app rather than the CLI (two signatures, one UI)
 - [ ] Public audit page per project — verify a milestone from the ledger, logged out
