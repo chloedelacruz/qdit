@@ -44,3 +44,9 @@ yarn-error.log*
 # These are local exports, regenerated rather than tracked.
 docs/qdit-pitch-deck.pptx
 docs/qdit-pitch-deck.pdf
+
+# Video and deck exports — shared as links, never tracked.
+*.mp4
+*.mov
+*.pptx
+*.key
