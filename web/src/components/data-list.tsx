@@ -33,6 +33,16 @@ export function ListRow({ href, label, active, className, children }: ListRowPro
   const classes = cn(
     // ~34px at a single line of 13px text — spec §Density puts rows at 32–36px.
     "row relative block border-b border-border/70 px-3 py-2 last:border-b-0",
+    /*
+      Taller under a finger.
+
+      34px is right for a mouse and wrong for a thumb: the platform guidance is
+      44px, and a tester on a phone said they kept hitting the wrong row. The
+      query is `pointer: coarse`, not a width breakpoint — the thing that
+      matters is what is doing the pointing, and a small window on a laptop is
+      still a mouse. Density on the desktop is untouched.
+    */
+    "pointer-coarse:min-h-11 pointer-coarse:py-2.5",
     // Named group so RowActions can stay invisible until the row is hovered or
     // something inside it takes focus. Named, not bare `group`, because rows
     // nest inside panels that already use one.
