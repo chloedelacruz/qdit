@@ -192,7 +192,18 @@ export function MilestoneListRow({
           </RowControl>
         ) : null}
 
-        <RowControl className="w-24 justify-end">
+        {/*
+          `min-w-24`, not `w-24`.
+
+          The width is here so a column of status badges lines up vertically,
+          and a fixed one did that until the control grew a second child: a
+          rejected milestone now carries a Re-submit button beside its badge,
+          which is wider than 6rem, and `shrink-0` plus `justify-end` sent the
+          overflow left — straight over the anchor badge next to it. A minimum
+          keeps the alignment for every row that fits and lets the one that does
+          not push the row out instead of painting on its neighbour.
+        */}
+        <RowControl className="min-w-24 justify-end">
           {statusControl ?? (
             <StatusBadge state={MILESTONE_STATUS[milestone.status]} dot={false} />
           )}

@@ -227,7 +227,7 @@ export function MilestoneAnchorDialog({
           <DialogDescription>{milestoneTitle}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
+        <div className="min-w-0 space-y-3 text-sm">
           <p className="text-muted-foreground">{EXPLAINER[action]}</p>
 
           {!registered ? (
