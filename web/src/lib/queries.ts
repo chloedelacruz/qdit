@@ -341,6 +341,8 @@ export type ProjectRow = {
   demoUrl: string | null;
   docsUrl: string | null;
   updatedAt: string;
+  /** Milestone proofs are readable at /p/[slug]/[milestone] by anyone. */
+  publicProofs: boolean;
   taskCount: number;
   doneCount: number;
   milestoneCount: number;
@@ -363,6 +365,7 @@ export type ProjectRow = {
  */
 const PROJECT_SELECT = `
   id, owner_id, slug, name, description, status, repo_url, demo_url, docs_url, updated_at,
+  public_proofs,
   chain_contract_id, chain_network, chain_owner_address, chain_registered_tx, chain_registered_at,
   tasks(count),
   done:tasks(count),
@@ -382,6 +385,7 @@ type ProjectRecord = {
   demo_url: string | null;
   docs_url: string | null;
   updated_at: string;
+  public_proofs: boolean;
   chain_contract_id: string | null;
   chain_network: StellarNetwork | null;
   chain_owner_address: string | null;
@@ -424,6 +428,7 @@ function toProject(row: ProjectRecord): ProjectRow {
     demoUrl: row.demo_url,
     docsUrl: row.docs_url,
     updatedAt: row.updated_at,
+    publicProofs: row.public_proofs,
     taskCount,
     doneCount,
     milestoneCount: countOf(row.milestones),
@@ -717,6 +722,8 @@ export type MilestoneRow = {
   network: StellarNetwork;
   /** Whether the project is registered on chain; null until it is. */
   chainContractId: string | null;
+  /** The project publishes proof pages, so this milestone has a public link. */
+  publicProofs: boolean;
   /** Most recent milestone_anchors row, or null if never anchored. */
   anchor: MilestoneAnchor | null;
   /**
@@ -765,7 +772,7 @@ export type MilestoneAnchor = {
 // what makes an existing anchor stale. The count falls out of `.length`.
 const MILESTONE_SELECT = `
   id, project_id, title, description, status, due_date, order_index,
-  projects!inner(name, slug, chain_contract_id),
+  projects!inner(name, slug, chain_contract_id, public_proofs),
   tasks(count),
   done:tasks(count),
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
@@ -781,7 +788,12 @@ type MilestoneRecord = {
   status: MilestoneRow["status"];
   due_date: string | null;
   order_index: number;
-  projects: { name: string; slug: string; chain_contract_id: string | null };
+  projects: {
+    name: string;
+    slug: string;
+    chain_contract_id: string | null;
+    public_proofs: boolean;
+  };
   tasks: EmbeddedCount;
   done: EmbeddedCount;
   stellar_proofs: {
@@ -848,6 +860,7 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
     proofCount: proofs.length,
     network: "testnet",
     chainContractId: row.projects.chain_contract_id,
+    publicProofs: row.projects.public_proofs,
     anchor: latest
       ? {
           action: latest.action,
@@ -1358,4 +1371,65 @@ export async function countUnreadNotifications(): Promise<number> {
     .is("read_at", null);
 
   return count ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Public proofs
+// ---------------------------------------------------------------------------
+
+export type PublicProof = {
+  projectName: string;
+  projectSlug: string;
+  milestoneId: string;
+  title: string;
+  status: MilestoneRow["status"];
+  dueDate: string | null;
+  network: StellarNetwork | null;
+  contractId: string | null;
+  registeredTx: string | null;
+  ownerAddress: string | null;
+  anchors: {
+    action: MilestoneAnchor["action"];
+    proofHash: string | null;
+    version: number;
+    txHash: string;
+    network: StellarNetwork;
+    signerAddress: string;
+    ledger: number | null;
+    createdAt: string;
+  }[];
+  reviews: {
+    fromStatus: MilestoneRow["status"];
+    toStatus: MilestoneRow["status"];
+    reason: string | null;
+    createdAt: string;
+  }[];
+};
+
+/**
+ * One milestone, as a signed-out visitor sees it.
+ *
+ * Goes through `public_milestone_proof()` rather than the tables. RLS is
+ * unchanged and anon holds no membership row, so a direct read returns nothing;
+ * the function is a SECURITY DEFINER window with a hand-listed set of columns
+ * and a `public_proofs` check, and it is the only way in.
+ *
+ * Null covers every failure — not published, no such milestone, wrong project.
+ * They are the same answer on purpose: distinguishing them would confirm that
+ * private work exists.
+ */
+export async function getPublicProof(
+  slug: string,
+  milestoneId: string,
+): Promise<PublicProof | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("public_milestone_proof", {
+    p_slug: slug,
+    p_milestone_id: milestoneId,
+  });
+
+  if (error || !data) return null;
+
+  return data as unknown as PublicProof;
 }

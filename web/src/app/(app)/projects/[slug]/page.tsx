@@ -7,6 +7,7 @@ import { ProjectRowActions } from "@/components/entity-row-actions";
 import { HashLink } from "@/components/hash-link";
 import { PageHeader } from "@/components/page-header";
 import { ProjectChainRegistration } from "@/components/project-chain";
+import { ProjectPublishing } from "@/components/project-publishing";
 import { Section } from "@/components/section";
 import { MilestoneListRow, ProofListRow } from "@/components/rows";
 import { StatTile } from "@/components/stat-tile";
@@ -161,6 +162,17 @@ export default async function ProjectOverviewPage({
           />
         </div>
       ) : null}
+
+      {/* Publishing. Sunken with the other reference rows, and directly under
+          the registration it depends on: a public proof page is only worth
+          anything once something has been anchored. */}
+      <div className="well mt-2 rounded-xl border border-border px-3 py-2">
+        <ProjectPublishing
+          projectId={project.id}
+          publicProofs={project.publicProofs}
+          canEdit={canAdminister(role)}
+        />
+      </div>
 
       {/* Primary: what is still open on this project. */}
       <Section

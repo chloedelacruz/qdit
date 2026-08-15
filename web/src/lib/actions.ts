@@ -974,3 +974,32 @@ export async function markNotificationsRead(ids?: string[]): Promise<ActionState
   revalidateAll();
   return { ok: true };
 }
+
+/**
+ * Turns public proof pages on or off for one project.
+ *
+ * Its own action rather than a field on `updateProject`, because it is the one
+ * setting on that form whose blast radius is outside the workspace. Flipping it
+ * on makes every anchored milestone in the project readable at
+ * `/p/[slug]/[milestone]` by anyone holding the link — that is the feature, and
+ * it should be a deliberate act rather than something that rides along with a
+ * description edit.
+ *
+ * Who may do it is left to RLS: `projects: update as admin` already restricts
+ * writes to owners and admins, and this is a write.
+ */
+export async function setProjectPublicProofs(
+  projectId: string,
+  publish: boolean,
+): Promise<ActionState> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ public_proofs: publish })
+    .eq("id", projectId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}

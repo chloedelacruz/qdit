@@ -85,6 +85,8 @@ export type Database = {
           chain_owner_address: string | null
           chain_registered_tx: string | null
           chain_registered_at: string | null
+          /** Publishes this project's milestone proofs to anyone with a link. */
+          public_proofs: boolean
           created_at: string
           updated_at: string
         }
@@ -108,6 +110,7 @@ export type Database = {
           chain_owner_address?: string | null
           chain_registered_tx?: string | null
           chain_registered_at?: string | null
+          public_proofs?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -126,6 +129,7 @@ export type Database = {
           chain_owner_address?: string | null
           chain_registered_tx?: string | null
           chain_registered_at?: string | null
+          public_proofs?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -648,6 +652,16 @@ export type Database = {
           p_role: Database['public']['Enums']['member_role']
         }
         Returns: string
+      }
+      /**
+       * The published view of one milestone, for callers with no account.
+       * Returns null when the project does not publish, when the milestone does
+       * not exist, and when the two do not belong together — an anonymous
+       * caller must not be able to tell those apart.
+       */
+      public_milestone_proof: {
+        Args: { p_slug: string; p_milestone_id: string }
+        Returns: Json
       }
     }
 
