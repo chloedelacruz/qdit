@@ -18,10 +18,17 @@ import {
   prepareMilestoneAnchor,
   submitMilestoneAnchor,
   type AnchorAction,
+  type PreparedAnchor,
 } from "@/lib/chain/actions";
 import { ICON } from "@/lib/icons";
 import type { MilestoneAnchor } from "@/lib/queries";
-import type { StellarNetwork } from "@/lib/stellar";
+import {
+  NETWORK_LABELS,
+  formatXlm,
+  fromStroops,
+  truncateHash,
+  type StellarNetwork,
+} from "@/lib/stellar";
 import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import {
   connectWallet,
@@ -58,8 +65,11 @@ const EXPLAINER: Record<AnchorAction, string> = {
  *      builds and *simulates* the transaction. Simulation is what catches an
  *      already-approved milestone before the user is asked to sign, rather than
  *      after they have paid for a failed one.
- *   2. the wallet signs the returned XDR string, and sees nothing else.
- *   3. `submitMilestoneAnchor` — the server re-verifies that the signed
+ *   2. the fee that simulation computed is shown, and the flow waits. A tester
+ *      asked to see what this costs before the wallet opens; the number already
+ *      existed by then and was simply never surfaced.
+ *   3. the wallet signs the returned XDR string, and sees nothing else.
+ *   4. `submitMilestoneAnchor` — the server re-verifies that the signed
  *      transaction is the one it prepared, submits it, waits for the ledger,
  *      then records the row.
  *
@@ -91,15 +101,30 @@ export function MilestoneAnchorDialog({
   const [unfunded, setUnfunded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // The prepared, simulated transaction — held between the quote and the
+  // signature so the thing signed is exactly the thing that was quoted.
+  const [quote, setQuote] = useState<PreparedAnchor | null>(null);
+  const [signer, setSigner] = useState<string | null>(null);
 
   function reset() {
     setStage("idle");
     setError(null);
     setUnfunded(null);
     setDone(null);
+    setQuote(null);
+    setSigner(null);
   }
 
-  function run() {
+  /**
+   * Step one: authorize, hash, build, simulate — and stop.
+   *
+   * This used to run straight on into the signing prompt. It stops now because
+   * a tester asked, in as many words, to see the fee before the popup: the
+   * simulation is what computes the resource fee, so by the time the wallet
+   * opens the number already exists and was simply never shown. Nothing here
+   * costs anything or touches the ledger, so quoting first is free.
+   */
+  function estimate() {
     setError(null);
     setUnfunded(null);
 
@@ -108,7 +133,7 @@ export function MilestoneAnchorDialog({
         // Connect on demand rather than up front: someone reading the dialog
         // has not decided to sign yet.
         setStage("preparing");
-        const signer = (await currentAddress()) ?? (await connectWallet());
+        const address = (await currentAddress()) ?? (await connectWallet());
 
         // Ask the wallet what network it is on before building anything for it.
         // Signing on the wrong one produces an RPC error about a missing
@@ -121,22 +146,39 @@ export function MilestoneAnchorDialog({
           return;
         }
 
-        const prepared = await prepareMilestoneAnchor(milestoneId, action, signer);
+        const prepared = await prepareMilestoneAnchor(milestoneId, action, address);
         if (!prepared.ok) {
           setError(prepared.error);
           setStage("idle");
           return;
         }
 
+        setSigner(address);
+        setQuote(prepared.data);
+        setStage("idle");
+      } catch (caught) {
+        handleFailure(caught);
+      }
+    });
+  }
+
+  /** Step two: sign what was quoted, submit it, record the row. */
+  function confirm() {
+    if (!quote || !signer) return;
+
+    setError(null);
+
+    startTransition(async () => {
+      try {
         setStage("signing");
-        const signed = await signTransaction(prepared.data.xdr);
+        const signed = await signTransaction(quote.xdr);
 
         setStage("submitting");
         const result = await submitMilestoneAnchor(
           milestoneId,
           action,
           signed,
-          prepared.data.proofHash,
+          quote.proofHash,
         );
 
         if (result.error) {
@@ -149,21 +191,24 @@ export function MilestoneAnchorDialog({
         setStage("idle");
         toast.success(`${VERB[action]} — written to the ledger`);
       } catch (caught) {
-        const message = caught instanceof Error ? caught.message : String(caught);
-        setStage("idle");
-
-        // Closing the wallet prompt is a decision, not a failure.
-        if (isRejectedError(message)) return;
-        // An account with no ledger entry cannot pay a fee. On testnet that is
-        // one click to fix, so say so instead of showing the raw RPC error.
-        if (isUnfundedError(message)) {
-          const signer = await currentAddress();
-          setUnfunded(signer ?? null);
-          return;
-        }
-        setError(message);
+        handleFailure(caught);
       }
     });
+  }
+
+  async function handleFailure(caught: unknown) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    setStage("idle");
+
+    // Closing the wallet prompt is a decision, not a failure.
+    if (isRejectedError(message)) return;
+    // An account with no ledger entry cannot pay a fee. On testnet that is
+    // one click to fix, so say so instead of showing the raw RPC error.
+    if (isUnfundedError(message)) {
+      setUnfunded((await currentAddress()) ?? null);
+      return;
+    }
+    setError(message);
   }
 
   const busy = pending || stage !== "idle";
@@ -222,6 +267,38 @@ export function MilestoneAnchorDialog({
             </div>
           ) : null}
 
+          {/*
+            The quote. Shown before the wallet opens, because the simulation
+            that computes this fee has already run by then and the number was
+            simply never surfaced — a tester asked for exactly this, and a
+            second one wanted it to project what mainnet anchoring would cost
+            over a quarter.
+          */}
+          {quote && !done ? (
+            <div className="well space-y-1.5 rounded-md border border-border px-3 py-2">
+              <p className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-muted-foreground">Network fee</span>
+                <span data-slot="hash" className="text-sm">
+                  {quote.feeStroops
+                    ? `${formatXlm(fromStroops(BigInt(quote.feeStroops)))} XLM`
+                    : "unavailable"}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Simulated against {NETWORK_LABELS[network]}. Paid by the account
+                that signs; nothing has been sent yet.
+              </p>
+              {quote.proofHash ? (
+                <p className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">Proof hash</span>
+                  <span data-slot="hash" className="text-xs">
+                    {truncateHash(quote.proofHash, 8, 8)}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? <p className="text-destructive">{error}</p> : null}
 
           {done ? (
@@ -237,11 +314,23 @@ export function MilestoneAnchorDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             {done ? "Close" : "Cancel"}
           </Button>
+          {/*
+            Two buttons, one at a time. The first quotes and stops; the second
+            signs what was quoted. Splitting them is what makes the fee mean
+            anything — a number shown at the same instant the wallet opens is a
+            number nobody reads.
+          */}
           {!done ? (
-            <Button onClick={run} disabled={busy || !registered}>
-              <ICON.anchor aria-hidden />
-              {VERB[action]}
-            </Button>
+            quote ? (
+              <Button onClick={confirm} disabled={busy}>
+                <ICON.anchor aria-hidden />
+                Sign and submit
+              </Button>
+            ) : (
+              <Button onClick={estimate} disabled={busy || !registered}>
+                {VERB[action]}
+              </Button>
+            )
           ) : null}
         </DialogFooter>
       </DialogContent>

@@ -39,15 +39,34 @@ function prepare(method: "approve_milestone" | "submit_milestone_proof") {
 }
 
 describe("buildUnsigned", () => {
-  it("returns the assembled XDR when the simulation succeeds", async () => {
+  it("returns the assembled XDR and its fee when the simulation succeeds", async () => {
     // No `error` key — `rpc.Api.isSimulationError` keys off exactly that.
+    stub.assembled = {
+      simulation: { minResourceFee: "100" },
+      result: { isErr: () => false },
+      built: { fee: "100123" },
+      toXDR: () => "AAAAAgAAAA-assembled",
+    };
+
+    await expect(prepare("approve_milestone")).resolves.toEqual({
+      xdr: "AAAAAgAAAA-assembled",
+      feeStroops: "100123",
+    });
+  });
+
+  it("reports a null fee rather than failing when the assembly carries none", async () => {
+    // The fee is a courtesy shown before the wallet opens. Losing it must never
+    // cost somebody the anchor — the dialog says "unavailable" and carries on.
     stub.assembled = {
       simulation: { minResourceFee: "100" },
       result: { isErr: () => false },
       toXDR: () => "AAAAAgAAAA-assembled",
     };
 
-    await expect(prepare("approve_milestone")).resolves.toBe("AAAAAgAAAA-assembled");
+    await expect(prepare("approve_milestone")).resolves.toEqual({
+      xdr: "AAAAAgAAAA-assembled",
+      feeStroops: null,
+    });
   });
 
   it("throws the contract's own error name when the simulation fails", async () => {

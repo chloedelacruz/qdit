@@ -8,6 +8,7 @@ import {
   EditTaskDialog,
 } from "@/components/entity-dialogs";
 import { MilestoneAnchorDialog } from "@/components/milestone-anchor";
+import { MilestoneHistoryDialog } from "@/components/milestone-history-dialog";
 import { ShareProofDialog } from "@/components/share-proof-dialog";
 import type { AnchorAction } from "@/lib/chain/actions";
 import { RowActions } from "@/components/row-actions";
@@ -108,6 +109,23 @@ export function MilestoneRowActions({
   isOwner?: boolean;
 }) {
   /*
+    History is offered whenever there is any: a milestone that has been decided
+    on or anchored has a sequence worth reading, and one that has not does not.
+  */
+  const historyItem =
+    milestone.anchors.length > 0 || milestone.reviews.length > 0
+      ? [
+          {
+            key: "history",
+            label: "History",
+            render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+              <MilestoneHistoryDialog milestone={milestone} {...props} />
+            ),
+          },
+        ]
+      : [];
+
+  /*
     Sharing is offered only when the project publishes, because a link to a
     page that refuses to render is worse than no link at all. The toggle lives
     on the project overview — see `ProjectPublishing`.
@@ -152,6 +170,7 @@ export function MilestoneRowActions({
       deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
       onDelete={deleteMilestone.bind(null, milestone.id)}
       extraItems={[
+        ...historyItem,
         ...shareItem,
         ...anchorItems.map((item) => ({
         key: item.key,

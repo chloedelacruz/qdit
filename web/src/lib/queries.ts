@@ -727,6 +727,13 @@ export type MilestoneRow = {
   /** Most recent milestone_anchors row, or null if never anchored. */
   anchor: MilestoneAnchor | null;
   /**
+   * Every anchor, oldest first. The row renders only the newest; the history
+   * dialog renders the sequence, which is what a tester asked for — "v1 was
+   * rejected on this date, v2 approved on this date" is the story a funder
+   * wants, and the data was already on chain.
+   */
+  anchors: MilestoneAnchor[];
+  /**
    * The milestone changed after its hash was anchored, so the ledger entry is
    * still valid evidence of what it *was* and no longer describes what it is.
    * False when there is no anchor at all — nothing to be stale against.
@@ -861,6 +868,19 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
     network: "testnet",
     chainContractId: row.projects.chain_contract_id,
     publicProofs: row.projects.public_proofs,
+    anchors: [...(row.milestone_anchors ?? [])]
+      .sort((a, b) =>
+        a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0,
+      )
+      .map((entry) => ({
+        action: entry.action,
+        proofHash: entry.proof_hash,
+        version: entry.version,
+        txHash: entry.tx_hash,
+        network: entry.network,
+        signerAddress: entry.signer_address,
+        createdAt: entry.created_at,
+      })),
     anchor: latest
       ? {
           action: latest.action,
