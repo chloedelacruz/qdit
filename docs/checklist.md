@@ -202,9 +202,20 @@ fresh rather than restoring.
 
 1. ~~**Scrub the git history.**~~ Done. `git filter-repo` purged twelve planning and spec
    markdown files from every commit and replaced the seeded fixture password throughout, so
-   the only markdown that has ever existed in this history is the README and this file. The
-   rewrite pruned eleven commits that touched nothing else, leaving 86.
-2. **Make the repository public.** Nothing blocks it now. Unblocks 3.1, 4.1, 5.1, 6.1.
+   the only markdown a clone has ever seen is the README and this file. The rewrite pruned
+   the commits that touched nothing else, and the thirteen merged feature branches were
+   deleted from the remote — a force-push to `main` alone would have left the whole
+   pre-rewrite history sitting on those branches in plain sight.
+
+   **One residue is accepted rather than fixed.** GitHub keeps a permanent
+   `refs/pull/N/head` for each of the six merged pull requests, and those still resolve to
+   pre-rewrite commits. No force-push or branch deletion removes them; only a fresh
+   repository or GitHub Support would. So the purged planning notes and the old fixture
+   password stay fetchable by anyone who can read the repository. That is a deliberate
+   call: the password was a local-stack fixture and was rotated long before this, and the
+   notes are working documents rather than secrets. Revisit if anything genuinely sensitive
+   ever lands in a pull request.
+2. **Make the repository public.** Nothing blocks it. Unblocks 3.1, 4.1, 5.1, 6.1.
 3. **Deploy to Vercel.** Unblocks 3.4, 4.4, 5.3, and makes 4.8 possible at all.
 4. **Enable analytics on the deployment.** Unblocks 4.8 and 5.7.
 5. **Run a tester cohort** — ten first, then fifty. Unblocks 4.10, 4.11, 5.6, 5.9.
