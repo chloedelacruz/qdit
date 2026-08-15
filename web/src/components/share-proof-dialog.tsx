@@ -74,7 +74,17 @@ export function ShareProofDialog({
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
-          <div className="well flex items-center gap-2 rounded-md border border-border py-1.5 pr-1.5 pl-3">
+          {/*
+            `min-w-0` is load-bearing.
+
+            `DialogContent` is a grid, and a grid item defaults to
+            `min-width: auto` — it refuses to shrink below its content's
+            min-content width. A URL is one unbreakable string, so this row grew
+            to the full length of it and overflowed the dialog, ellipsis and all.
+            The `truncate` on the span inside cannot help while its ancestor is
+            still being sized by the same text.
+          */}
+          <div className="well flex min-w-0 items-center gap-2 rounded-md border border-border py-1.5 pr-1.5 pl-3">
             <span data-slot="hash" className="min-w-0 flex-1 truncate text-xs">
               {url}
             </span>

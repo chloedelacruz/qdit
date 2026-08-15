@@ -9,7 +9,7 @@ import {
 } from "@/components/entity-dialogs";
 import { MilestoneAnchorDialog } from "@/components/milestone-anchor";
 import { MilestoneHistoryDialog } from "@/components/milestone-history-dialog";
-import { ShareProofDialog } from "@/components/share-proof-dialog";
+import { ShareProofButton } from "@/components/share-proof-button";
 import type { AnchorAction } from "@/lib/chain/actions";
 import { RowActions } from "@/components/row-actions";
 import {
@@ -129,25 +129,12 @@ export function MilestoneRowActions({
     Sharing is offered only when the project publishes, because a link to a
     page that refuses to render is worse than no link at all. The toggle lives
     on the project overview — see `ProjectPublishing`.
-  */
-  const shareItem = milestone.publicProofs
-    ? [
-        {
-          key: "share",
-          label: "Share public link",
-          render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
-            <ShareProofDialog
-              projectSlug={milestone.projectSlug}
-              milestoneId={milestone.id}
-              milestoneTitle={milestone.title}
-              anchored={Boolean(milestone.anchor)}
-              {...props}
-            />
-          ),
-        },
-      ]
-    : [];
 
+    It is a visible button rather than a menu item. Public proof links answer
+    the loudest complaint in the tester round, and a feature nobody can see is
+    a feature nobody uses — which is exactly what a tester had already said
+    about Re-submit hiding in a dropdown.
+  */
   const anchorItems: { key: AnchorAction; label: string }[] =
     anchoring && canEdit
       ? [
@@ -162,44 +149,54 @@ export function MilestoneRowActions({
       : [];
 
   return (
-    <RowActions
-      label="milestone"
-      canEdit={canEdit}
-      canDelete={canEdit}
-      deleteTitle="Delete this milestone?"
-      deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
-      onDelete={deleteMilestone.bind(null, milestone.id)}
-      extraItems={[
-        ...historyItem,
-        ...shareItem,
-        ...anchorItems.map((item) => ({
-        key: item.key,
-        label: item.label,
-        render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
-          <MilestoneAnchorDialog
+    <span className="flex items-center gap-0.5">
+      {milestone.publicProofs ? (
+        <ShareProofButton
+          projectSlug={milestone.projectSlug}
+          milestoneId={milestone.id}
+          milestoneTitle={milestone.title}
+          anchored={Boolean(milestone.anchor)}
+        />
+      ) : null}
+
+      <RowActions
+        label="milestone"
+        canEdit={canEdit}
+        canDelete={canEdit}
+        deleteTitle="Delete this milestone?"
+        deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
+        onDelete={deleteMilestone.bind(null, milestone.id)}
+        extraItems={[
+          ...historyItem,
+          ...anchorItems.map((item) => ({
+            key: item.key,
+            label: item.label,
+            render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+              <MilestoneAnchorDialog
+                milestoneId={milestone.id}
+                milestoneTitle={milestone.title}
+                action={item.key}
+                network={milestone.network}
+                registered={Boolean(milestone.chainContractId)}
+                {...props}
+              />
+            ),
+          })),
+        ]}
+        renderEdit={(props) => (
+          <EditMilestoneDialog
             milestoneId={milestone.id}
-            milestoneTitle={milestone.title}
-            action={item.key}
-            network={milestone.network}
-            registered={Boolean(milestone.chainContractId)}
+            projectId={milestone.projectId}
+            defaults={{
+              title: milestone.title,
+              description: milestone.description,
+              dueDate: milestone.dueDate,
+            }}
             {...props}
           />
-        ),
-        })),
-      ]}
-      renderEdit={(props) => (
-        <EditMilestoneDialog
-          milestoneId={milestone.id}
-          projectId={milestone.projectId}
-          defaults={{
-            title: milestone.title,
-            description: milestone.description,
-            dueDate: milestone.dueDate,
-          }}
-          {...props}
-        />
-      )}
-    />
+        )}
+      />
+    </span>
   );
 }
 
