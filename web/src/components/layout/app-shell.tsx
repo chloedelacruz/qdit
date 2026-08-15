@@ -10,6 +10,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import type { NotificationRow } from "@/lib/queries";
+import { NotificationBell } from "./notification-bell";
 import { FOOTER_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
 import { ProjectSwitcher, type ProjectOption } from "./project-switcher";
 import { SidebarNav } from "./sidebar-nav";
@@ -67,10 +69,15 @@ function SidebarBody({
 export function AppShell({
   projects,
   email,
+  notifications,
+  unread,
   children,
 }: {
   projects: ProjectOption[];
   email: string;
+  /** Rendered by the layout on every navigation — see `NotificationBell`. */
+  notifications: NotificationRow[];
+  unread: number;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -98,6 +105,7 @@ export function AppShell({
           </Link>
 
           <div className="ml-auto flex items-center gap-1">
+            <NotificationBell notifications={notifications} unread={unread} />
             <ThemeToggle />
             <UserMenu email={email} />
           </div>

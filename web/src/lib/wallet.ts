@@ -25,8 +25,18 @@
  * components can import them freely.
  */
 
-const NETWORK =
+import {
+  HORIZON_URL,
+  NETWORK_LABELS,
+  networkFromPassphrase,
+  type StellarNetwork,
+} from "@/lib/stellar";
+
+/** The network this deployment runs on. Everything below compares against it. */
+export const APP_NETWORK: StellarNetwork =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
+
+const NETWORK = APP_NETWORK;
 
 let initialized = false;
 
@@ -113,9 +123,18 @@ export async function signTransaction(xdr: string): Promise<string> {
   return signedTxXdr;
 }
 
-/** Subscribe to connect/disconnect. Returns an unsubscribe function. */
+/**
+ * Subscribe to connect/disconnect. Returns an unsubscribe function.
+ *
+ * The event carries the wallet's network passphrase alongside the address, so
+ * switching network in the extension is a state change this hears about rather
+ * than something the app has to poll for.
+ */
 export async function onWalletState(
-  callback: (address: string | undefined) => void,
+  callback: (
+    address: string | undefined,
+    network: StellarNetwork | null | undefined,
+  ) => void,
 ): Promise<() => void> {
   const [wallets, types] = await Promise.all([
     kit(),
@@ -124,8 +143,148 @@ export async function onWalletState(
   if (!wallets) return () => {};
 
   return wallets.on(types.KitEventType.STATE_UPDATED, (event) => {
-    callback(event.payload.address);
+    callback(
+      event.payload.address,
+      event.payload.networkPassphrase
+        ? networkFromPassphrase(event.payload.networkPassphrase)
+        : undefined,
+    );
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Setup checks — what someone needs before any of the above works            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Is any wallet installed in this browser?
+ *
+ * The kit lists every wallet it knows about and marks the ones actually present
+ * with `isAvailable`. Asked before connecting, so it can only report on wallets
+ * that announce themselves to the page — an extension is one, a hardware wallet
+ * behind a bridge is not. False therefore means "we cannot see one", which is
+ * the same advice either way: install Freighter.
+ */
+export async function hasWalletInstalled(): Promise<boolean> {
+  const wallets = await kit();
+  if (!wallets) return false;
+
+  try {
+    const supported = await wallets.refreshSupportedWallets();
+    return supported.some((wallet) => wallet.isAvailable);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The network the connected wallet is on, as the wallet reports it.
+ *
+ * `undefined` means nothing is connected yet — not an error, just too early to
+ * ask. `null` means it answered with a network qdit does not run on.
+ *
+ * This exists because of what it prevents. A wallet left on Mainnet does not
+ * fail loudly: the account lookup comes back empty and the app used to say the
+ * account did not exist, which reads as "the site is broken" rather than "you
+ * are on the wrong network". Reading the passphrase turns that into a sentence
+ * that names the fix.
+ */
+export async function walletNetwork(): Promise<StellarNetwork | null | undefined> {
+  const wallets = await kit();
+  if (!wallets) return undefined;
+
+  try {
+    const { networkPassphrase } = await wallets.getNetwork();
+    return networkFromPassphrase(networkPassphrase);
+  } catch {
+    // Not connected, or the wallet declined to answer. Either way, unknown.
+    return undefined;
+  }
+}
+
+/**
+ * True when the connected wallet is on a network this deployment cannot use.
+ * Deliberately false while nothing is connected: an unknown network is not a
+ * wrong one, and warning about it before someone has picked a wallet is noise.
+ */
+export async function isOnWrongNetwork(): Promise<boolean> {
+  const network = await walletNetwork();
+  return network !== undefined && network !== NETWORK;
+}
+
+/** The sentence to show when it is. Names both networks, and what to do. */
+export function wrongNetworkMessage(found: StellarNetwork | null): string {
+  const on = found ? NETWORK_LABELS[found] : "a network qdit does not use";
+  return `Your wallet is on ${on}. qdit runs on ${NETWORK_LABELS[NETWORK]} — switch networks in your wallet, then try again.`;
+}
+
+/**
+ * Does this account exist on the network yet?
+ *
+ * Straight to Horizon from the browser rather than through `/api/balance`,
+ * because this question is asked on the sign-in page where there is no session
+ * to authenticate with. Horizon is a public, CORS-enabled API and the address
+ * is a public key, so nothing here is worth proxying — and proxying it would
+ * turn the app into an open Horizon relay, which `/api/balance` exists to avoid.
+ *
+ * A network failure answers `undefined`, not `false`: "we could not tell" must
+ * not render as "your account does not exist".
+ */
+export async function accountExists(
+  address: string,
+  network: StellarNetwork = NETWORK,
+): Promise<boolean | undefined> {
+  try {
+    const response = await fetch(`${HORIZON_URL[network]}/accounts/${address}`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (response.status === 404) return false;
+    if (!response.ok) return undefined;
+    return true;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Funds a Testnet account with Friendbot.
+ *
+ * Replaces the link that used to open Friendbot's raw JSON in a second tab and
+ * leave people to work out whether it had worked. Throws with Friendbot's own
+ * explanation when it refuses — most often because the account is already
+ * funded, which is a state worth reporting rather than a failure.
+ */
+export async function fundTestnetAccount(address: string): Promise<void> {
+  if (NETWORK !== "testnet") {
+    throw new Error("Friendbot only funds Testnet accounts.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(friendbotUrl(address), {
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new Error("Could not reach Friendbot. Try again in a moment.");
+  }
+
+  if (response.ok) return;
+
+  // Friendbot answers with a Horizon problem document. `detail` is written for
+  // a person; the status code is not.
+  const problem = (await response.json().catch(() => ({}))) as {
+    detail?: string;
+    status?: number;
+  };
+
+  if (response.status === 400 && /exists|funded/i.test(problem.detail ?? "")) {
+    throw new Error("This account is already funded.");
+  }
+
+  throw new Error(problem.detail ?? `Friendbot returned ${response.status}.`);
 }
 
 /* -------------------------------------------------------------------------- */

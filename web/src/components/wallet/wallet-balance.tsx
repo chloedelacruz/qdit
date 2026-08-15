@@ -5,8 +5,8 @@ import { Loader2, RefreshCw } from "lucide-react";
 import type { AccountBalance } from "@/app/api/balance/route";
 import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/stat-tile";
+import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import { formatXlm } from "@/lib/stellar";
-import { friendbotUrl } from "@/lib/wallet";
 
 /**
  * The connected wallet's XLM balance.
@@ -59,23 +59,23 @@ export function WalletBalance({
       ) : null}
 
       {balance && !balance.funded ? (
-        <p className="text-sm text-warning">
-          This account does not exist on {balance.network} yet, so it holds nothing and
-          cannot pay a fee.{" "}
+        <div className="space-y-2">
+          <p className="text-sm text-warning">
+            This account does not exist on {balance.network} yet, so it holds nothing
+            and cannot pay a fee.
+          </p>
           {balance.network === "testnet" ? (
-            <a
-              className="underline underline-offset-2"
-              href={friendbotUrl(balance.address)}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              Fund it with Friendbot
-            </a>
+            /*
+              A button rather than the link this used to be. Friendbot's reply
+              is raw JSON in a second tab, which told nobody anything, and the
+              refresh that made the new balance appear was a third step people
+              had to know to take. Funding and re-reading are one action now.
+            */
+            <FundTestnetButton address={balance.address} onFunded={onRefresh} />
           ) : (
-            "Fund it before sending."
+            <p className="text-sm text-muted-foreground">Fund it before sending.</p>
           )}
-          , then refresh.
-        </p>
+        </div>
       ) : null}
 
       <div className="grid gap-2 sm:grid-cols-3">

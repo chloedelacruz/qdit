@@ -1,5 +1,6 @@
 import {
   Anchor,
+  Check,
   CircleDot,
   Clock3,
   Columns3,
@@ -56,6 +57,14 @@ export const ICON = {
   wallet: Wallet,
   /** Proof written to the ledger. The one place chain imagery is warranted. */
   anchor: Anchor,
+  /**
+   * A setup step that is satisfied — wallet installed, network right, account
+   * funded. Deliberately not `task`: this marks a precondition the browser
+   * detected, never a work item somebody moved, and the two must not look
+   * alike. The only tick in the vocabulary, and it earns its exception by
+   * being the answer to "am I ready yet".
+   */
+  ready: Check,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON;

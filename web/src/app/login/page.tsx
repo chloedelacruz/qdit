@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
+import { WalletSetup } from "@/components/auth/wallet-setup";
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getUser } from "@/lib/supabase/server";
@@ -35,6 +36,13 @@ export default async function LoginPage() {
           </div>
 
           <div className="surface-primary rounded-xl border border-border-strong p-5">
+            {/*
+              The setup steps come *before* the button, not after it. Someone
+              who does not have a wallet yet cannot act on advice printed under
+              a control they already clicked and watched do nothing.
+            */}
+            <WalletSetup className="mb-5" />
+
             <ConnectWalletButton className="w-full" />
             <p className="mt-3 text-xs text-muted-foreground">
               Connecting signs you in. A wallet that is new here goes to a short

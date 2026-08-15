@@ -87,7 +87,22 @@ export type BuildRequest = {
  * sign — an already-approved milestone or an unregistered project fails here,
  * costing nothing, rather than as a failed transaction they paid for.
  */
-export async function buildUnsigned(request: BuildRequest): Promise<string> {
+export type Unsigned = {
+  xdr: string;
+  /**
+   * What the network will charge, in stroops, as the simulation computed it:
+   * the inclusion fee plus the Soroban resource fee. Null when the assembled
+   * transaction does not carry one, which should not happen after a successful
+   * simulation and is not worth failing the anchor over.
+   *
+   * Surfaced because two testers asked what this costs — one wanted the number
+   * before the wallet popup, the other wanted to project a quarter of mainnet
+   * anchoring and had nothing to multiply.
+   */
+  feeStroops: string | null;
+};
+
+export async function buildUnsigned(request: BuildRequest): Promise<Unsigned> {
   const client = contractClient(request.config, request.signer);
 
   // The bindings expose one method per contract function, each taking a named
@@ -118,12 +133,14 @@ export async function buildUnsigned(request: BuildRequest): Promise<string> {
     throw new Error(simulationFailure(assembled));
   }
 
-  return assembled.toXDR();
+  return { xdr: assembled.toXDR(), feeStroops: assembled.built?.fee ?? null };
 }
 
 /** The parts of the bindings' `AssembledTransaction` this module relies on. */
 type AssembledWrite = {
   toXDR: () => string;
+  /** The assembled transaction, once simulation has set the resource fee. */
+  built?: { fee: string };
   simulation?: rpc.Api.SimulateTransactionResponse;
   result: Result<void>;
 };

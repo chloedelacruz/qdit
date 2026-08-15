@@ -50,3 +50,8 @@ docs/qdit-pitch-deck.pdf
 *.mov
 *.pptx
 *.key
+
+# Working notes: raw feedback exports and the level-5 plan. Not part of the
+# submission — what ships is the summary in the README, not the scratch.
+_secret
+_level5
