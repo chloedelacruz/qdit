@@ -752,7 +752,7 @@ export type MilestoneRow = {
  * The ledger records that a decision happened and which key signed it; this
  * records why. Kept off chain because `reject_milestone` takes no memo and
  * adding one would mean redeploying the contract — see the migration header in
- * `20260815094500_milestone_reviews.sql`.
+ * `20260815051045_milestone_reviews.sql`.
  */
 export type MilestoneReview = {
   id: string;

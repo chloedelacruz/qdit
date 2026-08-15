@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20260815112000_public_proofs.sql
+-- 20260815051120_public_proofs.sql
 --
 -- A milestone's proof, readable without an account.
 --
