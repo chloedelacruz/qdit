@@ -34,6 +34,7 @@ import { TaskDetailSheet } from "@/components/task-detail";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import { Button } from "@/components/ui/button";
 import { TASK_STATUS, type TaskStatus } from "@/lib/constants";
+import { ICON } from "@/lib/icons";
 import { moveTask } from "@/lib/actions";
 import { DEFAULT_LIMIT, serialiseFilters, type Filters } from "@/lib/filters";
 import type { BoardColumn, TaskRow } from "@/lib/queries";
@@ -488,6 +489,9 @@ function Card({
       onClick={onOpen}
       className={cn(
         "surface lift group/row rounded-lg border border-border p-2",
+        // Same reasoning as `ListRow`: a card that is comfortable under a mouse
+        // is a card two fingers wide apart under a thumb.
+        "pointer-coarse:p-2.5",
         // `touch-manipulation` rather than `touch-none`: the column has to keep
         // scrolling under a finger, and the TouchSensor's delay is what
         // separates the two. It only drops the double-tap zoom gesture, and
@@ -540,6 +544,20 @@ function Card({
             the list rows, no width is reserved — a card is its own column, so
             nothing below it needs to line up. */}
         <PriorityChip priority={task.priority} />
+
+        {/*
+          A mark, not a badge. Anchor state belongs to the milestone and the
+          milestone rows carry the full badge with its hash and explorer link —
+          but a tester was opening every milestone one at a time to find out
+          which work was on the ledger, and the board was where they were
+          standing when the question came up. One glyph answers it.
+        */}
+        {task.milestoneAnchored ? (
+          <ICON.anchor
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-label="Milestone anchored on chain"
+          />
+        ) : null}
 
         <RowMeta className="min-w-0 flex-1" items={[task.milestoneTitle, task.dueDate]} />
         <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />

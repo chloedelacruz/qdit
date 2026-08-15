@@ -389,9 +389,23 @@ export async function updateMilestone(
 export async function updateMilestoneStatus(
   milestoneId: string,
   next: MilestoneStatus,
+  reason?: string,
 ): Promise<ActionState> {
   const user = await getUser();
   if (!user) return { error: "Your session expired. Sign in again." };
+
+  const note = (reason ?? "").trim();
+
+  // A rejection has to say why. Checked here as well as by the database's
+  // `milestone_reviews_rejection_has_reason` constraint — the constraint is the
+  // boundary, this is the sentence someone can act on.
+  if (next === "rejected" && !note) {
+    return { error: "Say why this milestone is being rejected." };
+  }
+
+  if (note.length > 2000) {
+    return { error: "Keep the reason under 2000 characters." };
+  }
 
   const supabase = await createClient();
   const { data: milestone, error: readError } = await supabase
@@ -431,6 +445,39 @@ export async function updateMilestoneStatus(
     .eq("id", milestoneId);
 
   if (error) return { error: friendly(error.message, error.code) };
+
+  /*
+    Record the decision after the move, not with it.
+
+    Two writes, not a transaction, because PostgREST has no client-side one and
+    the failure modes are not symmetric. A status that moved without its review
+    row is a milestone missing an explanation — bad, and visible. A review row
+    for a move that never happened would be a record of something that did not
+    occur, which is worse, and this ordering makes it impossible.
+
+    Only decisions carry a review. `proposed → submitted` is somebody saying
+    their work is ready, and a row per submission with an empty reason would
+    bury the ones that matter.
+  */
+  if (MILESTONE_OWNER_ONLY.includes(next) || note) {
+    const { error: reviewError } = await supabase.from("milestone_reviews").insert({
+      milestone_id: milestoneId,
+      project_id: milestone.project_id,
+      from_status: current,
+      to_status: next,
+      reason: note || null,
+      reviewer_id: user.id,
+    });
+
+    // The move already happened and is the thing the person was asking for.
+    // Report the gap rather than pretending the whole action failed.
+    if (reviewError) {
+      return {
+        error:
+          "The milestone moved, but the reason could not be saved. Add it as a comment on the next decision.",
+      };
+    }
+  }
 
   revalidateAll();
   return { ok: true };

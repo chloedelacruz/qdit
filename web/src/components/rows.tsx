@@ -152,6 +152,11 @@ export function MilestoneListRow({
   statusControl?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
+  // The decision that produced the current state, if there was one. Only the
+  // newest matters on a row: earlier rounds are history, and history belongs on
+  // a milestone's own view rather than in a list.
+  const decision = milestone.reviews[0];
+
   return (
     <ListRow
       href={`/projects/${milestone.projectSlug}/milestones`}
@@ -195,6 +200,25 @@ export function MilestoneListRow({
 
         {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
+
+      {/*
+        The one place a row is allowed a second line.
+
+        Spec §Density says one line per row, and every other row here obeys it.
+        This is the exception the tester round bought: a rejection whose reason
+        is one click away is a rejection people do not read, and four of twenty
+        said they were left guessing what they had done wrong. The reason is the
+        row's most important content the moment it exists, so it renders where
+        the eye already is. Only for a rejection, only the newest one, and
+        clamped to two lines so a long note cannot turn a list into an essay.
+      */}
+      {milestone.status === "rejected" && decision?.reason ? (
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+          <span className="text-destructive">Rejected</span> by {decision.reviewerName}
+          {" — "}
+          {decision.reason}
+        </p>
+      ) : null}
     </ListRow>
   );
 }

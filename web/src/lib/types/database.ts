@@ -490,6 +490,62 @@ export type Database = {
           },
         ]
       }
+
+      milestone_reviews: {
+        Row: {
+          id: string
+          milestone_id: string
+          project_id: string
+          from_status: Database['public']['Enums']['milestone_status']
+          to_status: Database['public']['Enums']['milestone_status']
+          reason: string | null
+          reviewer_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          milestone_id: string
+          project_id: string
+          from_status: Database['public']['Enums']['milestone_status']
+          to_status: Database['public']['Enums']['milestone_status']
+          /**
+           * `milestone_reviews_rejection_has_reason`: required when `to_status`
+           * is 'rejected', optional otherwise. 1–2000 characters once trimmed.
+           */
+          reason?: string | null
+          reviewer_id?: string | null
+          created_at?: string
+        }
+        /**
+         * Append-only, like milestone_anchors: no UPDATE or DELETE policy, so
+         * nothing here is reachable through the authenticated role. A reason
+         * that can be edited after it was read is not a record.
+         */
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'milestone_reviews_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_reviews_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_reviews_reviewer_id_fkey'
+            columns: ['reviewer_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>

@@ -521,15 +521,29 @@ export type TaskRow = {
   projectName: string;
   projectSlug: string;
   milestoneTitle: string | null;
+  /** The task's milestone has at least one anchor on the ledger. */
+  milestoneAnchored: boolean;
   assigneeName: string;
   assigneeInitials: string | null;
   assigneeAvatarUrl: string | null;
 };
 
+/*
+  `milestone_anchors(action)` is embedded two levels deep on purpose.
+
+  A tester put it plainly: the board showed nothing about what was anchored, so
+  finding out meant opening every milestone one at a time. Anchor state is a
+  property of the milestone, not the task, but the board is where people look
+  at the work — so the task carries the flag and the milestone owns the fact.
+
+  Only the existence of a row matters here, never its contents, which is why
+  one column comes back rather than the anchor itself. The list rows show the
+  full badge; a board card shows a mark.
+*/
 const TASK_SELECT = `
   id, project_id, milestone_id, title, description, status, priority, assignee_id, due_date,
   projects!inner(name, slug),
-  milestones(title)
+  milestones(title, milestone_anchors(action))
 `;
 
 type TaskRecord = {
@@ -543,7 +557,10 @@ type TaskRecord = {
   assignee_id: string | null;
   due_date: string | null;
   projects: { name: string; slug: string };
-  milestones: { title: string } | null;
+  milestones: {
+    title: string;
+    milestone_anchors: { action: MilestoneAnchor["action"] }[];
+  } | null;
 };
 
 function toTask(row: TaskRecord, members: MemberMap): TaskRow {
@@ -562,6 +579,10 @@ function toTask(row: TaskRecord, members: MemberMap): TaskRow {
     projectName: row.projects.name,
     projectSlug: row.projects.slug,
     milestoneTitle: row.milestones?.title ?? null,
+    // Anchored at all, not anchored-and-current: a card has room for a mark,
+    // and "is any of this on the ledger" is the question the board is being
+    // asked. Staleness is a milestone-level nuance and stays on the list row.
+    milestoneAnchored: (row.milestones?.milestone_anchors?.length ?? 0) > 0,
     assigneeName: name || "Unassigned",
     assigneeInitials: name ? initialsOf(name) : null,
     // Only when there is someone to attribute it to: an unassigned task shows
@@ -704,6 +725,29 @@ export type MilestoneRow = {
    * False when there is no anchor at all — nothing to be stale against.
    */
   anchorStale: boolean;
+  /**
+   * Decisions on this milestone, newest first. Empty until someone approves or
+   * rejects it — a submission is not a decision.
+   */
+  reviews: MilestoneReview[];
+};
+
+/**
+ * One approval or rejection, with the reason given.
+ *
+ * The ledger records that a decision happened and which key signed it; this
+ * records why. Kept off chain because `reject_milestone` takes no memo and
+ * adding one would mean redeploying the contract — see the migration header in
+ * `20260815094500_milestone_reviews.sql`.
+ */
+export type MilestoneReview = {
+  id: string;
+  fromStatus: MilestoneRow["status"];
+  toStatus: MilestoneRow["status"];
+  reason: string | null;
+  reviewerId: string | null;
+  reviewerName: string;
+  createdAt: string;
 };
 
 export type MilestoneAnchor = {
@@ -725,7 +769,8 @@ const MILESTONE_SELECT = `
   tasks(count),
   done:tasks(count),
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
-  milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at)
+  milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at),
+  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at)
 `;
 
 type MilestoneRecord = {
@@ -756,9 +801,17 @@ type MilestoneRecord = {
     signer_address: string;
     created_at: string;
   }[];
+  milestone_reviews: {
+    id: string;
+    from_status: MilestoneRow["status"];
+    to_status: MilestoneRow["status"];
+    reason: string | null;
+    reviewer_id: string | null;
+    created_at: string;
+  }[];
 };
 
-function toMilestone(row: MilestoneRecord): MilestoneRow {
+function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
   const taskCount = countOf(row.tasks);
   const doneCount = countOf(row.done);
 
@@ -827,6 +880,22 @@ function toMilestone(row: MilestoneRecord): MilestoneRow {
           anchoredHash,
         )
       : false,
+    // Newest first, sorted here for the same reason the anchors are: PostgREST
+    // cannot order an embedded resource.
+    reviews: [...(row.milestone_reviews ?? [])]
+      .sort((a, b) =>
+        a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0,
+      )
+      .map((review) => ({
+        id: review.id,
+        fromStatus: review.from_status,
+        toStatus: review.to_status,
+        reason: review.reason,
+        reviewerId: review.reviewer_id,
+        // A reviewer who has left the project is still the person who decided.
+        reviewerName: members.get(review.reviewer_id ?? "")?.name || "A former member",
+        createdAt: review.created_at,
+      })),
   };
 }
 
@@ -835,6 +904,8 @@ export async function listMilestones(
   filters: Filters,
 ): Promise<Page<MilestoneRow>> {
   const supabase = await createClient();
+  // Reviews name their reviewer, and a raw uuid names nobody.
+  const members = await memberMap();
 
   let totalQuery = supabase.from("milestones").select("id", { count: "exact", head: true });
   if (scope.projectId) totalQuery = totalQuery.eq("project_id", scope.projectId);
@@ -858,7 +929,9 @@ export async function listMilestones(
         : query.order("order_index");
 
   const { data, count } = await ordered.limit(filters.limit);
-  const rows = ((data ?? []) as unknown as MilestoneRecord[]).map(toMilestone);
+  const rows = ((data ?? []) as unknown as MilestoneRecord[]).map((row) =>
+    toMilestone(row, members),
+  );
 
   if (filters.sort === "progress") rows.sort((a, b) => b.progress - a.progress);
 
