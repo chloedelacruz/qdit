@@ -12,13 +12,15 @@ import {
 } from "@/lib/chain/actions";
 import { ICON } from "@/lib/icons";
 import type { StellarNetwork } from "@/lib/stellar";
+import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import {
   connectWallet,
   currentAddress,
-  friendbotUrl,
   isRejectedError,
   isUnfundedError,
   signTransaction,
+  walletNetwork,
+  wrongNetworkMessage,
 } from "@/lib/wallet";
 
 /**
@@ -56,6 +58,14 @@ export function ProjectChainRegistration({
     startTransition(async () => {
       try {
         const signer = (await currentAddress()) ?? (await connectWallet());
+
+        // Same check as the anchor dialog: a wallet on the wrong network fails
+        // with an error about a missing account, which explains nothing.
+        const walletOn = await walletNetwork();
+        if (walletOn !== undefined && walletOn !== network) {
+          toast.error(wrongNetworkMessage(walletOn));
+          return;
+        }
 
         const prepared = await prepareProjectRegistration(projectId, signer);
         if (!prepared.ok) {
@@ -115,22 +125,20 @@ export function ProjectChainRegistration({
         to keep.
       </p>
       {unfunded ? (
-        <p className="text-sm text-warning">
-          That account does not exist on {network} yet, so it cannot pay a fee.{" "}
+        <div className="space-y-2">
+          <p className="text-sm text-warning">
+            That account does not exist on {network} yet, so it cannot pay a fee.
+          </p>
           {network === "testnet" ? (
-            <a
-              className="underline underline-offset-2"
-              href={friendbotUrl(unfunded)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Fund it with Friendbot
-            </a>
+            <FundTestnetButton
+              address={unfunded}
+              onFunded={() => setUnfunded(null)}
+              label="Fund it with Friendbot"
+            />
           ) : (
-            "Fund it before signing."
+            <p className="text-sm text-muted-foreground">Fund it before signing.</p>
           )}
-          , then try again.
-        </p>
+        </div>
       ) : null}
     </div>
   );

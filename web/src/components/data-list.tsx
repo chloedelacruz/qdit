@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/page-header";
+import { RowLink } from "@/components/row-link";
 import {
   DEFAULT_LIMIT,
   serialiseFilters,
@@ -17,20 +18,31 @@ import { cn } from "@/lib/utils";
  * absurd at fifty. Rows also give the accent somewhere meaningful to live: the
  * `.row` utility paints a brand rail on the leading edge on hover.
  */
-export function ListRow({
-  href,
-  active,
-  className,
-  children,
-}: {
-  href?: string;
+type ListRowProps = {
   active?: boolean;
   className?: string;
   children: React.ReactNode;
-}) {
+} & (
+  // A linked row needs a name for its overlay link — see below. The union makes
+  // that a type error rather than a silent unlabelled link.
+  | { href: string; label: string }
+  | { href?: undefined; label?: undefined }
+);
+
+export function ListRow({ href, label, active, className, children }: ListRowProps) {
   const classes = cn(
     // ~34px at a single line of 13px text — spec §Density puts rows at 32–36px.
-    "row focus-ring block border-b border-border/70 px-3 py-2 last:border-b-0",
+    "row relative block border-b border-border/70 px-3 py-2 last:border-b-0",
+    /*
+      Taller under a finger.
+
+      34px is right for a mouse and wrong for a thumb: the platform guidance is
+      44px, and a tester on a phone said they kept hitting the wrong row. The
+      query is `pointer: coarse`, not a width breakpoint — the thing that
+      matters is what is doing the pointing, and a small window on a laptop is
+      still a mouse. Density on the desktop is untouched.
+    */
+    "pointer-coarse:min-h-11 pointer-coarse:py-2.5",
     // Named group so RowActions can stay invisible until the row is hovered or
     // something inside it takes focus. Named, not bare `group`, because rows
     // nest inside panels that already use one.
@@ -38,27 +50,53 @@ export function ListRow({
     className,
   );
 
-  if (!href) {
-    return (
-      <div
-        data-slot="list-row"
-        className={classes}
-        data-active={active ? "true" : undefined}
-      >
-        {children}
-      </div>
-    );
-  }
-
   return (
-    <Link
-      href={href}
+    <div
       data-slot="list-row"
       className={classes}
       data-active={active ? "true" : undefined}
     >
+      {/*
+        The link overlays the row rather than wrapping it.
+
+        Wrapping was simpler, but a row carries interactive content — status
+        menus, an actions trigger, an explorer link on a hash pill — and none of
+        that is legal inside an `<a>`. A nested anchor in particular is fatal:
+        the parser hoists it out of its ancestor, so the client DOM stops
+        matching the server's and the whole tree fails to hydrate.
+
+        Positioned, so it paints above the static row content and takes the
+        click anywhere on the row. Anything inside the row that must stay
+        clickable therefore has to sit above it — see `RowControl`.
+
+        `RowLink` also drops the anchor when it would point at the current page,
+        which the shared row components otherwise do on every project-scoped
+        list — see the note there.
+      */}
+      {href ? <RowLink href={href} label={label} /> : null}
+
       {children}
-    </Link>
+    </div>
+  );
+}
+
+/**
+ * Lifts an interactive control above a linked row's overlay link.
+ *
+ * Without this the overlay swallows the click and the row simply navigates —
+ * the menu never opens. Only needed on rows that have an `href`.
+ */
+export function RowControl({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className={cn("relative z-10 flex shrink-0 items-center", className)}>
+      {children}
+    </span>
   );
 }
 

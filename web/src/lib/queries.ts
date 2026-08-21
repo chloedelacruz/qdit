@@ -341,6 +341,8 @@ export type ProjectRow = {
   demoUrl: string | null;
   docsUrl: string | null;
   updatedAt: string;
+  /** Milestone proofs are readable at /p/[slug]/[milestone] by anyone. */
+  publicProofs: boolean;
   taskCount: number;
   doneCount: number;
   milestoneCount: number;
@@ -363,6 +365,7 @@ export type ProjectRow = {
  */
 const PROJECT_SELECT = `
   id, owner_id, slug, name, description, status, repo_url, demo_url, docs_url, updated_at,
+  public_proofs,
   chain_contract_id, chain_network, chain_owner_address, chain_registered_tx, chain_registered_at,
   tasks(count),
   done:tasks(count),
@@ -382,6 +385,7 @@ type ProjectRecord = {
   demo_url: string | null;
   docs_url: string | null;
   updated_at: string;
+  public_proofs: boolean;
   chain_contract_id: string | null;
   chain_network: StellarNetwork | null;
   chain_owner_address: string | null;
@@ -424,6 +428,7 @@ function toProject(row: ProjectRecord): ProjectRow {
     demoUrl: row.demo_url,
     docsUrl: row.docs_url,
     updatedAt: row.updated_at,
+    publicProofs: row.public_proofs,
     taskCount,
     doneCount,
     milestoneCount: countOf(row.milestones),
@@ -521,15 +526,29 @@ export type TaskRow = {
   projectName: string;
   projectSlug: string;
   milestoneTitle: string | null;
+  /** The task's milestone has at least one anchor on the ledger. */
+  milestoneAnchored: boolean;
   assigneeName: string;
   assigneeInitials: string | null;
   assigneeAvatarUrl: string | null;
 };
 
+/*
+  `milestone_anchors(action)` is embedded two levels deep on purpose.
+
+  A tester put it plainly: the board showed nothing about what was anchored, so
+  finding out meant opening every milestone one at a time. Anchor state is a
+  property of the milestone, not the task, but the board is where people look
+  at the work — so the task carries the flag and the milestone owns the fact.
+
+  Only the existence of a row matters here, never its contents, which is why
+  one column comes back rather than the anchor itself. The list rows show the
+  full badge; a board card shows a mark.
+*/
 const TASK_SELECT = `
   id, project_id, milestone_id, title, description, status, priority, assignee_id, due_date,
   projects!inner(name, slug),
-  milestones(title)
+  milestones(title, milestone_anchors(action))
 `;
 
 type TaskRecord = {
@@ -543,7 +562,10 @@ type TaskRecord = {
   assignee_id: string | null;
   due_date: string | null;
   projects: { name: string; slug: string };
-  milestones: { title: string } | null;
+  milestones: {
+    title: string;
+    milestone_anchors: { action: MilestoneAnchor["action"] }[];
+  } | null;
 };
 
 function toTask(row: TaskRecord, members: MemberMap): TaskRow {
@@ -562,6 +584,10 @@ function toTask(row: TaskRecord, members: MemberMap): TaskRow {
     projectName: row.projects.name,
     projectSlug: row.projects.slug,
     milestoneTitle: row.milestones?.title ?? null,
+    // Anchored at all, not anchored-and-current: a card has room for a mark,
+    // and "is any of this on the ledger" is the question the board is being
+    // asked. Staleness is a milestone-level nuance and stays on the list row.
+    milestoneAnchored: (row.milestones?.milestone_anchors?.length ?? 0) > 0,
     assigneeName: name || "Unassigned",
     assigneeInitials: name ? initialsOf(name) : null,
     // Only when there is someone to attribute it to: an unassigned task shows
@@ -696,14 +722,46 @@ export type MilestoneRow = {
   network: StellarNetwork;
   /** Whether the project is registered on chain; null until it is. */
   chainContractId: string | null;
+  /** The project publishes proof pages, so this milestone has a public link. */
+  publicProofs: boolean;
   /** Most recent milestone_anchors row, or null if never anchored. */
   anchor: MilestoneAnchor | null;
+  /**
+   * Every anchor, oldest first. The row renders only the newest; the history
+   * dialog renders the sequence, which is what a tester asked for — "v1 was
+   * rejected on this date, v2 approved on this date" is the story a funder
+   * wants, and the data was already on chain.
+   */
+  anchors: MilestoneAnchor[];
   /**
    * The milestone changed after its hash was anchored, so the ledger entry is
    * still valid evidence of what it *was* and no longer describes what it is.
    * False when there is no anchor at all — nothing to be stale against.
    */
   anchorStale: boolean;
+  /**
+   * Decisions on this milestone, newest first. Empty until someone approves or
+   * rejects it — a submission is not a decision.
+   */
+  reviews: MilestoneReview[];
+};
+
+/**
+ * One approval or rejection, with the reason given.
+ *
+ * The ledger records that a decision happened and which key signed it; this
+ * records why. Kept off chain because `reject_milestone` takes no memo and
+ * adding one would mean redeploying the contract — see the migration header in
+ * `20260815051045_milestone_reviews.sql`.
+ */
+export type MilestoneReview = {
+  id: string;
+  fromStatus: MilestoneRow["status"];
+  toStatus: MilestoneRow["status"];
+  reason: string | null;
+  reviewerId: string | null;
+  reviewerName: string;
+  createdAt: string;
 };
 
 export type MilestoneAnchor = {
@@ -721,11 +779,12 @@ export type MilestoneAnchor = {
 // what makes an existing anchor stale. The count falls out of `.length`.
 const MILESTONE_SELECT = `
   id, project_id, title, description, status, due_date, order_index,
-  projects!inner(name, slug, chain_contract_id),
+  projects!inner(name, slug, chain_contract_id, public_proofs),
   tasks(count),
   done:tasks(count),
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
-  milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at)
+  milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at),
+  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at)
 `;
 
 type MilestoneRecord = {
@@ -736,7 +795,12 @@ type MilestoneRecord = {
   status: MilestoneRow["status"];
   due_date: string | null;
   order_index: number;
-  projects: { name: string; slug: string; chain_contract_id: string | null };
+  projects: {
+    name: string;
+    slug: string;
+    chain_contract_id: string | null;
+    public_proofs: boolean;
+  };
   tasks: EmbeddedCount;
   done: EmbeddedCount;
   stellar_proofs: {
@@ -756,9 +820,17 @@ type MilestoneRecord = {
     signer_address: string;
     created_at: string;
   }[];
+  milestone_reviews: {
+    id: string;
+    from_status: MilestoneRow["status"];
+    to_status: MilestoneRow["status"];
+    reason: string | null;
+    reviewer_id: string | null;
+    created_at: string;
+  }[];
 };
 
-function toMilestone(row: MilestoneRecord): MilestoneRow {
+function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
   const taskCount = countOf(row.tasks);
   const doneCount = countOf(row.done);
 
@@ -795,6 +867,20 @@ function toMilestone(row: MilestoneRecord): MilestoneRow {
     proofCount: proofs.length,
     network: "testnet",
     chainContractId: row.projects.chain_contract_id,
+    publicProofs: row.projects.public_proofs,
+    anchors: [...(row.milestone_anchors ?? [])]
+      .sort((a, b) =>
+        a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0,
+      )
+      .map((entry) => ({
+        action: entry.action,
+        proofHash: entry.proof_hash,
+        version: entry.version,
+        txHash: entry.tx_hash,
+        network: entry.network,
+        signerAddress: entry.signer_address,
+        createdAt: entry.created_at,
+      })),
     anchor: latest
       ? {
           action: latest.action,
@@ -827,6 +913,22 @@ function toMilestone(row: MilestoneRecord): MilestoneRow {
           anchoredHash,
         )
       : false,
+    // Newest first, sorted here for the same reason the anchors are: PostgREST
+    // cannot order an embedded resource.
+    reviews: [...(row.milestone_reviews ?? [])]
+      .sort((a, b) =>
+        a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0,
+      )
+      .map((review) => ({
+        id: review.id,
+        fromStatus: review.from_status,
+        toStatus: review.to_status,
+        reason: review.reason,
+        reviewerId: review.reviewer_id,
+        // A reviewer who has left the project is still the person who decided.
+        reviewerName: members.get(review.reviewer_id ?? "")?.name || "A former member",
+        createdAt: review.created_at,
+      })),
   };
 }
 
@@ -835,6 +937,8 @@ export async function listMilestones(
   filters: Filters,
 ): Promise<Page<MilestoneRow>> {
   const supabase = await createClient();
+  // Reviews name their reviewer, and a raw uuid names nobody.
+  const members = await memberMap();
 
   let totalQuery = supabase.from("milestones").select("id", { count: "exact", head: true });
   if (scope.projectId) totalQuery = totalQuery.eq("project_id", scope.projectId);
@@ -858,7 +962,9 @@ export async function listMilestones(
         : query.order("order_index");
 
   const { data, count } = await ordered.limit(filters.limit);
-  const rows = ((data ?? []) as unknown as MilestoneRecord[]).map(toMilestone);
+  const rows = ((data ?? []) as unknown as MilestoneRecord[]).map((row) =>
+    toMilestone(row, members),
+  );
 
   if (filters.sort === "progress") rows.sort((a, b) => b.progress - a.progress);
 
@@ -1217,4 +1323,133 @@ export async function getWorkspaceSummary(): Promise<WorkspaceSummary> {
     ).size,
     myOpenTaskCount: mine.count ?? 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type NotificationRow = {
+  id: string;
+  kind: "milestone_submitted" | "milestone_approved" | "milestone_rejected";
+  body: string;
+  projectSlug: string;
+  milestoneId: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+/**
+ * The bell's contents: this account's notifications, newest first.
+ *
+ * RLS does the scoping — `notifications: read own` matches on
+ * `recipient_id = auth.uid()` — so there is no user filter here and adding one
+ * would only invite the belief that the filter is what protects the table.
+ *
+ * Capped rather than paginated. A bell is for what happened recently; anything
+ * older is a question about a milestone, and the milestone is where it should
+ * be asked.
+ */
+export async function listNotifications(limit = 20): Promise<NotificationRow[]> {
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("notifications")
+    .select("id, kind, body, milestone_id, read_at, created_at, projects!inner(slug)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  type Record = {
+    id: string;
+    kind: NotificationRow["kind"];
+    body: string;
+    milestone_id: string | null;
+    read_at: string | null;
+    created_at: string;
+    projects: { slug: string } | { slug: string }[];
+  };
+
+  return ((data ?? []) as unknown as Record[]).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    body: row.body,
+    // PostgREST describes a many-to-one embed as an array in some shapes.
+    projectSlug: (Array.isArray(row.projects) ? row.projects[0] : row.projects).slug,
+    milestoneId: row.milestone_id,
+    readAt: row.read_at,
+    createdAt: row.created_at,
+  }));
+}
+
+/** How many are unread. Its own query, because it is rendered on every page. */
+export async function countUnreadNotifications(): Promise<number> {
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .is("read_at", null);
+
+  return count ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Public proofs
+// ---------------------------------------------------------------------------
+
+export type PublicProof = {
+  projectName: string;
+  projectSlug: string;
+  milestoneId: string;
+  title: string;
+  status: MilestoneRow["status"];
+  dueDate: string | null;
+  network: StellarNetwork | null;
+  contractId: string | null;
+  registeredTx: string | null;
+  ownerAddress: string | null;
+  anchors: {
+    action: MilestoneAnchor["action"];
+    proofHash: string | null;
+    version: number;
+    txHash: string;
+    network: StellarNetwork;
+    signerAddress: string;
+    ledger: number | null;
+    createdAt: string;
+  }[];
+  reviews: {
+    fromStatus: MilestoneRow["status"];
+    toStatus: MilestoneRow["status"];
+    reason: string | null;
+    createdAt: string;
+  }[];
+};
+
+/**
+ * One milestone, as a signed-out visitor sees it.
+ *
+ * Goes through `public_milestone_proof()` rather than the tables. RLS is
+ * unchanged and anon holds no membership row, so a direct read returns nothing;
+ * the function is a SECURITY DEFINER window with a hand-listed set of columns
+ * and a `public_proofs` check, and it is the only way in.
+ *
+ * Null covers every failure — not published, no such milestone, wrong project.
+ * They are the same answer on purpose: distinguishing them would confirm that
+ * private work exists.
+ */
+export async function getPublicProof(
+  slug: string,
+  milestoneId: string,
+): Promise<PublicProof | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("public_milestone_proof", {
+    p_slug: slug,
+    p_milestone_id: milestoneId,
+  });
+
+  if (error || !data) return null;
+
+  return data as unknown as PublicProof;
 }

@@ -372,6 +372,17 @@
     @apply font-mono tabular-nums;
     font-feature-settings: "zero" 1;
   }
+
+  /* Hashes never inherit muted grey.
+
+     They sit inside metadata lines that are deliberately dimmed, and at 12px
+     mono on the sunken well behind them `--muted-foreground` lands under the
+     4.5:1 that small text needs — a tester said flatly that light mode made the
+     hashes hard to read. Everything around a hash may recede; the characters
+     someone is checking against an explorer may not. */
+  [data-slot="hash"] {
+    color: var(--foreground);
+  }
 }
 
 @layer utilities {

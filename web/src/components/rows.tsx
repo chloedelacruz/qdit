@@ -1,5 +1,5 @@
 import { HashLink } from "@/components/hash-link";
-import { ListRow, MemberChip, RowMeta } from "@/components/data-list";
+import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
 import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
@@ -54,7 +54,7 @@ export function ProjectListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${project.slug}`}>
+    <ListRow href={`/projects/${project.slug}`} label={project.name}>
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{project.name}</span>
 
@@ -81,7 +81,7 @@ export function ProjectListRow({
           <StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} dot={false} />
         </span>
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
     </ListRow>
   );
@@ -97,13 +97,13 @@ export function TaskListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${task.projectSlug}/board`}>
+    <ListRow href={`/projects/${task.projectSlug}/board`} label={task.title}>
       <div className={LINE}>
         {/* Reserved so titles start on a common left edge regardless of status.
             The badge doubles as the control for moving the task. */}
-        <span className="flex w-24 shrink-0">
+        <RowControl className="w-24">
           <TaskStatusMenu taskId={task.id} status={task.status} />
-        </span>
+        </RowControl>
 
         {/* Reserved too, and for the same reason — `PriorityChip` renders
             nothing for the default, and an unreserved slot would step every
@@ -134,7 +134,7 @@ export function TaskListRow({
           name={task.assigneeName}
         />
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
     </ListRow>
   );
@@ -152,8 +152,16 @@ export function MilestoneListRow({
   statusControl?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
+  // The decision that produced the current state, if there was one. Only the
+  // newest matters on a row: earlier rounds are history, and history belongs on
+  // a milestone's own view rather than in a list.
+  const decision = milestone.reviews[0];
+
   return (
-    <ListRow href={`/projects/${milestone.projectSlug}/milestones`}>
+    <ListRow
+      href={`/projects/${milestone.projectSlug}/milestones`}
+      label={milestone.title}
+    >
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{milestone.title}</span>
 
@@ -177,17 +185,51 @@ export function MilestoneListRow({
           approved here and unanchored there.
         */}
         {milestone.anchor ? (
-          <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+          // Carries the explorer link and a copy button, both of which have to
+          // out-rank the row's own link rather than sit inside it.
+          <RowControl>
+            <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+          </RowControl>
         ) : null}
 
-        <span className="flex w-24 shrink-0 justify-end">
+        {/*
+          `min-w-24`, not `w-24`.
+
+          The width is here so a column of status badges lines up vertically,
+          and a fixed one did that until the control grew a second child: a
+          rejected milestone now carries a Re-submit button beside its badge,
+          which is wider than 6rem, and `shrink-0` plus `justify-end` sent the
+          overflow left — straight over the anchor badge next to it. A minimum
+          keeps the alignment for every row that fits and lets the one that does
+          not push the row out instead of painting on its neighbour.
+        */}
+        <RowControl className="min-w-24 justify-end">
           {statusControl ?? (
             <StatusBadge state={MILESTONE_STATUS[milestone.status]} dot={false} />
           )}
-        </span>
+        </RowControl>
 
-        {actions}
+        {actions ? <RowControl>{actions}</RowControl> : null}
       </div>
+
+      {/*
+        The one place a row is allowed a second line.
+
+        Spec §Density says one line per row, and every other row here obeys it.
+        This is the exception the tester round bought: a rejection whose reason
+        is one click away is a rejection people do not read, and four of twenty
+        said they were left guessing what they had done wrong. The reason is the
+        row's most important content the moment it exists, so it renders where
+        the eye already is. Only for a rejection, only the newest one, and
+        clamped to two lines so a long note cannot turn a list into an essay.
+      */}
+      {milestone.status === "rejected" && decision?.reason ? (
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+          <span className="text-destructive">Rejected</span> by {decision.reviewerName}
+          {" — "}
+          {decision.reason}
+        </p>
+      ) : null}
     </ListRow>
   );
 }

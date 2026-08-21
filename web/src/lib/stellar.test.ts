@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   HORIZON_URL,
   NETWORK_LABELS,
+  NETWORK_PASSPHRASE,
   SOROBAN_RPC_URL,
+  networkFromPassphrase,
   accountUrl,
   contractUrl,
   formatXlm,
@@ -326,5 +328,28 @@ describe("minimumBalanceStroops", () => {
     // num_sponsored can exceed subentry_count; the floor is what stops that
     // from reporting an account that can spend more than it holds.
     expect(minimumBalanceStroops(0, 0, 10)).toBe(10_000_000n);
+  });
+});
+
+describe("networkFromPassphrase", () => {
+  it("recognises both networks qdit runs on", () => {
+    expect(networkFromPassphrase(NETWORK_PASSPHRASE.testnet)).toBe("testnet");
+    expect(networkFromPassphrase(NETWORK_PASSPHRASE.mainnet)).toBe("mainnet");
+  });
+
+  it("is null for a network the app cannot use", () => {
+    // Futurenet is a real Stellar network and still the wrong answer here.
+    // Null is what makes the wallet warning say "not one qdit uses" rather
+    // than guessing at Testnet and signing something the RPC rejects.
+    expect(networkFromPassphrase("Test SDF Future Network ; October 2022")).toBeNull();
+    expect(networkFromPassphrase("")).toBeNull();
+  });
+
+  it("does not match on a near miss", () => {
+    // SEP-0001 passphrases are compared byte for byte: they are mixed into
+    // every signature, so "close enough" is a signature the network refuses.
+    expect(networkFromPassphrase("Test SDF Network ; September 2016")).toBeNull();
+    expect(networkFromPassphrase(NETWORK_PASSPHRASE.testnet.toLowerCase())).toBeNull();
+    expect(networkFromPassphrase(` ${NETWORK_PASSPHRASE.testnet} `)).toBeNull();
   });
 });

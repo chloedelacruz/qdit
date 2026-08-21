@@ -44,6 +44,13 @@ export type PreparedAnchor = {
   network: "testnet" | "mainnet";
   /** Null for project registration, which anchors no content. */
   proofHash: string | null;
+  /**
+   * The simulated fee in stroops, for showing what this costs *before* the
+   * wallet prompt. A tester asked for it in those words; another wanted to
+   * project what a quarter of mainnet anchoring would come to and had no number
+   * to multiply.
+   */
+  feeStroops: string | null;
 };
 
 type Prepared = { ok: true; data: PreparedAnchor } | { ok: false; error: string };
@@ -143,7 +150,7 @@ export async function prepareProjectRegistration(
   }
 
   try {
-    const xdr = await buildUnsigned({
+    const built = await buildUnsigned({
       config,
       signer,
       method: "create_project_ref",
@@ -151,7 +158,13 @@ export async function prepareProjectRegistration(
     });
     return {
       ok: true,
-      data: { xdr, contractId: config.contractId, network: config.network, proofHash: null },
+      data: {
+        xdr: built.xdr,
+        contractId: config.contractId,
+        network: config.network,
+        proofHash: null,
+        feeStroops: built.feeStroops,
+      },
     };
   } catch (error) {
     return { ok: false, error: describe(error) };
@@ -285,16 +298,17 @@ export async function prepareMilestoneAnchor(
         };
 
   try {
-    const xdr = await buildUnsigned({ config, signer, method: METHOD[action], args });
+    const built = await buildUnsigned({ config, signer, method: METHOD[action], args });
     return {
       ok: true,
       data: {
-        xdr,
+        xdr: built.xdr,
         contractId: config.contractId,
         network: config.network,
         // Only a submission anchors content. Approve and reject attest to a
         // hash already on chain, which is why the column is null for them.
         proofHash: action === "submit" ? proofHash : null,
+        feeStroops: built.feeStroops,
       },
     };
   } catch (error) {

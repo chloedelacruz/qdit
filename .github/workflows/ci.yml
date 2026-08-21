@@ -5,7 +5,7 @@ name: CI
 # E2E_EMAIL / E2E_PASSWORD and a database that write specs are allowed to
 # mutate. Putting it in the default PR check would make every fork's build fail
 # on missing secrets and let two concurrent runs fight over one database.
-# See sessions/*/plan.md and the e2e section of README.md.
+# See the end-to-end tests note in README.md.
 
 on:
   push:
@@ -123,8 +123,8 @@ jobs:
 
       # Pinned rather than "latest": the CLI decides the wasm optimisation pass,
       # so an unpinned upgrade would change the artifact hash without a commit
-      # to explain it — and the hash is what contracts/README.md publishes as
-      # proof the deployed bytes match this source.
+      # to explain it — and the hash is what README.md publishes as proof the
+      # deployed bytes match this source.
       - name: Install Stellar CLI
         env:
           STELLAR_CLI_VERSION: "27.0.0"

@@ -7,9 +7,8 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
  * ---------------------------------------------------------------------------
  * WHY THIS CAN EXIST AT ALL — AND WHY NO ACCOUNT IS FUNDED
  * ---------------------------------------------------------------------------
- * `WALLET-AUTH-PLAN.md` §11 says driving the browser wallet modal from
- * Playwright is not possible, and that is still true. What it does not say, and
- * what makes this spec possible, is that the modal is not the interesting part:
+ * Driving the browser wallet modal from Playwright is not possible. What makes
+ * this spec possible anyway is that the modal is not the interesting part:
  * every wallet in the kit signs a transaction the same way, because the network
  * defines what a signature over a transaction means. So the test signs the
  * challenge itself, with a keypair it generates, and the server cannot tell the

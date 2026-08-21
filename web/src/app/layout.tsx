@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
@@ -54,6 +55,17 @@ export default function RootLayout({
         >
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster position="bottom-right" />
+          {/*
+            Page views only, and no cookie: @vercel/analytics identifies a
+            visit with a hash that is not stored on the device, so this needs no
+            consent banner and cannot follow anyone between sites.
+
+            Here rather than in the app layout on purpose — the pages that
+            matter most for measuring onboarding are the ones outside it: the
+            landing page, /login, and the public proof pages that a signed-out
+            visitor opens from a link somebody sent them.
+          */}
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

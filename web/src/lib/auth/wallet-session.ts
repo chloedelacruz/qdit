@@ -273,10 +273,10 @@ export async function createWalletAccount({
  * ---------------------------------------------------------------------------
  * AND WHY A FAILURE DELETES THE ACCOUNT
  * ---------------------------------------------------------------------------
- * `WALLET-AUTH-PLAN.md` §8 rejected writing the address in a second statement
- * precisely because "it can fail on its own, leaving an account whose wallet
- * cannot sign it in, which is an account nobody can open". That reasoning is
- * still right, so the second statement is made atomic by hand: if it fails the
+ * Writing the address in a second, non-atomic statement was rejected: it can
+ * fail on its own, leaving an account whose wallet cannot sign it in, which is
+ * an account nobody can open. So the second statement is made atomic by hand:
+ * if it fails the
  * account is removed, and the person is told to try again rather than left
  * holding something half-made.
  */

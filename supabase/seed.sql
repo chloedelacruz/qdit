@@ -6,7 +6,7 @@
 --
 -- Creating auth users from SQL is deliberate here: the local stack ships a
 -- fixed JWT secret, so these accounts only exist on your machine. Password for
--- every seeded account is `password123`.
+-- every seeded account is `qdit-local-dev`.
 --
 -- The public.profiles rows are created for us by the on_auth_user_created
 -- trigger, and the `owner` membership rows by on_project_created, so this file
@@ -39,7 +39,7 @@ values
     'authenticated',
     'authenticated',
     'ada@qdit.test',
-    extensions.crypt('password123', extensions.gen_salt('bf')),
+    extensions.crypt('qdit-local-dev', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     '{"full_name":"Ada Builder"}'::jsonb,
@@ -52,7 +52,7 @@ values
     'authenticated',
     'authenticated',
     'ben@qdit.test',
-    extensions.crypt('password123', extensions.gen_salt('bf')),
+    extensions.crypt('qdit-local-dev', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     '{"full_name":"Ben Reviewer"}'::jsonb,
@@ -65,7 +65,7 @@ values
     'authenticated',
     'authenticated',
     'cleo@qdit.test',
-    extensions.crypt('password123', extensions.gen_salt('bf')),
+    extensions.crypt('qdit-local-dev', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     '{"full_name":"Cleo Observer"}'::jsonb,

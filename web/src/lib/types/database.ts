@@ -85,6 +85,8 @@ export type Database = {
           chain_owner_address: string | null
           chain_registered_tx: string | null
           chain_registered_at: string | null
+          /** Publishes this project's milestone proofs to anyone with a link. */
+          public_proofs: boolean
           created_at: string
           updated_at: string
         }
@@ -108,6 +110,7 @@ export type Database = {
           chain_owner_address?: string | null
           chain_registered_tx?: string | null
           chain_registered_at?: string | null
+          public_proofs?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -126,6 +129,7 @@ export type Database = {
           chain_owner_address?: string | null
           chain_registered_tx?: string | null
           chain_registered_at?: string | null
+          public_proofs?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -490,6 +494,109 @@ export type Database = {
           },
         ]
       }
+
+      milestone_reviews: {
+        Row: {
+          id: string
+          milestone_id: string
+          project_id: string
+          from_status: Database['public']['Enums']['milestone_status']
+          to_status: Database['public']['Enums']['milestone_status']
+          reason: string | null
+          reviewer_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          milestone_id: string
+          project_id: string
+          from_status: Database['public']['Enums']['milestone_status']
+          to_status: Database['public']['Enums']['milestone_status']
+          /**
+           * `milestone_reviews_rejection_has_reason`: required when `to_status`
+           * is 'rejected', optional otherwise. 1–2000 characters once trimmed.
+           */
+          reason?: string | null
+          reviewer_id?: string | null
+          created_at?: string
+        }
+        /**
+         * Append-only, like milestone_anchors: no UPDATE or DELETE policy, so
+         * nothing here is reachable through the authenticated role. A reason
+         * that can be edited after it was read is not a record.
+         */
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'milestone_reviews_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_reviews_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_reviews_reviewer_id_fkey'
+            columns: ['reviewer_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          project_id: string
+          milestone_id: string | null
+          kind: Database['public']['Enums']['notification_kind']
+          body: string
+          actor_id: string | null
+          read_at: string | null
+          created_at: string
+        }
+        /**
+         * Written by `notify_milestone_status()`, never by a client — there is
+         * no INSERT policy on this table. Present only because the Database
+         * generic requires the key.
+         */
+        Insert: Record<string, never>
+        /** Marking read is the only edit the UPDATE policy permits. */
+        Update: {
+          read_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_recipient_id_fkey'
+            columns: ['recipient_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -546,6 +653,16 @@ export type Database = {
         }
         Returns: string
       }
+      /**
+       * The published view of one milestone, for callers with no account.
+       * Returns null when the project does not publish, when the milestone does
+       * not exist, and when the two do not belong together — an anonymous
+       * caller must not be able to tell those apart.
+       */
+      public_milestone_proof: {
+        Args: { p_slug: string; p_milestone_id: string }
+        Returns: Json
+      }
     }
 
     Enums: {
@@ -563,6 +680,11 @@ export type Database = {
         | 'mainnet_live'
       /** Named for the milestone_proof function the transaction invoked. */
       anchor_action: 'submit' | 'approve' | 'reject'
+      /** Named for what happened, never for what the reader should do. */
+      notification_kind:
+        | 'milestone_submitted'
+        | 'milestone_approved'
+        | 'milestone_rejected'
     }
 
     CompositeTypes: Record<string, never>
