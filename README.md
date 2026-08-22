@@ -17,6 +17,7 @@
 <p align="center">
   <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
+  <a href="https://x.com/tyrontalusan/status/2090972526537212390"><img src="https://img.shields.io/badge/▶_Video_on_X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Video on X" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing"><img src="https://img.shields.io/badge/Mainnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Mainnet feedback responses" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing"><img src="https://img.shields.io/badge/Testnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Testnet feedback responses" /></a>
@@ -30,6 +31,7 @@
 <p align="center">
   <a href="https://qdit.atalusan.com">Live demo</a> ·
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing">Demo video</a> ·
+  <a href="https://x.com/tyrontalusan/status/2090972526537212390">Video on X</a> ·
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing">Pitch deck</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing">Mainnet feedback responses</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing">Testnet feedback responses</a> ·
