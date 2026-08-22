@@ -29,6 +29,20 @@ export type Page<T> = {
   matched: number;
 };
 
+/**
+ * The network this deployment runs on — the fallback for rows that have not
+ * recorded one yet.
+ *
+ * A project with no deployments and a milestone with no anchors have no network
+ * of their own, but the UI still labels them. Defaulting that label to a literal
+ * "testnet" made a mainnet deployment describe every new project as Testnet, and
+ * `project-chain.tsx` compares the connected wallet against this same value —
+ * so the wrong default did not just mislabel, it refused the registration with a
+ * message naming the same network twice.
+ */
+const APP_NETWORK: StellarNetwork =
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
+
 /** PostgREST returns `{ count: n }[]` for an aggregated embed. */
 type EmbeddedCount = { count: number }[];
 
@@ -421,7 +435,7 @@ function toProject(row: ProjectRecord): ProjectRow {
     name: row.name,
     description: row.description,
     status: row.status,
-    network: latest?.network ?? "testnet",
+    network: latest?.network ?? APP_NETWORK,
     deployment: latest?.status ?? "not_started",
     contractId: latest?.contract_id ?? null,
     repoUrl: row.repo_url,
@@ -865,7 +879,7 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
     doneCount,
     progress: taskCount === 0 ? 0 : doneCount / taskCount,
     proofCount: proofs.length,
-    network: "testnet",
+    network: APP_NETWORK,
     chainContractId: row.projects.chain_contract_id,
     publicProofs: row.projects.public_proofs,
     anchors: [...(row.milestone_anchors ?? [])]
@@ -1267,7 +1281,7 @@ export async function resolveIdentifier(value: string): Promise<IdentifierHit[]>
       value: (isContract ? row.contract_id : row.tx_hash) ?? needle,
       projectName: row.projects.name,
       projectSlug: row.projects.slug,
-      network: row.network ?? "testnet",
+      network: row.network ?? APP_NETWORK,
       context: "Deployment record",
     });
   }
