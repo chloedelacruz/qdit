@@ -15,7 +15,7 @@ import {
   type TaskPriority,
   type Tone,
 } from "@/lib/constants";
-import { NETWORK_LABELS } from "@/lib/stellar";
+import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import type {
   DeploymentRow,
   MilestoneRow,
@@ -24,6 +24,13 @@ import type {
   ProofRow,
   TaskRow,
 } from "@/lib/queries";
+
+/**
+ * A member's wallet is on whatever network this deployment runs on — there is no
+ * per-member network to read, so the explorer link has to follow the app.
+ */
+const APP_NETWORK: StellarNetwork =
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
 /**
  * One row component per entity, shared between the project-scoped and
@@ -430,7 +437,7 @@ export function MemberListRow({
 
         {member.walletAddress ? (
           <span className="hidden shrink-0 @2xl:inline">
-            <HashLink value={member.walletAddress} kind="account" network="testnet" />
+            <HashLink value={member.walletAddress} kind="account" network={APP_NETWORK} />
           </span>
         ) : null}
 
