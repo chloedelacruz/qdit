@@ -18,6 +18,8 @@
   <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
   <a href="https://x.com/tyrontalusan/status/2090972526537212390"><img src="https://img.shields.io/badge/▶_Video_on_X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Video on X" /></a>
+  <a href="https://qdit.atalusan.com/user-guide"><img src="https://img.shields.io/badge/📖_User_guide-6D5EF8?style=for-the-badge&logoColor=white" alt="User guide" /></a>
+  <a href="https://qdit.atalusan.com/docs"><img src="https://img.shields.io/badge/⌘_Technical_docs-4B5563?style=for-the-badge&logoColor=white" alt="Technical documentation" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing"><img src="https://img.shields.io/badge/Mainnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Mainnet feedback responses" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing"><img src="https://img.shields.io/badge/Testnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Testnet feedback responses" /></a>
@@ -32,6 +34,8 @@
   <a href="https://qdit.atalusan.com">Live demo</a> ·
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing">Demo video</a> ·
   <a href="https://x.com/tyrontalusan/status/2090972526537212390">Video on X</a> ·
+  <a href="https://qdit.atalusan.com/user-guide">User guide</a> ·
+  <a href="https://qdit.atalusan.com/docs">Technical docs</a> ·
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing">Pitch deck</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing">Mainnet feedback responses</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing">Testnet feedback responses</a> ·
@@ -107,6 +111,8 @@ screenshot.
 | Asset | Link |
 | --- | --- |
 | **Live app** — running on Stellar Testnet | [qdit.atalusan.com](https://qdit.atalusan.com) |
+| **User guide** — step-by-step, in plain, simplified English | [Open the guide](https://qdit.atalusan.com/user-guide) |
+| **Technical docs** — architecture, contract, data model, anchoring flow | [Open the docs](https://qdit.atalusan.com/docs) |
 | **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing) |
 | **Pitch deck** — 14 slides, problem → architecture → proof | [Open in Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) |
 | **User feedback** — 50 testnet responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing) |
@@ -1162,3 +1168,41 @@ then re-tested by the same twenty testers who filed the complaints.
 - [ ] Board search and status filter, one cross-project “waiting on me” queue *(2 mentions)*
 - [x] Deploy to mainnet — done; the [first production round](#mainnet-feedback--first-production-round) ran against it on real fees
 - [ ] Publish measured mainnet fees per call, and a running per-project cost; the upgrade path stays deliberately closed (new contract id + migration on a bug, no in-place upgrade)
+
+---
+
+# Audit Security Review
+
+Security-focused review of the `fix/network-fallback` branch — the network-label
+fallback change (`web/src/components/rows.tsx`, `web/src/lib/queries.ts`) plus README
+link additions.
+
+## Scope reviewed
+
+- **`README.md`** — adds a badge/link to a video on X. Documentation only.
+- **`web/src/components/rows.tsx`** — introduces `APP_NETWORK`, derived from the
+  `NEXT_PUBLIC_STELLAR_NETWORK` environment variable, and passes it to `HashLink` in
+  place of a hardcoded `"testnet"`.
+- **`web/src/lib/queries.ts`** — introduces the same `APP_NETWORK` constant and uses it
+  as the fallback for `network` in `toProject`, `toMilestone`, and `resolveIdentifier`,
+  replacing hardcoded `"testnet"` literals.
+
+## Data-flow analysis
+
+- `APP_NETWORK` is computed from an environment variable — a trusted build-time value an
+  attacker cannot control in a secure environment. Its domain is constrained to exactly
+  `"mainnet" | "testnet"` by the ternary, so no attacker-controlled string can flow through
+  it.
+- The value only selects a network label / block-explorer base for `HashLink`. It never
+  reaches a query, a shell, a deserializer, a DOM sink (`dangerouslySetInnerHTML` or
+  similar), or any authorization decision.
+- No new user input is introduced. The wallet address rendered by `HashLink` was already
+  sourced from the database before this change — the diff only changes which network label
+  accompanies it, adding no new injection point or trust boundary.
+- This is client-side React/TSX with no unsafe rendering APIs, so it introduces no XSS
+  surface.
+
+## Findings
+
+**No high- or medium-confidence security vulnerabilities were identified in this diff.**
+The changes are a correctness fix (network-label fallback) with no new attack surface.
