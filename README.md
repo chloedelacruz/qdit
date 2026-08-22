@@ -18,10 +18,12 @@
   <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
-  <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing"><img src="https://img.shields.io/badge/User_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="User feedback responses" /></a>
+  <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing"><img src="https://img.shields.io/badge/Mainnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Mainnet feedback responses" /></a>
+  <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing"><img src="https://img.shields.io/badge/Testnet_responses-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Testnet feedback responses" /></a>
 </p>
 
 <p align="center">
+  <a href="https://stellar.expert/explorer/public/contract/CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD"><img src="https://img.shields.io/badge/Stellar-Mainnet_Contract-00B050?style=for-the-badge&logo=stellar&logoColor=white" alt="Stellar mainnet" /></a>
   <a href="https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG"><img src="https://img.shields.io/badge/Stellar-Testnet_Contract-7D00FF?style=for-the-badge&logo=stellar&logoColor=white" alt="Stellar testnet" /></a>
 </p>
 
@@ -29,7 +31,9 @@
   <a href="https://qdit.atalusan.com">Live demo</a> ·
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing">Demo video</a> ·
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing">Pitch deck</a> ·
-  <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing">User feedback responses</a> ·
+  <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing">Mainnet feedback responses</a> ·
+  <a href="https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing">Testnet feedback responses</a> ·
+  <a href="https://stellar.expert/explorer/public/contract/CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD">Mainnet contract on Stellar Expert</a> ·
   <a href="https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG">Testnet contract on Stellar Expert</a>
 </p>
 
@@ -103,7 +107,9 @@ screenshot.
 | **Live app** — running on Stellar Testnet | [qdit.atalusan.com](https://qdit.atalusan.com) |
 | **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing) |
 | **Pitch deck** — 14 slides, problem → architecture → proof | [Open in Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) |
-| **User feedback** — 50 responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing) |
+| **User feedback** — 50 testnet responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing) |
+| **Mainnet feedback** — 20 responses from the first production round | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing) |
+| **Mainnet product test** — 20 wallets · 23 projects · 67 transactions | [Jump to the tester table](#mainnet-product-test--20-wallets--67-transactions) |
 | **Testnet product test** — 50 testers · 119 milestones · 354 transactions | [Jump to the tester table](#testnet-product-test--50-testers--119-milestones--354-transactions) |
 | **Live testnet transaction** — `approve_milestone`, ledger 4126783 | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5) |
 | **Deployed contract** — `milestone_proof`, 6 functions | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
@@ -145,8 +151,34 @@ full-width on `/tasks` and inside a half-width dashboard panel:
 
 ## Deployed contracts
 
-The app runs against **testnet**. Mainnet is not deployed yet — the contract has no admin
-address and no `upgrade` entry point, so that decision is deliberately still open.
+The app now runs against both **mainnet** and **testnet**. The contract carries no admin
+address and no `upgrade` entry point on either network — that decision stayed closed even
+for the mainnet deploy, so a bug means shipping a new contract id and migrating the
+`chain_contract_id` the app stores per project, not an in-place upgrade.
+
+### Stellar Mainnet — production
+
+The mainnet deployment the [first production round](#mainnet-feedback--first-production-round)
+ran against, on real fees.
+
+| Field | Value |
+| --- | --- |
+| **Network** | Stellar Mainnet (`Public Global Stellar Network ; September 2015`) |
+| **Contract ID** | [`CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD`](https://stellar.expert/explorer/public/contract/CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD) |
+| **CLI alias** | `milestone_proof` |
+| **WASM hash** | `d4bbe221cbe9837cf277448d0fe3aa99cf0dd9213a98db15b671a34dadf2a8b4` |
+| **Deploy transaction** | [`3a5242e6ffa6777b960f7800d1a8a9f709d1dba6fa0cbab558e8b070aa5a923b`](https://stellar.expert/explorer/public/tx/3a5242e6ffa6777b960f7800d1a8a9f709d1dba6fa0cbab558e8b070aa5a923b) |
+| **Deployed** | 2026-08-21 11:07:10 UTC |
+
+**Explorer links**
+
+- [Contract on Stellar Expert](https://stellar.expert/explorer/public/contract/CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD)
+- [Deploy transaction (Expert)](https://stellar.expert/explorer/public/tx/3a5242e6ffa6777b960f7800d1a8a9f709d1dba6fa0cbab558e8b070aa5a923b)
+- [WASM upload transaction (Expert)](https://stellar.expert/explorer/public/tx/ed14a71d5bf81007e44bddcb7d9064e44936e7c8580820cc0d01b7011f9d68a8)
+
+The **WASM hash is byte-identical to the [testnet deployment](#stellar-testnet--sandbox)**
+below — the same reproducible build is live on both networks, so `stellar contract build`
+against this source yields the hash deployed to mainnet and testnet alike.
 
 ### Stellar Testnet — sandbox
 
@@ -156,7 +188,6 @@ address and no `upgrade` entry point, so that decision is deliberately still ope
 | **Contract ID** | [`CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG`](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
 | **CLI alias** | `milestone_proof` |
 | **WASM hash** | `d4bbe221cbe9837cf277448d0fe3aa99cf0dd9213a98db15b671a34dadf2a8b4` |
-| **Deployer** | `GC5N7WGWHHZEJ2PEIYAREWKGNQSWR3CME2HXBXKOJ65F3MPL27R774JZ` |
 | **Size** | 10777 bytes optimized (11899 unoptimized) · 6 exported functions |
 
 **Explorer links**
@@ -189,6 +220,62 @@ Beyond the 26 contract unit tests, checked against the deployed contract itself:
 > auth entry it holds a local key for. A transfer between two identities that are both in
 > your keystore therefore looks like it needed one signature. It did not — use an address
 > you hold no key for to see the requirement.
+
+### Mainnet product test — 20 wallets · 67 transactions
+
+Twenty testers ran the live app against the mainnet contract
+[`CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD`](https://stellar.expert/explorer/public/contract/CBJHS2ZGKYJJUQR6YNSMZYGDPVHEESKGONN7IEOUMBDWAMUYAVIOOZRD)
+on **21 August 2026**, paying real fees. Every wallet, transaction and proof below is real
+mainnet activity — each link opens on Stellar Expert.
+
+| Contract call | Transactions |
+| --- | -: |
+| `create_project_ref` | 23 |
+| `submit_milestone_proof` | 22 |
+| `approve_milestone` | 22 |
+| `reject_milestone` | 0 |
+| **Total** | **67** |
+
+That total is corroborated independently of this repo: the contract has emitted **67 events**,
+one per write, matching the 67 transactions above.
+
+Milestone outcomes: **22 submitted, all 22 approved, none rejected**, across 23 registered
+projects. **No transaction failed on the ledger.** The retry pain the
+[feedback round](#mainnet-feedback--first-production-round) describes was entirely
+client-side — submissions that timed out before the transaction confirmed, then landed on a
+retry — so every write that reached the chain succeeded. The one exception is the round's
+1★: **Nadia Concepcion's project registered, but her submit and approve never reached the
+ledger** — one transaction, no milestone anchored, exactly the "nothing went through" she
+reported.
+
+#### Testers
+
+**Projects** counts `create_project_ref` calls; **Approved** is approved / submitted
+milestones; **Anchor txs** counts the `submit` / `approve` / `reject` transactions on top of
+the register txs.
+
+| # | Tester | Rating | Wallet | Projects | Approved | Anchor txs | Register tx | Latest proof |
+| -: | --- | :-: | --- | -: | -: | -: | --- | --- |
+| 1 | Eduardo Villaraza | ★★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GAQRL7NAKESPASHRCT3RSQBMFCMI7EA6W4BBT7CNZRT4TIQB22XSCS6Y) | 3 | 3/3 | 6 | [View](https://stellar.expert/explorer/public/tx/b8c7992a756f31e1ad63014bbc2fe8ebecadadbab410ee895a840e4be1ef7240) | [View](https://stellar.expert/explorer/public/tx/fcf744aaae932b80701989790700b6ae2ec9bb8dc7be850ad1141d51c4d04d01) |
+| 2 | Cristina Sison | ★★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GAG2AFHTCRTGSQDP55QBLMQZHWEZDWS3P4VMJCOB3VEUY4EQNL6GPLA4) | 2 | 2/2 | 4 | [View](https://stellar.expert/explorer/public/tx/790f183c03be017ba33bf58b6e222295df1bbba36fc0667d048b397cb56d3983) | [View](https://stellar.expert/explorer/public/tx/65c155387f64b27798eda31af6cdf6837624bf36235af357809d6b2ef5f8a234) |
+| 3 | Noel Panganiban | ★★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GD4XCJJTYD3AYYKR5H6JTOFVQPQVL5DBJPRUOWYMWMVYUGRXTLTSAX5N) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/1e270ef281c6bbd25955af0c4595a31cf875a9be0be9cab4c9784cd9c63b4c2d) | [View](https://stellar.expert/explorer/public/tx/557dbcd8658c489e59858e586644f6bf0a93183afb3ee6c3777b25d05b3cdee6) |
+| 4 | Grace Abella | ★★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GD2TXUDRM45MC2STWI5M3SV3MA22OGA2QN6QBMJXD44HWU6GWXCEMVNX) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/a5e6b90fe6628a024284fad951ad0a35f9c307f1aad766e4c3f426427c3dd6a9) | [View](https://stellar.expert/explorer/public/tx/d78477700a77f37e8649d49e65826137a4a013f8f2fee2983d09cbcf15dced30) |
+| 5 | Ronaldo Espino | ★★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GAZW7JYFEG5QZQVL27DSQ73C7B2E2XHPUQPCHZLRUPGWHBEN2A5HYI2A) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/12cd00cb618f84bcbd8c22cd3821a4ab9314ab76fa2677fe28fc9631e9be4eec) | [View](https://stellar.expert/explorer/public/tx/afa90747f58407d16326e2b1a7db27ebbfb653732a04bfd007c65055d2396cbc) |
+| 6 | Angelica Cabrera | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GCQKL6IYXYZLKI45XSTHEXFZQWDERGK4YC7EO6AYJJ6NOSLFZGC2S3MY) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/05e825266f4dba1d4700554530013803251ce8f8a437879282898aa15a6ac1b9) | [View](https://stellar.expert/explorer/public/tx/5c7df1c1e81f07e30c2f762a03a8839e5513aa6f53a74f5e32a554437e991c77) |
+| 7 | Benigno Tolentino | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GDPWWMJWFDEASE2CNJSJU77YZRXEWFXHLEKFZFTCI6A3YY7ISRPV4IID) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/763d7b2084575ab92938e29cba4729eecf076aafa2c0ae70ac7bf829661b67cf) | [View](https://stellar.expert/explorer/public/tx/62c3be5d8f9d3be6a2f5e3a97c375f55b44a02f1c6f4095dd248de71b1d2c512) |
+| 8 | Divina Marquez | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GAMCOOKGQOOHEK3M5EZMKK5GLKGMW57LARRSLORILJHPDR53WPKJPLCX) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/c938f1aac9696038094d36a75cec13d0b0e9b78afb7fa08d2bb12e5b9f3a953f) | [View](https://stellar.expert/explorer/public/tx/2666a82e6622bf5732a162c58d3da9722ae9e89917f6a745e61f23c2d1f9d501) |
+| 9 | Arturo Delgado | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GAJ2WFEOFXUUEZCWHE3QZ6NQNM3VGLWYXULURQVAX2O2AGHHYXQZ46SI) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/bfe4afcedee179cdd4f10314c5bba8fac85370e43d7343c3ac42eea233b8fd34) | [View](https://stellar.expert/explorer/public/tx/b7a28c274f9581b37a1e901c838bbf829fa3ac2827bd4c1b48008477787428bc) |
+| 10 | Jasmine Rosales | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GDTIITH3SVRCRVX5LFSUI7W4BVAGTD2LR6DRUE425ESLLUWZTKZGC45P) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/32f7986da603309b44553a21df68e7f021b04e24ba0c52a60b9fd9bec3c628a8) | [View](https://stellar.expert/explorer/public/tx/944fb6a5db7d2a69d963d0d40419f2157a2d7f99007dbe2ac99c7eb8b9646eb4) |
+| 11 | Rodel Ramirez | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GCX3BCTFTEHKXFS6NKL62PKCHC5MKZPLHJCCV7HWPE7EQLC6KJAJF52W) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/dc35ea8966763c5ec95ca758a1a531019e7a5b6275ce71f6bc3538e9dd5b6665) | [View](https://stellar.expert/explorer/public/tx/b87d97aeb5b2341d3bcbc86295d1724bf401172a7f8708b2c3925170b131e319) |
+| 12 | Melinda Corpuz | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GCPCY4ARPBXNS7WQSWX4F3GJCN74XP4GYAIGKN5IMCRWEJKVEVXE2UQW) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/6674a2efb5adc778f0d8fa8e63ccffcdaa16a5495e29e88d7c28a3aacb0ae525) | [View](https://stellar.expert/explorer/public/tx/160d186b301c19036ced825b180cb801034e0d33864d0f37b10e24d5e80fd725) |
+| 13 | Efren Alcantara | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GACMTOUKJY5JSZKNQPGDPK3X74BBGBB3XAI5GBEV2HQNX2WB457LLOZB) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/525685ad3d5a816334ab3b21f5e7fbd765a0b336b8dac255af8c14bbb22fd68e) | [View](https://stellar.expert/explorer/public/tx/c74038c773f5454909e8b1617a78557f763a0ce341206e3ea24d9c0433417ef7) |
+| 14 | Katrina Yulo | ★★★ | [View wallet](https://stellar.expert/explorer/public/account/GCRJ3GMWNNPP643OPT42RYG4CQ43F2X543M3L7P5PBFALGCXQAXXS2CH) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/cbbe4d134959254b222eeef1314779bed196dad7ea83a45b2ab8ecd81a44f79a) | [View](https://stellar.expert/explorer/public/tx/547e4ae717a18ead31dd1a77aa8376096fbe24ead1e370f55c3c034ce95960aa) |
+| 15 | Wilfredo Balingit | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GDND4CP2WYO6YJWZ6XQOYFAQJOXZEW5KT6WFTSDQ2LINKU2HDFKVOQJ5) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/3b815c3f159f308f7f415cc8887775c658400c4e1b77386c3f2b00f8fdda1497) | [View](https://stellar.expert/explorer/public/tx/e076fda8b9aa3e2f342ad824ca827f5324d35ce547dabea38c8962ab3701ac19) |
+| 16 | Nadia Concepcion | ★ | [View wallet](https://stellar.expert/explorer/public/account/GDN5YMOOTD464UCLPITYU2FAI7E3QWFY5DKEWDZZLNNLOLXODKH4A4FU) | 1 | 0/0 | 0 | [View](https://stellar.expert/explorer/public/tx/9dfee0b337a1e7e4ef15b6cb9a1c36848eace6fb0cd9de01710ae17f6f0bb1c8) | — |
+| 17 | Joselito Ferrer | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GDM6SEVNBW4MRXZY52O4RT5CNGKH2A2BGLRDFPMBQX76IL3DIU3UAS3X) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/d719a55e9b2331a4453c06b1546d78becb05509ced3999ca8d228be3e73c83aa) | [View](https://stellar.expert/explorer/public/tx/964f348cf3fc42949226f6c20cb2b14b1de5c352c28a89316264caa16e769481) |
+| 18 | Marites Enriquez | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GDDFWRGTQIXBZOLXYZJ5C6N3DA6D5U44KEJRX7D2DYJI4HF3PCJHFBQQ) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/a345dfe993f3e8907c4815f522ec2098f9fca7e50d9eae3a6365b57ee8f60d89) | [View](https://stellar.expert/explorer/public/tx/c759838192a5c00c2a7f02513e62d6a9b072deb7bfe925f5efe2de53d11ec67c) |
+| 19 | Danilo Quimpo | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GBEWQDCXWAO7F7R5MOSUHWU6HCFEK4VR62BNEIKSC6FR5IOBYP7FNTO5) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/e8cbbffde549eced7091ed901b5b513a3f1f51f3f2e49d63bf9625e329cd9332) | [View](https://stellar.expert/explorer/public/tx/8dc970ba7bc2b30aea743c18814fdcb05f3e34216ec0f952a8c069bd08e56c60) |
+| 20 | Perla Vergara | ★★★★ | [View wallet](https://stellar.expert/explorer/public/account/GCDDP62VUE2YB3PF2ZK36COY4XORLCJEASGCSQT23BSN6T3Z6NWMRGXH) | 1 | 1/1 | 2 | [View](https://stellar.expert/explorer/public/tx/d3ecf022ccadcdfba003e4f4b17d090de9baf2a8cc493c3ef24fcef29837d5ff) | [View](https://stellar.expert/explorer/public/tx/e83db7c082cf666406a4572d7ae2893ec0c3935d6ceb1faace551c61a439421d) |
 
 ### Testnet product test — 50 testers · 119 milestones · 354 transactions
 
@@ -464,6 +551,92 @@ fifty responses, collected against
 precision and network labelling → email notifications → board scale, with mainnet fees
 measured before any mainnet deploy. Access comes first: it produced both 2★ responses while
 the contract itself was, again, never the complaint.
+
+---
+
+## Mainnet feedback — first production round
+
+After the testnet program, `milestone_proof` was deployed to **Stellar Mainnet** and twenty
+testers ran the live app against it on **21 August 2026**, paying real fees on real work — a
+school capstone portfolio, a vaccine cold-chain compliance log, coffee-export traceability,
+land-title chain-of-custody, a municipal water ledger, a photography-gig milestone.
+
+📊 **[Open the mainnet responses in Google Sheets](https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing)**
+
+| Round | Date | Testers | Average rating |
+| --- | --- | -: | -: |
+| **Mainnet — first production round** | 21 Aug 2026 | **20** | **4.05 / 5** |
+
+| Metric | Value |
+| --- | --- |
+| Responses | **20 / 20** |
+| Average rating | **4.05 / 5** |
+| Promoters (4–5) | 18 (90%) |
+| Passives (3) | 1 (5%) |
+| Detractors (1–2) | 1 (5%) |
+
+| Rating | Count | Share |
+| -: | -: | -: |
+| ★★★★★ | 5 | 25% |
+| ★★★★☆ | 13 | 65% |
+| ★★★☆☆ | 1 | 5% |
+| ★★☆☆☆ | 0 | 0% |
+| ★☆☆☆☆ | 1 | 5% |
+
+### The headline: submission reliability, not the record
+
+The chain still told the truth — no tester reported a wrong status, a missing proof, or a
+hash that did not match. What changed on mainnet is **getting the transaction to land**.
+Every 5★ had a clean first-attempt run; **every rating below 5★ hit the retry path** — the
+submit step timed out and the auto-retry recovered it only after two or three attempts.
+Submission reliability is the entire gap between a 4 and a 5 this round.
+
+> “it worked in the end but honestly the submit step failed on me twice before it finally
+> went through and my heart kind of dropped… the auto-retry is a lifesaver, but when it says
+> ‘attempt 2/4 failed’ with no other context i genuinely thought the whole thing was broken.
+> please just add a friendlier message like ‘still working, hang tight’ so people like me
+> don't panic mid-transaction” — 4★
+> “the milestone was confirmed successfully, albeit after two failed submission attempts…
+> expose a clearer transaction status during those retries, as auditors will require
+> confidence that the record is being written and not silently dropped” — 4★
+
+The single 1★ is that same failure at its worst — the retries never landed:
+
+> “my project got created fine but then the submit AND approve steps just kept failing, retry
+> after retry, and in the end nothing went through at all. so my photography gig milestone is
+> basically stuck with no proof recorded and i have literally nothing to show for it” — 1★
+
+So the auto-retry is doing real work — fourteen of twenty runs would have failed outright
+without it — but it is papering over a submission path that times out too often on mainnet,
+and its own copy (“attempt 2/4 failed”) reads as breakage rather than progress.
+
+| Theme | Mentions | Worst rating |
+| --- | -: | -: |
+| Submit times out; recovers only after 2–3 auto-retries | 14 | 3★ |
+| Retries exhausted — nothing anchored at all | 1 | 1★ |
+| Retry messaging reads as failure; no “still working” reassurance | 3 | 4★ |
+| Export the record — CSV, formatted audit trail, email receipt | 3 | 4★ |
+| Shareable read-only link so clients verify without screenshots | 1 | 5★ |
+| Native / mobile app | 1 | 5★ |
+| Batch submit | 1 | 5★ |
+| Attach a photo next to the proof hash | 1 | 4★ |
+| Rename a project after creation | 1 | 4★ |
+| Formal uptime / reliability guarantee for production | 1 | 4★ |
+| Beginner-friendly docs | 1 | 4★ |
+
+**What the fives said** — the clean runs are worth reading, because they are exactly what the
+retry path is keeping the rest of the cohort from:
+
+> “i used this to record the final milestone of my school capstone… all three steps —
+> creation, submission, and approval — were confirmed without a single error on the first
+> attempt. for an academic setting where proof of authorship matters, this is precisely the
+> tamper-evident record i was hoping for” — 5★
+> “ngl this is just a spreadsheet i can actually trust lol. approved instantly, zero drama.
+> gimme a csv export and im sold” — 5★
+
+Several of the asks — CSV export, an email receipt, a read-only verification link, project
+context on the proof page — are the **same items the 50 testnet testers raised**, now carrying
+real-money weight. The genuinely new signal from mainnet is the reliability one.
 
 ---
 
@@ -864,9 +1037,9 @@ The command prints the contract id (`C…`). Save it as
 
 ### Deploy (mainnet)
 
-Not deployed to mainnet yet — settle the upgrade path first. When it is, the command is
-the same against `--network mainnet` with a funded real account. Simulate first; a
-simulation is free and needs no key.
+Now deployed — see the [mainnet contract table](#stellar-mainnet--production) above. The
+command is the same against `--network mainnet` with a funded real account. Simulate first;
+a simulation is free and needs no key.
 
 ```bash
 stellar contract deploy \
@@ -966,6 +1139,13 @@ then re-tested by the same twenty testers who filed the complaints.
 - [x] Full anchor history per milestone, and the fee quoted before the wallet popup ([`9b9e6fb`](https://github.com/chloedelacruz/qdit/commit/9b9e6fb))
 - [x] Legible hashes in light mode, rows sized for a thumb ([`d955f79`](https://github.com/chloedelacruz/qdit/commit/d955f79))
 
+### Top priority from the mainnet round
+
+- [ ] **Submission reliability on mainnet** — the submit path times out too often; harden RPC submission and timeout/retry handling so a milestone lands on the first attempt *(14 of 20 runs needed 2–3 retries; one exhausted them and anchored nothing — the round's only 1★)*
+- [ ] Retry UX — replace “attempt 2/4 failed” with a “still working, hang tight” progress state and a live transaction status, so a recovering retry never reads as breakage *(3 mentions, incl. an auditor who needs to see the record is being written, not silently dropped)*
+- [ ] Corroborated on mainnet, already open below: CSV export, email receipt/notifications, a shareable read-only proof link, and project context on the proof page — now with real-money weight behind them
+- [ ] Smaller mainnet asks: rename a project after creation, attach a photo next to the proof hash, batch submit, a native/mobile app, beginner-friendly docs, and a formal uptime guarantee for production users
+
 ### Open, in priority order from the 50 current responses
 
 - [ ] Invitation delivery — a pending invite is a row, and the email path stops answering the account-existence question *(4 mentions, both 2★)*
@@ -978,4 +1158,5 @@ then re-tested by the same twenty testers who filed the complaints.
 - [ ] Rate-limit `/api/verify-tx` before onboarding at any scale — the public page is the moment that matters
 - [ ] Email delivery on the notification event, plus milestone due reminders *(1 mention, 3★)*
 - [ ] Board search and status filter, one cross-project “waiting on me” queue *(2 mentions)*
-- [ ] Settle the contract upgrade path, measure mainnet fees, then deploy to mainnet
+- [x] Deploy to mainnet — done; the [first production round](#mainnet-feedback--first-production-round) ran against it on real fees
+- [ ] Publish measured mainnet fees per call, and a running per-project cost; the upgrade path stays deliberately closed (new contract id + migration on a bug, no in-place upgrade)
