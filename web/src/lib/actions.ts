@@ -37,6 +37,15 @@ export type ActionState = {
   ok?: boolean;
   error?: string;
   fieldErrors?: Record<string, string>;
+  /**
+   * An on-chain submission that reached the network but was not confirmed
+   * within its budget. Not an error — the transaction may still land — so it
+   * carries the hash rather than a message, and the UI shows "still confirming"
+   * with a way to check, instead of a failure. Only the anchoring actions in
+   * `chain/actions.ts` ever set this.
+   */
+  pending?: boolean;
+  txHash?: string;
 };
 
 function toFieldErrors(error: ZodError): ActionState {

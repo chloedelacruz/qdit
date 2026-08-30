@@ -76,8 +76,21 @@ export function ProjectChainRegistration({
         const signed = await signTransaction(prepared.data.xdr);
         const result = await submitProjectRegistration(projectId, signed);
 
-        if (result.error) toast.error(result.error);
-        else toast.success("Project registered on chain");
+        if (result.error) {
+          toast.error(result.error);
+        } else if (result.pending) {
+          // Submitted but not confirmed within the budget. Registration is
+          // recorded only once it lands, so tell the truth: it is on the
+          // network, and re-running once it confirms is safe — the contract
+          // answers "already registered" rather than registering twice.
+          toast.message("Submitted — still confirming on chain", {
+            description:
+              "Registration is saved once it confirms. If it doesn't appear shortly, register again — a landed one is recognised, not duplicated.",
+            duration: 10_000,
+          });
+        } else {
+          toast.success("Project registered on chain");
+        }
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : String(caught);
         if (isRejectedError(message)) return;
