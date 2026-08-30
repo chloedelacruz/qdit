@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { Download } from "lucide-react";
+
 import { CreateProofDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
 import { ProofRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { ProofListRow } from "@/components/rows";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
@@ -49,7 +52,22 @@ export default async function ProjectProofsPage({
         ]}
         title="Proofs"
         description="Contract IDs, transaction hashes and proof links recorded against this project."
-        actions={<CreateProofDialog projectId={project.id} milestones={milestones} />}
+        actions={
+          <>
+            {/* The anchor history as a file you can file. A tester copied hashes
+                into a quarterly report one by one and asked for exactly this;
+                it is the on-chain anchor log, distinct from the pasted-proof
+                list below. Download attribute plus the route's own
+                Content-Disposition, so it saves rather than navigates. */}
+            <Button asChild variant="outline" size="sm">
+              <a href={`/api/export/anchors?project=${project.slug}`} download>
+                <Download data-icon="inline-start" />
+                Anchor history (CSV)
+              </a>
+            </Button>
+            <CreateProofDialog projectId={project.id} milestones={milestones} />
+          </>
+        }
       />
 
       <FilterBar
