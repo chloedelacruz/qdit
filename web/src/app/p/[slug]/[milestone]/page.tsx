@@ -81,9 +81,21 @@ export default async function PublicProofPage({
         <Link href="/" className="transition-qdit shrink-0 hover:opacity-80">
           <QditLogo />
         </Link>
-        <div className="ml-auto">
-          <ThemeToggle />
-        </div>
+        {/* The network, named rather than inferred. A tester read a testnet
+            proof as production; on a page whose whole job is to be trusted, the
+            difference between Testnet and Mainnet has to be stated, not guessed
+            from a hash. */}
+        <span
+          className="ml-auto rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground"
+          title={
+            network === "mainnet"
+              ? "Anchored on the Stellar public network."
+              : "Anchored on the Stellar test network — not the public ledger."
+          }
+        >
+          {NETWORK_LABELS[network]}
+        </span>
+        <ThemeToggle />
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-16">
@@ -120,6 +132,39 @@ export default async function PublicProofPage({
             ledger to check it against.
           </p>
         )}
+
+        {/*
+          What the ledger settles, and what it does not. An auditor in the round
+          put it precisely: "the ledger proves a rejection happened and your
+          server tells me why — that's a weaker claim than the landing page
+          makes it sound." So this says it out loud, on the page rather than only
+          in the repo. The chain carries the status, the version and the digest;
+          the reason text lives in qdit and is covered by — not stored in — the
+          hash. A reader who wants to trust nothing here can still recompute the
+          digest and check every transaction on stellar.expert.
+        */}
+        <section className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-border p-4">
+            <h2 className="text-sm font-medium text-success">What the ledger proves</h2>
+            <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+              <li>That this milestone reached each status, and when.</li>
+              <li>The version counter — how many times its proof was submitted.</li>
+              <li>The digest: a fingerprint of the content as it was submitted.</li>
+              <li>Which Stellar account signed each transaction.</li>
+            </ul>
+          </div>
+          <div className="rounded-xl border border-border p-4">
+            <h2 className="text-sm font-medium text-muted-foreground">What it does not</h2>
+            <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+              <li>The content itself is not on chain — only its digest is.</li>
+              <li>
+                Reasons for a decision are written in qdit, not on the ledger.
+                They are shown below as this project published them.
+              </li>
+              <li>The ledger does not vouch for who a signer is off chain.</li>
+            </ul>
+          </div>
+        </section>
 
         <Timeline proof={proof} />
 

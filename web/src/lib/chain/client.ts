@@ -32,9 +32,50 @@ export const NETWORK_PASSPHRASE: Record<StellarNetwork, string> = {
   mainnet: Networks.PUBLIC,
 };
 
-/** How long to keep polling `getTransaction` before giving up. */
-const SUBMIT_TIMEOUT_MS = 30_000;
-const POLL_INTERVAL_MS = 1_000;
+/*
+ * Submission is retried, because until now the app path had none.
+ *
+ * The reliability numbers the testers were shown came from the CLI harness
+ * (`docs/_others/output/lib.sh`), which wraps each invoke in four attempts on a
+ * linear backoff. The web app's submit path had exactly one shot and a 30s
+ * poll — a third of the harness's per-attempt patience, no backoff, no resend —
+ * and that gap is what cost round 2 its 2★ and 3★ ratings (FEEDBACK-PLAN §P0).
+ *
+ * The shape here matches the harness — bounded attempts, linear backoff, only
+ * transient outcomes retried — but the timings are pulled in. The harness's
+ * 15s × 4 sleeps were tuned for an unattended overnight batch; a person is
+ * watching a spinner, so the whole flow is capped by one wall-clock budget they
+ * will actually wait through rather than by four independent 90s windows.
+ */
+const SUBMIT_ATTEMPTS = 4;
+/** Per-attempt confirmation poll, raised from the old single-shot 30s. */
+const SUBMIT_TIMEOUT_MS = 60_000;
+/** Ceiling on the whole submit-and-confirm flow, backoffs and polls included. */
+const SUBMIT_BUDGET_MS = 90_000;
+/** Linear backoff: before its next send, attempt n waits n × this. */
+const RETRY_BACKOFF_MS = 3_000;
+const POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Inclusion-fee headroom, in stroops, bid on every anchor.
+ *
+ * This is the one failure the harness could not teach us out of, because it is
+ * the one retrying harder cannot fix: a round-2 approval died on
+ * `TxInsufficientFee` after four identical attempts. The wallet signs the fee,
+ * so it is fixed the moment the envelope is signed — resending the same bytes
+ * resends the same underbid. The only honest fix is to bid high enough *before*
+ * signing, rather than re-prompting mid-retry for a fresh signature (a worse
+ * experience than a slightly generous initial fee — FEEDBACK-PLAN §P0 item 3).
+ *
+ * It is a maximum, not a charge. Under no congestion the network takes the
+ * minimum inclusion fee and this costs nothing extra; 0.001 XLM is small beside
+ * the Soroban resource fee that dominates an anchor's total. The default base
+ * fee is 100 stroops, so this bids 100× that on the single operation an anchor
+ * carries.
+ */
+const INCLUSION_FEE_STROOPS = "10000";
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type ChainConfig = {
   contractId: string;
@@ -110,10 +151,19 @@ export async function buildUnsigned(request: BuildRequest): Promise<Unsigned> {
   // from drifting apart.
   const methods = client as unknown as Record<
     ChainMethod,
-    (args: Record<string, unknown>) => Promise<AssembledWrite>
+    (
+      args: Record<string, unknown>,
+      options?: { fee?: string },
+    ) => Promise<AssembledWrite>
   >;
 
-  const assembled = await methods[request.method](request.args);
+  // Bid the inclusion fee with headroom so a congestion spike between signing
+  // and landing does not reject the envelope the wallet already signed — see
+  // INCLUSION_FEE_STROOPS. The resource fee is still whatever simulation
+  // computes; this only raises the part the retry loop cannot change later.
+  const assembled = await methods[request.method](request.args, {
+    fee: INCLUSION_FEE_STROOPS,
+  });
 
   /*
    * A failed simulation has to be raised by hand.
@@ -167,12 +217,89 @@ function simulationFailure(assembled: AssembledWrite): string {
     : "The transaction could not be simulated.";
 }
 
-export type SubmitResult = {
-  txHash: string;
-  ledger: number | null;
-  /** Source account of the submitted transaction — the address that signed. */
-  signer: string;
-};
+/**
+ * The three outcomes the caller — and, one step up, the user — actually cares
+ * about, drawn as a discriminated union so none of them can be mistaken for
+ * another.
+ *
+ *   - `confirmed`: the ledger included it and reported success. The only state
+ *     in which a `milestone_anchors` row may be written.
+ *   - `pending`: it was submitted — the hash is real and findable on the
+ *     explorer — but the ledger had not confirmed it within the budget, and it
+ *     was never seen to fail. It may still land. No row is written, but the
+ *     hash is returned so nothing is lost and the anchor can be reconciled.
+ *
+ * A definite failure — `FAILED` on the ledger, or an envelope the RPC refuses
+ * outright — is thrown rather than returned, because it is not an outcome to
+ * record but an error to explain.
+ */
+export type SubmitResult =
+  | {
+      status: "confirmed";
+      txHash: string;
+      ledger: number | null;
+      /** Source account of the submitted transaction — the address that signed. */
+      signer: string;
+      attempts: number;
+    }
+  | {
+      status: "pending";
+      txHash: string;
+      ledger: null;
+      signer: string;
+      attempts: number;
+    };
+
+/** Outcome of polling one submitted hash to a deadline. */
+type PollOutcome =
+  | { kind: "success"; ledger: number | null }
+  | { kind: "failed" }
+  | { kind: "timeout" };
+
+/**
+ * Poll `getTransaction` until the ledger has an answer or the window closes.
+ *
+ * `NOT_FOUND` is not an answer — it means "still being included" — so it keeps
+ * polling. A thrown read (a flaky RPC) is transient the same way and does not
+ * end the window; only `SUCCESS`, `FAILED`, or running out of time do.
+ */
+async function pollForOutcome(
+  server: rpc.Server,
+  hash: string,
+  deadline: number,
+): Promise<PollOutcome> {
+  const windowEnd = Math.min(Date.now() + SUBMIT_TIMEOUT_MS, deadline);
+
+  while (Date.now() < windowEnd) {
+    try {
+      const result = await server.getTransaction(hash);
+      if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+        return { kind: "success", ledger: result.ledger ?? null };
+      }
+      if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+        return { kind: "failed" };
+      }
+    } catch {
+      // A read that failed to reach the RPC. Transient; keep waiting.
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  return { kind: "timeout" };
+}
+
+/**
+ * Linear backoff that never oversteps the overall deadline.
+ *
+ * Returns false when there is no time left to wait, which is the loop's signal
+ * to stop rather than sleep past its own budget.
+ */
+async function backoff(attempt: number, deadline: number): Promise<boolean> {
+  const wait = attempt * RETRY_BACKOFF_MS;
+  if (Date.now() + wait >= deadline) return false;
+  await sleep(wait);
+  return true;
+}
 
 /**
  * Reject a signed transaction that is not the one we prepared.
@@ -222,11 +349,25 @@ function assertInvocation(
 }
 
 /**
- * Verify, submit, and wait for the ledger to include it.
+ * Verify, submit, and wait for the ledger to include it — retrying transient
+ * failures under one wall-clock budget.
  *
- * Returns only once the transaction has actually succeeded. A `TRY_AGAIN_LATER`
- * or a timeout is an error here rather than an optimistic success, because the
- * caller is about to write a row asserting this happened.
+ * The retry is the whole point of this rewrite. Only transient outcomes are
+ * retried — a congested RPC (`TRY_AGAIN_LATER`), an unreachable one, or a
+ * confirmation that has not landed yet. A `FAILED` on the ledger and an
+ * envelope the RPC refuses outright are final: they do not improve on a resend,
+ * so they throw immediately.
+ *
+ * Two subtleties earn their comments:
+ *
+ *   - The hash is derived from the signed envelope *before* the first send, so
+ *     a DUPLICATE, a timeout, or a crash still leaves us the string the user
+ *     needs to find the transaction. Losing it is the round-1 "I have nothing
+ *     to show for it" (FEEDBACK-PLAN §P0 item 5).
+ *   - A `DUPLICATE` means a previous attempt of *this exact envelope* already
+ *     reached the network. That is a success signal, not a failure — the old
+ *     code threw on it and turned a landed transaction into a reported failure.
+ *     Here it sends us to poll the hash, which is where a PENDING goes too.
  */
 export async function submitSigned(
   envelopeXdr: string,
@@ -241,31 +382,106 @@ export async function submitSigned(
     NETWORK_PASSPHRASE[config.network],
   );
 
-  const sent = await server.sendTransaction(transaction);
-  if (sent.status === "ERROR" || sent.status === "DUPLICATE") {
+  // Computable from the envelope alone: the same 32 bytes the network will key
+  // it under and the explorer will show. Known before anything is sent.
+  const txHash = transaction.hash().toString("hex");
+
+  const deadline = Date.now() + SUBMIT_BUDGET_MS;
+  let attempts = 0;
+  // True once any attempt has reached the network. The difference between
+  // "pending, keep the hash" and "nothing was sent, nothing was charged".
+  let submitted = false;
+
+  while (attempts < SUBMIT_ATTEMPTS && Date.now() < deadline) {
+    attempts += 1;
+
+    let sent: Awaited<ReturnType<rpc.Server["sendTransaction"]>>;
+    try {
+      sent = await server.sendTransaction(transaction);
+    } catch {
+      // The RPC threw rather than answering — a network fault, a 5xx, a rate
+      // limit. Transient: wait and resend the same envelope.
+      if (attempts >= SUBMIT_ATTEMPTS || !(await backoff(attempts, deadline))) break;
+      continue;
+    }
+
+    if (sent.status === "PENDING" || sent.status === "DUPLICATE") {
+      submitted = true;
+      const outcome = await pollForOutcome(server, txHash, deadline);
+      if (outcome.kind === "success") {
+        return { status: "confirmed", txHash, ledger: outcome.ledger, signer: source, attempts };
+      }
+      if (outcome.kind === "failed") {
+        throw new Error("The transaction failed on chain.");
+      }
+      // timeout: not confirmed in this window, not seen to fail. Try again —
+      // a resend of an already-landed envelope comes back DUPLICATE and sends
+      // us right back here to poll the same hash, so this is safe.
+      if (attempts >= SUBMIT_ATTEMPTS || !(await backoff(attempts, deadline))) break;
+      continue;
+    }
+
+    if (sent.status === "TRY_AGAIN_LATER") {
+      // The RPC is explicitly asking us to hold off. Congestion, not rejection.
+      if (attempts >= SUBMIT_ATTEMPTS || !(await backoff(attempts, deadline))) break;
+      continue;
+    }
+
+    // ERROR: the envelope was refused outright — malformed, a bad sequence, a
+    // fee it will not even queue. Resending the same bytes cannot change that.
     throw new Error(`The network rejected the transaction (${sent.status}).`);
   }
 
-  const deadline = Date.now() + SUBMIT_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const result = await server.getTransaction(sent.hash);
-
-    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
-      return {
-        txHash: sent.hash,
-        ledger: result.ledger ?? null,
-        signer: source,
-      };
-    }
-    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error("The transaction failed on chain.");
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  if (submitted) {
+    // Submitted at least once, never confirmed within the budget, never seen to
+    // fail. It may yet land; hand the hash back so it can be watched and
+    // reconciled instead of orphaned.
+    return { status: "pending", txHash, ledger: null, signer: source, attempts };
   }
 
   throw new Error(
-    `The transaction was submitted but not confirmed within ${SUBMIT_TIMEOUT_MS / 1000}s. ` +
-      `Check ${sent.hash} on the explorer before retrying.`,
+    `The transaction could not be submitted after ${attempts} ` +
+      `attempt${attempts === 1 ? "" : "s"}. The network may be unreachable — ` +
+      `nothing was sent, so nothing was charged. Try again in a moment.`,
   );
+}
+
+/**
+ * Poll a hash we already submitted and, if the ledger now has it, report the
+ * outcome. Used to reconcile a `pending` submission after the fact — the tab
+ * that timed out, or a later visit — without resubmitting anything.
+ *
+ * Returns `pending` while the ledger still has no answer, so a caller can keep
+ * offering to check rather than deciding prematurely that it was lost.
+ */
+export async function reconcileHash(
+  txHash: string,
+  config: ChainConfig,
+): Promise<
+  | { status: "confirmed"; ledger: number | null; signer: string }
+  | { status: "pending" }
+  | { status: "failed" }
+> {
+  const server = rpcServer(config.network);
+  try {
+    const result = await server.getTransaction(txHash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      // The signer comes off the confirmed envelope, never off the client's
+      // word — the same rule the live submit path follows, so a reconciled row
+      // is indistinguishable from one recorded inline.
+      const envelope = TransactionBuilder.fromXDR(
+        result.envelopeXdr.toXDR("base64"),
+        NETWORK_PASSPHRASE[config.network],
+      );
+      const signer = "innerTransaction" in envelope ? envelope.feeSource : envelope.source;
+      return { status: "confirmed", ledger: result.ledger ?? null, signer };
+    }
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      return { status: "failed" };
+    }
+  } catch {
+    // Unreachable RPC — indistinguishable from "not yet" to the caller, and the
+    // safe reading is "still pending" so nothing is discarded.
+  }
+  return { status: "pending" };
 }

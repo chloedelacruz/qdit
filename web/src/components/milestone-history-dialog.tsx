@@ -1,5 +1,7 @@
 "use client";
 
+import { Download } from "lucide-react";
+
 import { HashLink } from "@/components/hash-link";
 import {
   Dialog,
@@ -8,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NETWORK_LABELS } from "@/lib/stellar";
 import type { MilestoneRow } from "@/lib/queries";
@@ -126,6 +129,28 @@ export function MilestoneHistoryDialog({
             </ol>
           </ScrollArea>
         )}
+
+        {/* The certificate: this same history as one self-contained file a
+            regulated tester can archive — the round-2 ask that was specific, "a
+            signed export I can attach to a report that still verifies six months
+            from now". Offered only once something is on chain, because a
+            certificate of nothing is not evidence of anything. */}
+        {milestone.anchors.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+            <p className="text-xs text-muted-foreground">
+              A single file, verifiable against the ledger without qdit.
+            </p>
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={`/api/export/certificate?project=${milestone.projectSlug}&milestone=${milestone.id}`}
+                download
+              >
+                <Download data-icon="inline-start" />
+                Download certificate
+              </a>
+            </Button>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

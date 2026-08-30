@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   buildUnsigned,
   chainConfig,
+  reconcileHash,
   submitSigned,
+  type ChainConfig,
   type ChainMethod,
 } from "@/lib/chain/client";
 import {
@@ -184,6 +186,15 @@ export async function submitProjectRegistration(
   try {
     const result = await submitSigned(signedXdr, config, "create_project_ref");
 
+    if (result.status === "pending") {
+      // Submitted but not yet confirmed. Registration is all-or-nothing on the
+      // project row (the chain_registration_complete constraint), so nothing is
+      // written until the ledger confirms — but the hash is handed back so it is
+      // not lost, and re-running registration once it lands comes back
+      // "already registered" from the contract rather than double-registering.
+      return { pending: true, txHash: result.txHash };
+    }
+
     const supabase = await createClient();
     const { error } = await supabase
       .from("projects")
@@ -340,34 +351,141 @@ export async function submitMilestoneAnchor(
   try {
     const result = await submitSigned(signedXdr, config, METHOD[action]);
 
-    // Read the version back from the contract rather than assuming it. The
-    // record is the authority on what was just written, and a concurrent
-    // submission would make a locally guessed counter wrong.
-    const version = await readVersion(config, milestone.project_id, milestoneId);
+    if (result.status === "pending") {
+      // Submitted, but the ledger had not confirmed it within the budget. No
+      // anchor row is written — the version cannot be read back until it lands,
+      // and a row here would assert a confirmation we do not have — but the hash
+      // goes back to the caller so it can be watched and reconciled rather than
+      // lost. This is the round-1 "nothing to show for it" (FEEDBACK-PLAN §P0).
+      return { pending: true, txHash: result.txHash };
+    }
 
-    const { error } = await supabase.from("milestone_anchors").insert({
-      milestone_id: milestoneId,
-      project_id: milestone.project_id,
+    return await recordAnchor(config, {
+      milestoneId,
+      projectId: milestone.project_id,
       action,
-      proof_hash: action === "submit" ? proofHash : null,
-      version,
-      contract_id: config.contractId,
-      network: config.network,
-      tx_hash: result.txHash,
-      // From the verified transaction, never from profiles.wallet_address:
-      // the signature is the proof, the profile is a convenience field.
-      signer_address: result.signer,
+      proofHash,
+      txHash: result.txHash,
+      signer: result.signer,
       ledger: result.ledger,
-      created_by: user.id,
+      userId: user.id,
     });
-
-    if (error) return { error: error.message };
-
-    revalidateAll();
-    return { ok: true };
   } catch (error) {
     return { error: describe(error) };
   }
+}
+
+/**
+ * Reconcile a submission that came back `pending`.
+ *
+ * The transaction was sent and the caller kept the hash; this asks the ledger
+ * whether it has since landed, and if it has, records the anchor exactly as the
+ * live path would have. Nothing is resubmitted — a pending transaction is
+ * already on the network, and sending it again would only race itself.
+ *
+ * Idempotent by the `tx_hash` unique constraint: reconciling twice, or
+ * reconciling one the live poll also caught, records the row once and reports
+ * success both times.
+ */
+export async function reconcileMilestoneAnchor(
+  milestoneId: string,
+  action: AnchorAction,
+  txHash: string,
+  proofHash: string | null,
+): Promise<ActionState> {
+  const config = chainConfig();
+  if (!config) return { error: notConfigured() };
+
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const supabase = await createClient();
+  const { data: milestone } = await supabase
+    .from("milestones")
+    .select("id, project_id")
+    .eq("id", milestoneId)
+    .maybeSingle();
+
+  if (!milestone) return { error: "That milestone no longer exists." };
+
+  try {
+    const outcome = await reconcileHash(txHash, config);
+    if (outcome.status === "pending") {
+      // Still not on the ledger. Not an error — keep the hash, keep waiting.
+      return { pending: true, txHash };
+    }
+    if (outcome.status === "failed") {
+      return { error: "That transaction failed on chain. Nothing was recorded." };
+    }
+
+    return await recordAnchor(config, {
+      milestoneId,
+      projectId: milestone.project_id,
+      action,
+      proofHash,
+      txHash,
+      signer: outcome.signer,
+      ledger: outcome.ledger,
+      userId: user.id,
+    });
+  } catch (error) {
+    return { error: describe(error) };
+  }
+}
+
+/**
+ * Read the version back from the contract, then write the anchor row.
+ *
+ * Shared by the live submit path and the after-the-fact reconcile so a
+ * reconciled anchor is byte-for-byte what an inline one would have been. The
+ * version is read from the contract, not guessed: the record is the authority
+ * on what was written, and a concurrent submission would make a local counter
+ * wrong.
+ */
+async function recordAnchor(
+  config: ChainConfig,
+  params: {
+    milestoneId: string;
+    projectId: string;
+    action: AnchorAction;
+    proofHash: string | null;
+    txHash: string;
+    signer: string;
+    ledger: number | null;
+    userId: string;
+  },
+): Promise<ActionState> {
+  const version = await readVersion(config, params.projectId, params.milestoneId);
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("milestone_anchors").insert({
+    milestone_id: params.milestoneId,
+    project_id: params.projectId,
+    action: params.action,
+    // Only a submission carries a hash; approve and reject attest to one already
+    // on chain.
+    proof_hash: params.action === "submit" ? params.proofHash : null,
+    version,
+    contract_id: config.contractId,
+    network: config.network,
+    tx_hash: params.txHash,
+    // From the verified transaction, never from profiles.wallet_address: the
+    // signature is the proof, the profile is a convenience field.
+    signer_address: params.signer,
+    ledger: params.ledger,
+    created_by: params.userId,
+  });
+
+  if (error) {
+    // The tx_hash unique constraint firing means this anchor is already
+    // recorded — a reconcile catching what the live poll also caught. The row
+    // exists, which is all anyone wanted.
+    if (error.code === "23505") return { ok: true };
+    return { error: error.message };
+  }
+
+  revalidateAll();
+  return { ok: true };
 }
 
 /** `get_milestone_status().version`, read through simulation — free, no signature. */

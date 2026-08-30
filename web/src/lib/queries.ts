@@ -1467,3 +1467,215 @@ export async function getPublicProof(
 
   return data as unknown as PublicProof;
 }
+
+// ---------------------------------------------------------------------------
+// Export — proof you can take away (FEEDBACK-PLAN §P1)
+//
+// Both readers below go through the same RLS as everything else: `createClient`
+// carries the caller's session, so a non-member gets nothing and both functions
+// return null, which the download routes turn into a 404. Nothing here widens
+// what a caller can already see in the app — it only rearranges it into a file.
+// ---------------------------------------------------------------------------
+
+/** One anchor, flattened with its milestone's title and status for a report. */
+export type AnchorExportRow = {
+  milestoneId: string;
+  milestoneTitle: string;
+  status: MilestoneRow["status"];
+  action: MilestoneAnchor["action"];
+  version: number;
+  proofHash: string | null;
+  txHash: string;
+  ledger: number | null;
+  network: StellarNetwork;
+  signerAddress: string;
+  createdAt: string;
+};
+
+type ProjectChainMeta = {
+  name: string;
+  slug: string;
+  contractId: string | null;
+  ownerAddress: string | null;
+  network: StellarNetwork;
+  registeredTx: string | null;
+};
+
+export type AnchorExport = {
+  project: ProjectChainMeta;
+  rows: AnchorExportRow[];
+};
+
+type AnchorExportRecord = {
+  milestone_id: string;
+  action: MilestoneAnchor["action"];
+  version: number;
+  proof_hash: string | null;
+  tx_hash: string;
+  ledger: number | null;
+  network: StellarNetwork;
+  signer_address: string;
+  created_at: string;
+  milestones: { title: string; status: MilestoneRow["status"] } | null;
+};
+
+function toProjectChainMeta(project: {
+  name: string;
+  slug: string;
+  chain_contract_id: string | null;
+  chain_owner_address: string | null;
+  chain_network: StellarNetwork | null;
+  chain_registered_tx: string | null;
+}): ProjectChainMeta {
+  return {
+    name: project.name,
+    slug: project.slug,
+    contractId: project.chain_contract_id,
+    ownerAddress: project.chain_owner_address,
+    // The network the project registered on outlives a later app repoint; fall
+    // back to this deployment's network only for a project not yet registered.
+    network: project.chain_network ?? APP_NETWORK,
+    registeredTx: project.chain_registered_tx,
+  };
+}
+
+const PROJECT_CHAIN_SELECT =
+  "name, slug, chain_contract_id, chain_owner_address, chain_network, chain_registered_tx";
+
+function toAnchorExportRow(row: AnchorExportRecord): AnchorExportRow {
+  return {
+    milestoneId: row.milestone_id,
+    milestoneTitle: row.milestones?.title ?? "(deleted milestone)",
+    status: row.milestones?.status ?? "proposed",
+    action: row.action,
+    version: row.version,
+    proofHash: row.proof_hash,
+    txHash: row.tx_hash,
+    ledger: row.ledger,
+    network: row.network,
+    signerAddress: row.signer_address,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Every anchor in a project, for the CSV a tester wanted for their quarterly
+ * report. Ordered by milestone, then by time within it, so the file reads as a
+ * milestone-by-milestone history rather than a flat log.
+ */
+export async function getAnchorExport(slug: string): Promise<AnchorExport | null> {
+  const supabase = await createClient();
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select(`id, ${PROJECT_CHAIN_SELECT}`)
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (!project) return null;
+
+  const { data: anchors } = await supabase
+    .from("milestone_anchors")
+    .select(
+      "milestone_id, action, version, proof_hash, tx_hash, ledger, network, signer_address, created_at, milestones!inner(title, status)",
+    )
+    .eq("project_id", project.id)
+    .order("created_at", { ascending: true });
+
+  const rows = ((anchors ?? []) as unknown as AnchorExportRecord[])
+    .map(toAnchorExportRow)
+    .sort((a, b) =>
+      a.milestoneTitle < b.milestoneTitle
+        ? -1
+        : a.milestoneTitle > b.milestoneTitle
+          ? 1
+          : a.createdAt < b.createdAt
+            ? -1
+            : a.createdAt > b.createdAt
+              ? 1
+              : 0,
+    );
+
+  return { project: toProjectChainMeta(project), rows };
+}
+
+export type MilestoneCertificate = {
+  project: ProjectChainMeta;
+  milestone: { id: string; title: string; status: MilestoneRow["status"] };
+  /** Digest of the latest submission — the current on-chain fingerprint. */
+  currentDigest: string | null;
+  anchors: AnchorExportRow[];
+  reviews: {
+    fromStatus: MilestoneRow["status"];
+    toStatus: MilestoneRow["status"];
+    reason: string | null;
+    createdAt: string;
+  }[];
+  generatedAt: string;
+};
+
+/**
+ * One milestone's full record, for the per-milestone certificate a regulated
+ * tester files. Same RLS, same null-means-404 contract as the CSV above.
+ */
+export async function getMilestoneExport(
+  slug: string,
+  milestoneId: string,
+): Promise<MilestoneCertificate | null> {
+  const supabase = await createClient();
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select(`id, ${PROJECT_CHAIN_SELECT}`)
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (!project) return null;
+
+  const { data: milestone } = await supabase
+    .from("milestones")
+    .select("id, title, status")
+    .eq("id", milestoneId)
+    .eq("project_id", project.id)
+    .maybeSingle();
+
+  if (!milestone) return null;
+
+  const [{ data: anchors }, { data: reviews }] = await Promise.all([
+    supabase
+      .from("milestone_anchors")
+      .select(
+        "milestone_id, action, version, proof_hash, tx_hash, ledger, network, signer_address, created_at, milestones!inner(title, status)",
+      )
+      .eq("milestone_id", milestoneId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("milestone_reviews")
+      .select("from_status, to_status, reason, created_at")
+      .eq("milestone_id", milestoneId)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const anchorRows = ((anchors ?? []) as unknown as AnchorExportRecord[]).map(
+    toAnchorExportRow,
+  );
+
+  // The current fingerprint is the most recent submission's digest — approve
+  // and reject carry none, they attest to a hash already on chain.
+  const currentDigest =
+    [...anchorRows].reverse().find((row) => row.action === "submit")?.proofHash ?? null;
+
+  return {
+    project: toProjectChainMeta(project),
+    milestone: { id: milestone.id, title: milestone.title, status: milestone.status },
+    currentDigest,
+    anchors: anchorRows,
+    reviews: (reviews ?? []).map((review) => ({
+      fromStatus: review.from_status as MilestoneRow["status"],
+      toStatus: review.to_status as MilestoneRow["status"],
+      reason: review.reason as string | null,
+      createdAt: review.created_at as string,
+    })),
+    generatedAt: new Date().toISOString(),
+  };
+}

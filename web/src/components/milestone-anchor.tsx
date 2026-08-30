@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   prepareMilestoneAnchor,
+  reconcileMilestoneAnchor,
   submitMilestoneAnchor,
   type AnchorAction,
   type PreparedAnchor,
@@ -101,6 +102,10 @@ export function MilestoneAnchorDialog({
   const [unfunded, setUnfunded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // A transaction that reached the network but has not been confirmed yet. Not
+  // a failure — it may still land — so it holds the hash rather than an error,
+  // and the dialog offers to re-check it instead of showing a red message.
+  const [pendingTx, setPendingTx] = useState<string | null>(null);
   // The prepared, simulated transaction — held between the quote and the
   // signature so the thing signed is exactly the thing that was quoted.
   const [quote, setQuote] = useState<PreparedAnchor | null>(null);
@@ -111,6 +116,7 @@ export function MilestoneAnchorDialog({
     setError(null);
     setUnfunded(null);
     setDone(null);
+    setPendingTx(null);
     setQuote(null);
     setSigner(null);
   }
@@ -187,6 +193,62 @@ export function MilestoneAnchorDialog({
           return;
         }
 
+        if (result.pending && result.txHash) {
+          // Submitted, not yet confirmed. Hold the hash and let the user watch
+          // it or re-check it — never a red error for a transaction that may
+          // still be landing.
+          setPendingTx(result.txHash);
+          setStage("idle");
+          toast.message("Submitted — still confirming on chain");
+          return;
+        }
+
+        setDone(signer);
+        setStage("idle");
+        toast.success(`${VERB[action]} — written to the ledger`);
+      } catch (caught) {
+        handleFailure(caught);
+      }
+    });
+  }
+
+  /**
+   * Ask the ledger whether a pending transaction has since landed.
+   *
+   * Resubmits nothing — the transaction is already on the network. If it has
+   * confirmed, the anchor is recorded now, exactly as the live path would have.
+   * If it still has not, that is not an error either: keep the hash, keep the
+   * option to check again.
+   */
+  function recheck() {
+    if (!pendingTx || !quote || !signer) return;
+
+    setError(null);
+
+    startTransition(async () => {
+      try {
+        setStage("submitting");
+        const result = await reconcileMilestoneAnchor(
+          milestoneId,
+          action,
+          pendingTx,
+          quote.proofHash,
+        );
+
+        if (result.error) {
+          setError(result.error);
+          setPendingTx(null);
+          setStage("idle");
+          return;
+        }
+
+        if (result.pending) {
+          setStage("idle");
+          toast.message("Still confirming — check again in a moment");
+          return;
+        }
+
+        setPendingTx(null);
         setDone(signer);
         setStage("idle");
         toast.success(`${VERB[action]} — written to the ledger`);
@@ -244,7 +306,7 @@ export function MilestoneAnchorDialog({
                 ? "Checking the rules and simulating the transaction…"
                 : stage === "signing"
                   ? "Waiting for your wallet…"
-                  : "Submitted. Waiting for the ledger to close…"}
+                  : "Submitted. Waiting for the network to confirm — this can take a moment when it is busy. Nothing is lost while it works."}
             </p>
           ) : null}
 
@@ -299,6 +361,30 @@ export function MilestoneAnchorDialog({
             </div>
           ) : null}
 
+          {/*
+            Pending: submitted, not yet confirmed. Framed as progress, never
+            failure — the auditor in the round asked to "watch it land on the
+            explorer while the app is still waiting", and the hash below is the
+            link that lets them. The transaction is on the network; the record
+            is written the moment it confirms, here or on a later visit.
+          */}
+          {pendingTx && !done ? (
+            <div className="well space-y-2 rounded-md border border-warning/40 px-3 py-2">
+              <p className="text-warning">
+                Submitted, but the network has not confirmed it yet.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This happens when the network is busy. Your transaction is not
+                lost — it is on {NETWORK_LABELS[network]} and you can watch it
+                land on the explorer. It is recorded as soon as it confirms.
+              </p>
+              <p className="flex flex-wrap items-center gap-2 pt-0.5">
+                <span className="text-xs text-muted-foreground">Transaction</span>
+                <HashLink value={pendingTx} kind="tx" network={network} lead={8} tail={8} />
+              </p>
+            </div>
+          ) : null}
+
           {error ? <p className="text-destructive">{error}</p> : null}
 
           {done ? (
@@ -321,7 +407,16 @@ export function MilestoneAnchorDialog({
             number nobody reads.
           */}
           {!done ? (
-            quote ? (
+            pendingTx ? (
+              // The transaction is already on the network; this polls it rather
+              // than signing anything new.
+              <Button onClick={recheck} disabled={busy}>
+                {busy ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : null}
+                Check status
+              </Button>
+            ) : quote ? (
               <Button onClick={confirm} disabled={busy}>
                 <ICON.anchor aria-hidden />
                 Sign and submit
