@@ -57,6 +57,19 @@
 
 ---
 
+## Project status
+
+> **Everything documented below is completed, self-funded prior work.** The v1
+> `milestone_proof` contract, the web app, and the testnet and mainnet tester rounds were
+> built and paid for by the team, and are not part of any pending funding request.
+>
+> **Next phase — planned, not started:** a new `milestone_proof` v2 contract on **Stellar
+> testnet** with on-chain team roles and M-of-N milestone approval, Merkle batch anchoring
+> with inclusion proofs, and `@qdit/verify` v0.1, a minimal open-source verifier (library +
+> CLI). v1 stays deployed and unchanged; v2 is a separate deployment.
+
+---
+
 ## Problem
 
 Builder teams plan and track in Linear, Notion, Jira and a spreadsheet — then claim
@@ -859,6 +872,22 @@ cargo manifests, electoral ballot registry, clinical trial data. Those testers d
 share link, they wanted an artifact they can file: a timestamped certificate, an audit-trail
 export, an API into the system they already run. The certificate and export now exist; an API
 into the system they already run is the next surface that cohort is asking for.
+
+---
+
+## Instawards review feedback
+
+| Field | Review |
+| --- | --- |
+| **Project name** | qdit |
+| **Verdict** | **REJECT** |
+| **Reason** | Funds application-layer UI completion for an already deployed and tested system, bordering on funding past work. |
+| **Rule reference** | BUDGET (Reject past work) |
+| **Gap** | The SOW explicitly states “This sprint improves an existing, deployed and tested system rather than building a new product” and notes the contract is “already deployed on Stellar testnet, where 50 external testers have produced 354 transactions”. The requested work is primarily UI/UX wrapping of existing, completed contract functionality. |
+| **Blocks** | Soroban smart contract (existing), `@stellar/stellar-sdk`, StellarWalletsKit, SEP-10. |
+| **Budget** | $5,000 allocated to app-layer UI features (invites, handover screen, cost tracking) for a product that has already undergone external testing and deployment. |
+| **Security** | Minor centralization risk noted: Supabase Postgres is the source of truth for invites and board state, though the SOW correctly isolates this from on-chain source of truth. |
+| **Feedback** | Instawards fund new, scoped technical execution, not the belated UI completion of previously deployed and tested contracts. |
 
 ---
 
