@@ -37,8 +37,11 @@ export const GET = apiRoute(async ({ auth }) => {
   return ok({ user, client_id: auth.clientId });
 });
 
-// Read-only endpoint: every other method is an unknown endpoint (see
-// `endpointNotFound`), not Next's empty-body 405.
+// Read-only endpoint: every other method is an unknown endpoint (D-27, see
+// `endpointNotFound`), not Next's empty-body 405 or its automatic HEAD and
+// OPTIONS answers.
+export const HEAD = endpointNotFound;
+export const OPTIONS = endpointNotFound;
 export const POST = endpointNotFound;
 export const PUT = endpointNotFound;
 export const PATCH = endpointNotFound;

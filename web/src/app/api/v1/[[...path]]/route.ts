@@ -8,9 +8,11 @@ import { endpointNotFound } from "@/lib/api/handler";
  * contract (section 6) promises a JSON `not_found` for "unknown path or id".
  * Specific routes always win over a catch-all, so endpoints added later need
  * nothing from this file. See `endpointNotFound` for why it authenticates
- * first.
+ * first, and `ROUTE_METHODS` for why HEAD and OPTIONS are listed too.
  */
 export const GET = endpointNotFound;
+export const HEAD = endpointNotFound;
+export const OPTIONS = endpointNotFound;
 export const POST = endpointNotFound;
 export const PUT = endpointNotFound;
 export const PATCH = endpointNotFound;
