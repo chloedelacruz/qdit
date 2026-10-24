@@ -468,22 +468,41 @@ export type MilestoneDefaults = {
  * through it via `MilestoneStatusMenu` — which offers only legal transitions
  * and knows approve/reject belong to the project owner. A status select on this
  * form would be a second, permissive path to the same column.
+ *
+ * `titleLocked` is for a milestone linked to a doqtri heading, whose title
+ * doqtri owns (D-12). The input stays in the form, read-only rather than
+ * disabled, so the value is still submitted and the schema still passes;
+ * `updateMilestone` then leaves the column alone.
  */
 function MilestoneFields({
   state,
   defaults,
+  titleLocked = false,
 }: {
   state: ActionState;
   defaults?: MilestoneDefaults;
+  titleLocked?: boolean;
 }) {
   return (
     <>
-      <Field id="m-title" label="Title" error={state.fieldErrors?.title}>
+      <Field
+        id="m-title"
+        label="Title"
+        error={state.fieldErrors?.title}
+        hint={
+          titleLocked
+            ? "Managed by doqtri. Rename the heading in the plan and the title follows."
+            : undefined
+        }
+      >
         <Input
           id="m-title"
           name="title"
           required
-          autoFocus
+          autoFocus={!titleLocked}
+          readOnly={titleLocked}
+          aria-readonly={titleLocked || undefined}
+          className={titleLocked ? "text-muted-foreground" : undefined}
           maxLength={300}
           defaultValue={defaults?.title}
         />
@@ -543,12 +562,15 @@ export function EditMilestoneDialog({
   milestoneId,
   projectId,
   defaults,
+  titleLocked = false,
   open,
   onOpenChange,
 }: {
   milestoneId: string;
   projectId: string;
   defaults: MilestoneDefaults;
+  /** Linked to a doqtri heading: the title is shown read-only (D-12). */
+  titleLocked?: boolean;
 } & EditProps) {
   return (
     <FormDialog
@@ -566,7 +588,7 @@ export function EditMilestoneDialog({
           <input type="hidden" name="projectId" value={projectId} />
           {/* updateMilestone ignores status; the schema still requires one. */}
           <input type="hidden" name="status" value="proposed" />
-          <MilestoneFields state={state} defaults={defaults} />
+          <MilestoneFields state={state} defaults={defaults} titleLocked={titleLocked} />
         </>
       )}
     </FormDialog>
