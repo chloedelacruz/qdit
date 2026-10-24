@@ -18,8 +18,10 @@ import {
   type TaskStatus,
 } from "@/lib/constants";
 import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
+import { doqtriOrigin, isDoqtriDocUrl } from "@/lib/doqtri-origin";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
+import { docUrlHost } from "@/lib/plan-docs";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
@@ -783,6 +785,19 @@ export type MilestoneRow = {
    * rejects it — a submission is not a decision.
    */
   reviews: MilestoneReview[];
+  /**
+   * The doqtri heading this milestone came from, or null. While it is set the
+   * title is doqtri's (D-12): shown read-only here, renamed only through the
+   * API, and refused by the database for a qdit session.
+   */
+  link: MilestoneLink | null;
+};
+
+export type MilestoneLink = {
+  docId: string;
+  nodeId: string;
+  /** The plan's title as doqtri last sent it; null only for a stale copy. */
+  docTitle: string | null;
 };
 
 /**
@@ -823,7 +838,8 @@ const MILESTONE_SELECT = `
   done:tasks(count),
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
   milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at),
-  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at)
+  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at),
+  milestone_external_links(doc_id, node_id, doc_title)
 `;
 
 type MilestoneRecord = {
@@ -867,7 +883,14 @@ type MilestoneRecord = {
     reviewer_id: string | null;
     created_at: string;
   }[];
+  /**
+   * One-to-one (milestone_id is unique), so PostgREST sends an object or
+   * null. An array is accepted as well rather than trusted not to appear.
+   */
+  milestone_external_links: ExternalLinkRecord | ExternalLinkRecord[] | null;
 };
+
+type ExternalLinkRecord = { doc_id: string; node_id: string; doc_title: string | null };
 
 function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
   const taskCount = countOf(row.tasks);
@@ -889,6 +912,10 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
     ?.proof_hash;
 
   const proofs = row.stellar_proofs ?? [];
+
+  const external = Array.isArray(row.milestone_external_links)
+    ? (row.milestone_external_links[0] ?? null)
+    : row.milestone_external_links;
 
   return {
     id: row.id,
@@ -968,6 +995,9 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
         reviewerName: members.get(review.reviewer_id ?? "")?.name || "A former member",
         createdAt: review.created_at,
       })),
+    link: external
+      ? { docId: external.doc_id, nodeId: external.node_id, docTitle: external.doc_title }
+      : null,
   };
 }
 
@@ -1044,6 +1074,78 @@ export async function listMilestoneOptionsByProject(): Promise<
   }
 
   return byProject;
+}
+
+// ---------------------------------------------------------------------------
+// Plan docs (doqtri)
+// ---------------------------------------------------------------------------
+
+export type PlanDocRow = {
+  id: string;
+  docId: string;
+  title: string;
+  /**
+   * The doc's `doc_url`, or null when it is not on doqtri's origin (D-45). The
+   * API refuses such a URL, but a project admin can still write one through
+   * PostgREST, and `DOQTRI_ORIGIN` can change under stored rows; the row then
+   * shows the title without a link rather than send anyone off doqtri.
+   */
+  url: string | null;
+  /** The host `url` opens, or `""` when there is no `url`. */
+  host: string;
+  /** Milestones in this project linked to one of the doc's headings. */
+  milestoneCount: number;
+  linkedAt: string;
+};
+
+/**
+ * The doqtri docs linked to a project, oldest first — the order they were
+ * added in, which is the order a team reads its plans in.
+ *
+ * Linking happens in doqtri (POST /api/v1/projects/{id}/docs, D-09/D-10);
+ * qdit only lists them, so this is read-only.
+ */
+export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
+  const origin = readDoqtriOrigin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("project_doc_links")
+    .select("id, doc_id, doc_title, doc_url, created_at, milestone_external_links(count)")
+    .eq("project_id", projectId)
+    .order("created_at");
+
+  return ((data ?? []) as unknown as {
+    id: string;
+    doc_id: string;
+    doc_title: string;
+    doc_url: string;
+    created_at: string;
+    milestone_external_links: EmbeddedCount;
+  }[]).map((row) => {
+    const url = origin && isDoqtriDocUrl(row.doc_url, origin) ? row.doc_url : null;
+    return {
+      id: row.id,
+      docId: row.doc_id,
+      title: row.doc_title,
+      url,
+      host: url ? docUrlHost(url) : "",
+      milestoneCount: countOf(row.milestone_external_links),
+      linkedAt: row.created_at,
+    };
+  });
+}
+
+/**
+ * `doqtriOrigin()`, or null when `DOQTRI_ORIGIN` is misconfigured: the page
+ * still renders, with no doc links, and the error is logged.
+ */
+function readDoqtriOrigin(): string | null {
+  try {
+    return doqtriOrigin();
+  } catch (error) {
+    console.error("plan docs:", error);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

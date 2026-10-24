@@ -102,7 +102,11 @@ export function invalidRequest(
  * The subset of a PostgREST error this module reads. Structural, so a test can
  * pass a literal and so it also fits errors from `rpc()`.
  */
-export type DatabaseErrorLike = { code?: string | null; message?: string };
+export type DatabaseErrorLike = {
+  code?: string | null;
+  message?: string;
+  hint?: string | null;
+};
 
 /**
  * Maps a failed Supabase query onto the contract's vocabulary.
@@ -144,4 +148,61 @@ export function internalError(): ApiError {
     "internal_error",
     "Something went wrong on qdit's side. Retry with backoff.",
   );
+}
+
+/**
+ * The `409 conflict` reasons the contract lists (section 8), each with the
+ * sentence a caller may show. Clients branch on the reason, never on this.
+ */
+export const CONFLICT_MESSAGES = {
+  doc_linked_elsewhere:
+    "This doc is linked to another qdit project. Unlink it there first.",
+  doc_not_linked:
+    "This doc is not linked to that project. Link it with POST /projects/{id}/docs first.",
+  node_already_linked: "That doqtri node already has a qdit milestone.",
+  milestone_not_linked:
+    "This milestone is not linked to a doqtri node, so its title is edited in qdit.",
+} as const;
+
+export type ConflictReason = keyof typeof CONFLICT_MESSAGES;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * `409 conflict` with `details.reason`, plus `details.milestone_id` when the
+ * conflict names a milestone the caller can see.
+ */
+export function conflict(reason: ConflictReason, milestoneId?: string | null): ApiError {
+  return new ApiError("conflict", CONFLICT_MESSAGES[reason], {
+    details: milestoneId ? { reason, milestone_id: milestoneId } : { reason },
+  });
+}
+
+/**
+ * Maps an error raised by one of the `/api/v1` RPCs
+ * (20261024120000_integration_links.sql) onto the contract:
+ *
+ *   P0002  -> not_found, with the caller's message (the RPCs raise it both for
+ *             a project the caller cannot see and for a missing row, which
+ *             must read the same — section 6)
+ *   QD409  -> conflict, `message` is the reason and `hint` the milestone id;
+ *             only the reasons this endpoint lists are honoured
+ *   else   -> databaseError(): 42501 is forbidden, and so on
+ */
+export function rpcError(
+  error: DatabaseErrorLike,
+  options: { notFound: string; reasons: readonly ConflictReason[] },
+): ApiError {
+  if (error.code === "P0002") return new ApiError("not_found", options.notFound);
+
+  if (error.code === "QD409") {
+    const reason = options.reasons.find((r) => r === error.message);
+    if (reason) {
+      const hint = error.hint?.trim().toLowerCase();
+      return conflict(reason, hint && UUID.test(hint) ? hint : null);
+    }
+    return internalError();
+  }
+
+  return databaseError(error);
 }

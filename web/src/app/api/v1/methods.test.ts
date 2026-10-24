@@ -24,8 +24,13 @@ const { ROUTE_METHODS, endpointNotFound } = await import("@/lib/api/handler");
 /** Route directory under `app/api/v1` -> the methods the contract lists. */
 const SUPPORTED: Record<string, string[]> = {
   "[[...path]]": [],
+  "links/[id]": ["PATCH", "DELETE"],
   me: ["GET"],
+  milestones: ["POST"],
+  "milestones/[id]": ["GET", "PATCH"],
   projects: ["GET"],
+  "projects/[id]/docs": ["POST"],
+  "projects/[id]/docs/[doc_id]": ["DELETE"],
 };
 
 const V1 = dirname(fileURLToPath(import.meta.url));

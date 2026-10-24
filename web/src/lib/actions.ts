@@ -352,6 +352,12 @@ export async function createMilestone(
 /**
  * Title, description and due date. Status is deliberately absent — it moves
  * through `updateMilestoneStatus`, which enforces the contract's transitions.
+ *
+ * The title is left out for a milestone linked to a doqtri heading: doqtri
+ * owns that title (D-12), the form shows it read-only, and the database's
+ * `guard_milestone_update()` refuses a qdit session's change to it anyway.
+ * Skipping it here keeps the rest of the edit working rather than failing the
+ * whole save on a field the user could not change.
  */
 export async function updateMilestone(
   _prev: ActionState,
@@ -371,10 +377,17 @@ export async function updateMilestone(
   if (!parsed.success) return toFieldErrors(parsed.error);
 
   const supabase = await createClient();
+  const { count: linked, error: linkError } = await supabase
+    .from("milestone_external_links")
+    .select("id", { count: "exact", head: true })
+    .eq("milestone_id", milestoneId);
+
+  if (linkError) return { error: friendly(linkError.message, linkError.code) };
+
   const { error } = await supabase
     .from("milestones")
     .update({
-      title: parsed.data.title,
+      ...(linked ? {} : { title: parsed.data.title }),
       description: orNull(formData.get("description")),
       due_date: orNull(formData.get("dueDate")),
     })
