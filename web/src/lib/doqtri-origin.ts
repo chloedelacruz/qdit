@@ -10,8 +10,9 @@
  *   - the API refuses a `doc_url` off the origin (`POST /projects/{id}/docs`,
  *     `400 invalid_request` on `doc_url`);
  *   - the "Plan docs" row renders `doc_url` as a link only when it is on the
- *     origin, which covers rows written some other way (a direct PostgREST
- *     insert by a project admin, or a row written before the origin changed).
+ *     origin, which covers rows the API did not check (a row written before
+ *     the origin changed, or `link_project_doc()` called over PostgREST by a
+ *     project admin's own session; no client writes the table directly, D-48).
  *
  * Server-only by convention: `DOQTRI_ORIGIN` has no `NEXT_PUBLIC_` prefix.
  * Pure otherwise, so the rules are unit tested directly.
@@ -48,17 +49,17 @@ export function doqtriOrigin(value: string | undefined = process.env.DOQTRI_ORIG
 const UNSAFE = /[\s\u0000-\u001f\u007f-\u009f\\]/;
 
 /**
- * True when `url` starts with `origin` and the origin is the whole authority:
- * what follows it is nothing, or a path, query or fragment. So
- * `https://www.doqtri.xyz.evil.example/` and `https://www.doqtri.xyz@evil.example/`
- * are off the origin even though they start with the same characters, and
- * `HTTPS://WWW.DOQTRI.XYZ/` or `https://www.doqtri.xyz:443/` are refused for
- * not being written the way doqtri writes its own URLs.
+ * True when `url` is a valid absolute https URL that starts with `origin`
+ * followed by `/` (contract v1.0.3, section 8): the origin is the whole
+ * authority and a path follows. So `https://www.doqtri.xyz.evil.example/` and
+ * `https://www.doqtri.xyz@evil.example/` are off the origin even though they
+ * start with the same characters; the bare origin, or the origin straight
+ * into a query or fragment, is not a doc URL; and `HTTPS://WWW.DOQTRI.XYZ/`
+ * or `https://www.doqtri.xyz:443/` are refused for not being written the way
+ * doqtri writes its own URLs.
  */
 export function isDoqtriDocUrl(url: string, origin: string): boolean {
-  if (!url.startsWith(origin) || UNSAFE.test(url)) return false;
-  const rest = url.slice(origin.length);
-  if (rest !== "" && !/^[/?#]/.test(rest)) return false;
+  if (!url.startsWith(`${origin}/`) || UNSAFE.test(url)) return false;
   try {
     return new URL(url).origin === origin;
   } catch {
