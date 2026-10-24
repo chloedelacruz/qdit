@@ -11,6 +11,7 @@ import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
 import type { Database } from "@/lib/types/database";
 
 import { ApiError, unauthorized } from "./errors";
+import { signingKey } from "./jwks";
 
 /**
  * Bearer authentication for `/api/v1` — integration contract section 5.
@@ -24,13 +25,22 @@ import { ApiError, unauthorized } from "./errors";
  * ---------------------------------------------------------------------------
  * WHAT IS CHECKED, AND BY WHOM
  * ---------------------------------------------------------------------------
- * `auth.getClaims(token)` (supabase-js 2.111) verifies the signature against
- * `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` with WebCrypto and rejects an
- * expired `exp`. The JWKS is cached per process for ten minutes inside
- * auth-js, keyed by storage key rather than by client instance, so building a
- * client per request does not refetch it. A project still on a symmetric
- * (HS256) secret has no JWKS; `getClaims()` then falls back to asking the Auth
- * server (`getUser(token)`), which is slower but no less verified.
+ * Before anything leaves the process, the token header is decoded here: `alg`
+ * must be ES256 or RS256 and `kid` must name a key in the Auth server's JWKS
+ * (`./jwks.ts`, which owns that cache and its negative cache). Anything else
+ * is a 401 with no network call. Both values are the caller's to choose, and
+ * left to auth-js they would each buy an outbound request: an `HS*` alg or a
+ * missing `kid` makes `getClaims()` ask the Auth server (`getUser(token)`),
+ * and an unknown `kid` makes it refetch the JWKS every time. The contract
+ * (section 5) requires JWKS verification anyway, so the HS256 fallback is not
+ * ours to offer.
+ *
+ * `auth.getClaims(token, { jwks })` (supabase-js 2.111) is then handed exactly
+ * that one key, verifies the signature with WebCrypto and rejects an expired
+ * `exp`. It turns only `AuthError`s into `{ error }`; a header or payload that
+ * is base64url but not JSON, or a key WebCrypto will not import, makes it
+ * throw instead. Those are malformed tokens too, so they are caught and are
+ * the same 401.
  *
  * What `getClaims()` does *not* check, and this module does:
  *
@@ -82,6 +92,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
+/**
+ * The algorithms Supabase asymmetric signing keys use, and the only ones
+ * auth-js can verify. `HS*` is absent on purpose: see the header.
+ */
+const ALGORITHMS = new Set(["ES256", "RS256"]);
+
 /** The issuer every accepted token must name: `<SUPABASE_URL>/auth/v1`. */
 export function expectedIssuer(): string {
   return `${getSupabaseUrl().replace(/\/+$/, "")}/auth/v1`;
@@ -108,13 +124,25 @@ export function readBearerToken(headers: Headers): string | null {
  * Verifies the request's bearer token and returns a client scoped to it.
  *
  * Throws `ApiError`: `unauthorized` for every token problem, `unavailable`
- * when the Auth server or its JWKS cannot be reached — a 401 there would make
+ * when the JWKS cannot be fetched and none is cached — a 401 there would make
  * doqtri refresh a perfectly good grant and, on a second failure, disconnect
  * the user over our outage.
  */
 export async function authenticate(request: Request): Promise<ApiAuth> {
   const token = readBearerToken(request.headers);
   if (!token) throw unauthorized();
+
+  const header = readHeader(token);
+  if (!header) throw unauthorized();
+
+  const key = await signingKey(
+    `${expectedIssuer()}/.well-known/jwks.json`,
+    header.kid,
+  );
+  // A key published for one algorithm is never used with another.
+  if (!key || (key.alg !== undefined && key.alg !== header.alg)) {
+    throw unauthorized();
+  }
 
   const verifier = createSupabaseClient<Database>(
     getSupabaseUrl(),
@@ -130,9 +158,20 @@ export async function authenticate(request: Request): Promise<ApiAuth> {
     },
   );
 
-  const { data, error } = await verifier.auth.getClaims(token);
+  let result: Awaited<ReturnType<typeof verifier.auth.getClaims>>;
+  try {
+    result = await verifier.auth.getClaims(token, { jwks: { keys: [key] } });
+  } catch (thrown) {
+    // Not an AuthError, so not from the network: a payload that is not JSON,
+    // a key WebCrypto refuses. Malformed, therefore 401 (contract section 6).
+    if (thrown instanceof ApiError) throw thrown;
+    throw unauthorized();
+  }
+  const { data, error } = result;
 
   if (error) {
+    // With the key supplied, getClaims() makes no request of its own; this
+    // stays so that an auth-js change which brings one back degrades to 503.
     if (
       isAuthRetryableFetchError(error) ||
       (isAuthApiError(error) && error.status >= 500)
@@ -162,6 +201,27 @@ export async function authenticate(request: Request): Promise<ApiAuth> {
     userId: claims.sub,
     clientId: claims.client_id,
   };
+}
+
+/**
+ * `alg` and `kid` from the token header, or null when the header is not JSON
+ * or names anything this module will not verify. Local only.
+ */
+function readHeader(token: string): { alg: string; kid: string } | null {
+  let header: unknown;
+  try {
+    const segment = token.slice(0, token.indexOf("."));
+    header = JSON.parse(atob(segment.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+
+  if (typeof header !== "object" || header === null) return null;
+  const { alg, kid } = header as Record<string, unknown>;
+
+  if (typeof alg !== "string" || !ALGORITHMS.has(alg)) return null;
+  if (typeof kid !== "string" || kid.length === 0 || kid.length > 255) return null;
+  return { alg, kid };
 }
 
 /** The checks `getClaims()` leaves to us. See the header. */

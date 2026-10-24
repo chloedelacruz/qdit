@@ -12,7 +12,7 @@ vi.mock("@/lib/api/auth", () => ({ authenticate: (r: Request) => authenticate(r)
 vi.mock("@/lib/api/audit", () => ({ recordApiRequest: async () => {} }));
 vi.mock("next/server", () => ({ after: () => {} }));
 
-const { GET } = await import("./route");
+const { GET, POST } = await import("./route");
 const { unauthorized } = await import("@/lib/api/errors");
 
 const USER = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
@@ -100,5 +100,17 @@ describe("GET /api/v1/me", () => {
 
     expect(response.status).toBe(503);
     expect((await response.json()).error.code).toBe("unavailable");
+  });
+
+  it("answers an unsupported method with a JSON not_found, not Next's 405", async () => {
+    signedIn({ data: null, error: null });
+
+    const response = await POST(
+      new Request("https://qdit.test/api/v1/me", { method: "POST", headers: { authorization: "Bearer a.b.c" } }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect((await response.json()).error.code).toBe("not_found");
   });
 });

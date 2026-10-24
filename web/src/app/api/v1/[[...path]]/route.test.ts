@@ -17,7 +17,7 @@ const request = (method: string) =>
 
 const context = { params: Promise.resolve({ path: ["nope"] }) };
 
-describe("/api/v1/[...path]", () => {
+describe("/api/v1/[[...path]]", () => {
   it("is a JSON 404 not_found for an authenticated caller", async () => {
     authenticate.mockResolvedValue({ supabase: {}, claims: {}, userId: "u", clientId: "c-404" });
 
@@ -31,6 +31,19 @@ describe("/api/v1/[...path]", () => {
         details: null,
       });
     }
+  });
+
+  it("covers /api/v1 itself (no path segments)", async () => {
+    authenticate.mockResolvedValue({ supabase: {}, claims: {}, userId: "u", clientId: "c-root" });
+
+    const response = await GET(
+      new Request("https://qdit.test/api/v1", { headers: { authorization: "Bearer a.b.c" } }),
+      { params: Promise.resolve({}) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect((await response.json()).error.code).toBe("not_found");
   });
 
   it("is 401 without a valid token", async () => {

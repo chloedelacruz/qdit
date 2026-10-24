@@ -4,9 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * `supabase-js` is mocked at `createClient` only, so the real error classes
  * (and `isAuthRetryableFetchError` & co.) stay real. Each test decides what
- * `auth.getClaims()` answers; nothing here touches a network.
+ * `auth.getClaims()` answers and what `./jwks` knows; nothing here touches a
+ * network. `auth.verify.test.ts` runs the real `getClaims()` end to end.
  */
 const getClaims = vi.fn();
+const KEY = { kty: "EC", kid: "key-1", alg: "ES256", key_ops: ["verify"] };
+const signingKey = vi.fn();
+vi.mock("./jwks", () => ({
+  signingKey: (...args: unknown[]) => signingKey(...args),
+}));
 const createClient = vi.fn((_url: string, _key: string, options?: { accessToken?: () => Promise<string> }) =>
   options?.accessToken ? { scoped: true, options } : { auth: { getClaims } },
 );
@@ -20,7 +26,10 @@ const { authenticate, expectedIssuer, readBearerToken } = await import("./auth")
 const { ApiError } = await import("./errors");
 
 const URL_ = "https://ref.supabase.co";
-const TOKEN = "aaa.bbb.ccc";
+const b64url = (value: unknown) =>
+  Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
+const tokenWith = (header: unknown) => `${b64url(header)}.bbb.ccc`;
+const TOKEN = tokenWith({ alg: "ES256", kid: "key-1", typ: "JWT" });
 const USER = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const CLIENT = "9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d";
 
@@ -54,6 +63,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = URL_;
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
   vi.spyOn(console, "error").mockImplementation(() => {});
+  signingKey.mockResolvedValue(KEY);
 });
 
 afterEach(() => {
@@ -103,6 +113,60 @@ describe("authenticate", () => {
     expect(getClaims).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["an HS256 header", tokenWith({ alg: "HS256", kid: "key-1" })],
+    ["alg none", tokenWith({ alg: "none", kid: "key-1" })],
+    ["an alg auth-js cannot verify", tokenWith({ alg: "RS512", kid: "key-1" })],
+    ["no kid", tokenWith({ alg: "ES256" })],
+    ["an empty kid", tokenWith({ alg: "ES256", kid: "" })],
+    ["a header that is not JSON", `${b64url("not json!")}.bbb.ccc`],
+    ["a header that is JSON but not an object", tokenWith("null")],
+  ])("401s on %s with no key lookup and no verification", async (_label, token) => {
+    const error = await rejection(authenticate(request(`Bearer ${token}`)));
+
+    expect(error.code).toBe("unauthorized");
+    expect(signingKey).not.toHaveBeenCalled();
+    expect(getClaims).not.toHaveBeenCalled();
+  });
+
+  it("401s on a kid the JWKS does not have, without calling getClaims", async () => {
+    signingKey.mockResolvedValue(null);
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    expect(error.code).toBe("unauthorized");
+    expect(getClaims).not.toHaveBeenCalled();
+  });
+
+  it("401s when the header alg is not the key's alg", async () => {
+    signingKey.mockResolvedValue({ ...KEY, alg: "RS256", kty: "RSA" });
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    expect(error.code).toBe("unauthorized");
+    expect(getClaims).not.toHaveBeenCalled();
+  });
+
+  it("passes the JWKS's 503 through when no key set can be fetched", async () => {
+    signingKey.mockRejectedValue(new ApiError("unavailable", "down"));
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+    expect(error.status).toBe(503);
+  });
+
+  it.each([
+    ["a SyntaxError (payload not JSON)", new SyntaxError("Unexpected token")],
+    ["a plain Error (unsupported alg)", new Error("Invalid alg claim")],
+    ["a DOMException (key import)", new DOMException("bad key", "DataError")],
+  ])("401s, not 500s, when getClaims throws %s", async (_label, thrown) => {
+    getClaims.mockRejectedValue(thrown);
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.code).toBe("unauthorized");
+  });
+
   it("401s when the signature or expiry does not verify", async () => {
     getClaims.mockResolvedValue({
       data: null,
@@ -111,7 +175,8 @@ describe("authenticate", () => {
 
     const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
 
-    expect(getClaims).toHaveBeenCalledWith(TOKEN);
+    expect(getClaims).toHaveBeenCalledWith(TOKEN, { jwks: { keys: [KEY] } });
+    expect(signingKey).toHaveBeenCalledWith(`${URL_}/auth/v1/.well-known/jwks.json`, "key-1");
     expect(error.code).toBe("unauthorized");
   });
 
