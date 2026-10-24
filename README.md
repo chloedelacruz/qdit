@@ -1240,6 +1240,8 @@ simply do not render, which is how CI builds it.
 | `NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` | deployed contract id, or empty to disable anchoring |
 | `SUPABASE_SECRET_KEY` | server-only; required for wallet sign-in |
 | `STELLAR_AUTH_SERVER_SECRET` | server-only; signs the SEP-10 challenge. An ordinary keypair, generated once and never funded |
+| `CRON_SECRET` | server-only; bearer secret Vercel Cron sends to `/api/cron/deliver-webhooks` (webhooks to doqtri) |
+| `INTEGRATION_WEBHOOK_ENCRYPTION_KEY` | server-only; 32-byte base64 key that encrypts webhook signing secrets in `integration_webhooks` |
 
 Every variable is documented inline in [`web/.env.example`](./web/.env.example).
 `NEXT_PUBLIC_*` values are inlined at build time, so changing them in a hosting dashboard
