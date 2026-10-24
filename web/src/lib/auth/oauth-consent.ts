@@ -54,22 +54,44 @@ export type DecisionOutcome =
  * OAuth scopes in Supabase Auth describe identity claims (`openid`, `email`,
  * `profile`), not data access. Data access is decided by Row Level Security,
  * which treats a token carrying a `client_id` claim as an app and allows it
- * only the writes in D-03 — see
+ * only the reads and writes in D-03 — see
  * supabase/migrations/20261024110000_oauth_client_guards.sql. This is the
  * sentence version of that migration, and the consent screen has to say it
  * because the scope list alone would undersell what "Allow" means.
+ *
+ * It describes the grant that migration issues today, nothing ahead of it.
+ * WP-2.4 adds renaming linked milestones and linking documents; the line for
+ * that lands with its migration, not before.
  */
 export const APP_ACCESS = {
   can: [
-    "See the projects you belong to and their milestones",
-    "Create milestones in projects where you are a member or above",
-    "Rename milestones it linked, and link or unlink its documents",
+    "See the projects you belong to and who is in them",
+    "See those projects' milestones and their on-chain proof records",
+    "See your own qdit profile",
+    "Create milestones, as proposed, in projects where you are a member or above",
   ],
   cannot: [
-    "Approve, reject or delete anything",
+    "Approve, reject, edit or delete anything",
     "Change members, roles or project settings",
-    "Touch tasks, proofs, deployments or your profile",
+    "See or change tasks, proofs of work, deployments, review notes or your notifications",
+    "See your teammates' profiles",
   ],
+} as const;
+
+/**
+ * The tables behind the first half of APP_ACCESS, as the guard migration has
+ * them. `readable` are left to the user's own read policies; `ownRowOnly` are
+ * narrowed to the user's own row; `hidden` answer an app with nothing.
+ *
+ * Not used at runtime. oauth-consent.test.ts checks it against the migration's
+ * restrictive SELECT policies, so a change to what an app can read fails a
+ * test until this — and the sentences above — are changed with it. The pgTAP
+ * tripwire in supabase/tests/oauth_client_guards.test.sql holds the same list.
+ */
+export const APP_READ_SCOPE = {
+  readable: ["milestone_anchors", "milestones", "project_members", "projects"],
+  ownRowOnly: ["profiles"],
+  hidden: ["deployments", "milestone_reviews", "notifications", "stellar_proofs", "tasks"],
 } as const;
 
 const SCOPE_LABEL: Record<string, string> = {
