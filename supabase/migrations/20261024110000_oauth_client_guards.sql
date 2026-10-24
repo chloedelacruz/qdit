@@ -89,7 +89,8 @@
 --
 -- And nothing at all from tasks, stellar_proofs, deployments,
 -- milestone_reviews (rejection reasons are written to a person, not to an
--- app) or notifications. A restrictive SELECT policy hides rows rather than
+-- app), notifications or api_requests (the /api/v1 audit log, which no token
+-- can reach anyway). A restrictive SELECT policy hides rows rather than
 -- raising, so a request for those tables answers with an empty list.
 --
 -- Writes it keeps:
@@ -545,7 +546,48 @@ create policy "notifications: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 12. Member invites — SECURITY DEFINER, so RLS cannot guard them
+-- 12. api_requests — the /api/v1 audit log (20261024100000); never the app's
+--
+-- Already closed to every token: RLS on, no permissive policy, and no grant to
+-- anon or authenticated, so only the API server writes it, with the secret
+-- key (service_role bypasses RLS and is unaffected). The guards are here
+-- anyway, like the ones on commands other tables have no policy for, so a
+-- grant or policy added to it later cannot let an app read or rewrite the log
+-- of what it did.
+-- ----------------------------------------------------------------------------
+
+create policy "api_requests: no select by oauth clients"
+  on public.api_requests
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "api_requests: no insert by oauth clients"
+  on public.api_requests
+  as restrictive
+  for insert
+  to public
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "api_requests: no update by oauth clients"
+  on public.api_requests
+  as restrictive
+  for update
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null)
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "api_requests: no delete by oauth clients"
+  on public.api_requests
+  as restrictive
+  for delete
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
+
+-- ----------------------------------------------------------------------------
+-- 13. Member invites — SECURITY DEFINER, so RLS cannot guard them
 --
 -- Each body is the one from its original migration with step (0) added.
 -- Step (0) runs before authorization so an OAuth caller learns nothing, not

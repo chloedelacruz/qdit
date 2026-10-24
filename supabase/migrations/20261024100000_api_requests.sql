@@ -95,7 +95,7 @@ create table public.api_requests (
 );
 
 comment on table public.api_requests is
-  'One row per authenticated /api/v1 request: client, user, method, path, status. Repeat 429s within one rate-limit window are not recorded. Written only by the API server with the secret key; RLS on, no policies.';
+  'One row per authenticated /api/v1 request: client, user, method, path, status. Repeat 429s within one rate-limit window are not recorded. Written only by the API server with the secret key; RLS on, no permissive policies.';
 comment on column public.api_requests.request_id is
   'X-Request-Id sent on the response. Quote it to find the row.';
 comment on column public.api_requests.client_id is
@@ -133,6 +133,8 @@ create index api_requests_created_at_brin
 -- RLS on, no policies: for every role subject to RLS the answer is "no rows".
 -- The privileges are revoked as well so a policy added by mistake later still
 -- opens nothing for `anon` or `authenticated` without a matching GRANT.
+-- (20261024110000_oauth_client_guards.sql later adds restrictive OAuth-client
+-- guards here, as on every table; restrictive policies grant nothing.)
 -- ----------------------------------------------------------------------------
 
 alter table public.api_requests enable row level security;

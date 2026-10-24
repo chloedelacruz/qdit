@@ -43,9 +43,15 @@ select is(
   'RLS is enabled on api_requests'
 );
 
-select policies_are(
-  'public', 'api_requests', array[]::name[],
-  'api_requests has no policies at all'
+-- No permissive policy: nothing grants a client role a row. The only
+-- policies are the restrictive OAuth guards from
+-- 20261024110000_oauth_client_guards.sql, which grant nothing by themselves.
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'api_requests'
+      and permissive = 'PERMISSIVE'),
+  0,
+  'api_requests has no permissive policies'
 );
 
 select table_privs_are(
