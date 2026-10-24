@@ -23,6 +23,23 @@ import { getSupabasePublishableKey, getSupabaseUrl } from './env'
  *     construct a fresh `NextResponse` afterwards you drop the `Set-Cookie`
  *     headers and the user is logged out on the next request.
  */
+/**
+ * True for paths the session refresh must not touch: the bearer-token API.
+ *
+ * `/api/v1` authenticates with `Authorization: Bearer` only (see
+ * `lib/api/auth.ts`) and never reads a cookie. Running `updateSession()` there
+ * would cost every call a round trip to the Auth server for a session the
+ * route ignores, and could write `Set-Cookie` onto an API response when the
+ * caller is a browser that happens to be signed in to qdit. Skipping it keeps
+ * the API stateless and keeps cookie behaviour off a path that must not
+ * depend on it.
+ *
+ * Matched on whole segments, so `/api/v10` or `/api/v1beta` are not swept in.
+ */
+export function isBearerApiPath(pathname: string): boolean {
+  return pathname === "/api/v1" || pathname.startsWith("/api/v1/")
+}
+
 export async function updateSession(request: NextRequest) {
   // Seed the response with the incoming request so cookies survive if nothing
   // needs refreshing.

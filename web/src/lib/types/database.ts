@@ -597,6 +597,45 @@ export type Database = {
           },
         ]
       }
+      api_requests: {
+        Row: {
+          id: string
+          /** The `X-Request-Id` the response carried. */
+          request_id: string
+          /** OAuth client id from the token's `client_id` claim. */
+          client_id: string
+          user_id: string
+          method: string
+          path: string
+          status: number
+          created_at: string
+        }
+        /**
+         * Written only by `lib/api/audit.ts` with the secret key; RLS has no
+         * policies and `authenticated` holds no grant on this table.
+         */
+        Insert: {
+          id?: string
+          request_id: string
+          client_id: string
+          user_id: string
+          method: string
+          path: string
+          status: number
+          created_at?: string
+        }
+        /** Append-only: no role the app uses may update a row. */
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'api_requests_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>

@@ -1,6 +1,7 @@
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
-import { updateSession } from '@/lib/supabase/proxy'
+import { endpointNotFound, isRouteMethod } from '@/lib/api/handler'
+import { isBearerApiPath, updateSession } from '@/lib/supabase/proxy'
 
 /**
  * Next.js 16 renamed the `middleware` file convention to `proxy`: the file must
@@ -11,8 +12,10 @@ import { updateSession } from '@/lib/supabase/proxy'
  * The runtime is Node.js and is not configurable here — setting the `runtime`
  * segment config in a proxy file throws.
  *
- * Its only job is refreshing the Supabase session so Server Components (which
- * cannot write cookies during render) always see a valid token.
+ * Its job is refreshing the Supabase session so Server Components (which
+ * cannot write cookies during render) always see a valid token. The one
+ * other thing it does is answer `/api/v1` requests whose method Next would
+ * refuse before any Route Handler runs (see `ROUTE_METHODS`).
  *
  * This is deliberately *not* an authorization gate. Per the Next.js docs, a
  * matcher change can silently drop proxy coverage for a route, and Server
@@ -21,6 +24,15 @@ import { updateSession } from '@/lib/supabase/proxy'
  * `supabase/migrations/20260731133313_rls.sql` is the real boundary.
  */
 export async function proxy(request: NextRequest) {
+  // The bearer-token API (`/api/v1`) has no cookie session to refresh and must
+  // not be handed one. See isBearerApiPath().
+  if (isBearerApiPath(request.nextUrl.pathname)) {
+    // A method no Route Handler can export never reaches one: Next answers it
+    // with an empty 400. The contract wants the API's own not_found (D-27).
+    if (!isRouteMethod(request.method)) return endpointNotFound(request)
+    return NextResponse.next()
+  }
+
   return await updateSession(request)
 }
 
@@ -34,7 +46,9 @@ export const config = {
      * - common static asset extensions served from public/
      *
      * API routes are intentionally *included*: Route Handlers need a refreshed
-     * session just as much as pages do.
+     * session just as much as pages do. The exception, `/api/v1`, is handled
+     * in `proxy()` above rather than here, so that it is a tested function
+     * and not a lookahead in this regex.
      */
     '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|woff|woff2|ttf|otf)$).*)',
   ],
