@@ -963,6 +963,18 @@ export type Database = {
         }
         Returns: 'delivered' | 'retry' | 'dead' | 'stale'
       }
+      /**
+       * Whether the pg_cron delivery job can run (service_role only, D-57).
+       * Secret names only, never values.
+       */
+      webhook_scheduler_health: {
+        Args: Record<string, never>
+        Returns: {
+          status: 'configured' | 'missing' | 'unavailable'
+          job: boolean
+          missing_secrets: string[]
+        }
+      }
     }
 
     Enums: {
