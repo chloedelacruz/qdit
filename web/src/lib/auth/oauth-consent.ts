@@ -73,7 +73,7 @@ export const APP_ACCESS = {
   cannot: [
     "Approve, reject, edit or delete anything",
     "Change members, roles or project settings",
-    "See or change tasks, proofs of work, deployments, review notes or your notifications",
+    "See or change tasks, proofs of work, deployments, review notes, your notifications or qdit's log of its requests",
     "See your teammates' profiles or who else is in your projects",
   ],
 } as const;
@@ -91,7 +91,14 @@ export const APP_ACCESS = {
 export const APP_READ_SCOPE = {
   readable: ["milestone_anchors", "milestones", "projects"],
   ownRowOnly: ["profiles", "project_members"],
-  hidden: ["deployments", "milestone_reviews", "notifications", "stellar_proofs", "tasks"],
+  hidden: [
+    "api_requests",
+    "deployments",
+    "milestone_reviews",
+    "notifications",
+    "stellar_proofs",
+    "tasks",
+  ],
 } as const;
 
 const SCOPE_LABEL: Record<string, string> = {
