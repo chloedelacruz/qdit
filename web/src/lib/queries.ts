@@ -17,6 +17,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/constants";
+import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
 import type { StellarNetwork } from "@/lib/stellar";
@@ -175,6 +176,30 @@ export async function getOwnIdentity(): Promise<OwnIdentity | null> {
     username: data?.username ?? null,
     walletAddress: data?.wallet_address ?? null,
   };
+}
+
+/**
+ * Apps the signed-in user has connected through qdit's OAuth server — doqtri,
+ * today — for the "Authorized apps" section of Settings.
+ *
+ * Not a table read: grants live in Supabase Auth, and the user's own session is
+ * what lists them. `null` means Auth would not answer (the OAuth server is off
+ * in this project, or unreachable), which the page shows differently from an
+ * empty list — "none connected" would be a claim this could not check.
+ */
+export async function listAuthorizedApps(): Promise<AuthorizedApp[] | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.oauth.listGrants();
+
+  if (error) {
+    console.error("listGrants failed", error);
+    return null;
+  }
+
+  return toAuthorizedApps(data);
 }
 
 export type ProjectMember = Member & {
