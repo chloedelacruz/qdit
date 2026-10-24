@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 
+import { AuthorizedApps } from "@/components/authorized-apps";
 import { EditProfileDialog } from "@/components/entity-dialogs";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WalletConnect } from "@/components/wallet-connect";
 import { MEMBER_ROLE } from "@/lib/constants";
-import { getOwnIdentity } from "@/lib/queries";
+import { getOwnIdentity, listAuthorizedApps } from "@/lib/queries";
 import type { StellarNetwork } from "@/lib/stellar";
 
 const NETWORK: StellarNetwork =
@@ -14,7 +15,8 @@ const NETWORK: StellarNetwork =
 export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
-  const me = await getOwnIdentity();
+  // Independent reads: the grants come from Auth, the identity from profiles.
+  const [me, apps] = await Promise.all([getOwnIdentity(), listAuthorizedApps()]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -73,6 +75,20 @@ export default async function SettingsPage() {
             */}
             <WalletConnect saved={me?.walletAddress ?? null} network={NETWORK} />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-2">
+        <CardHeader>
+          <CardTitle>Authorized apps</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {/*
+            Apps that act for you through qdit's OAuth server. What they may do
+            is fixed by the database, not by what they asked for — see
+            supabase/migrations/20261024110000_oauth_client_guards.sql.
+          */}
+          <AuthorizedApps apps={apps} />
         </CardContent>
       </Card>
 
