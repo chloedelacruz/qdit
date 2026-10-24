@@ -159,7 +159,8 @@ select is_empty(
     select t.tablename
       from pg_catalog.pg_tables t
      where t.schemaname = 'public'
-       and t.tablename not in ('projects', 'milestones', 'milestone_anchors')
+       and t.tablename not in ('projects', 'milestones', 'milestone_anchors',
+                               'project_doc_links', 'milestone_external_links')
        and not exists (
          select 1
            from pg_catalog.pg_policies p
@@ -174,13 +175,16 @@ select is_empty(
 
 -- And the other direction: the tables an app may read carry no SELECT guard
 -- at all, so a later one cannot quietly take them away. milestone_anchors is
--- here by D-32 — the `anchor` object of GET /milestones/{id} is read from it.
+-- here by D-32 — the `anchor` object of GET /milestones/{id} is read from it —
+-- and the two doqtri link tables (20261024120000_integration_links.sql) because
+-- they are the links D-03 lets an app write, and the API reads them back.
 select is_empty(
   $$
     select p.tablename, p.policyname
       from pg_catalog.pg_policies p
      where p.schemaname = 'public'
-       and p.tablename in ('projects', 'milestones', 'milestone_anchors')
+       and p.tablename in ('projects', 'milestones', 'milestone_anchors',
+                           'project_doc_links', 'milestone_external_links')
        and p.cmd = 'SELECT'
        and p.permissive = 'RESTRICTIVE'
   $$,
@@ -323,13 +327,14 @@ select throws_ok(
   '42501', null,
   'oauth: cannot record a review decision'
 );
--- Not even a title, until WP-2.4.
+-- Not even a title: c...0001 has no doqtri link, and WP-2.4 opens the title
+-- of linked milestones only (supabase/tests/integration_links.test.sql).
 update public.milestones set title = 'Renamed'
  where id = 'c0000000-0000-4000-8000-000000000001';
 select is(
   (select title from public.milestones where id = 'c0000000-0000-4000-8000-000000000001'),
   'Escrow contract',
-  'oauth: cannot rename a milestone (WP-2.4 adds title-only for linked ones)'
+  'oauth: cannot rename an unlinked milestone'
 );
 delete from public.milestones where id = 'c0000000-0000-4000-8000-000000000001';
 select is(

@@ -1,9 +1,12 @@
+import { ExternalLink } from "lucide-react";
+
 import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
 import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   DEPLOYMENT_STATUS,
@@ -18,7 +21,9 @@ import {
 import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import type {
   DeploymentRow,
+  MilestoneLink,
   MilestoneRow,
+  PlanDocRow,
   ProjectMember,
   ProjectRow,
   ProofRow,
@@ -172,6 +177,14 @@ export function MilestoneListRow({
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{milestone.title}</span>
 
+        {/*
+          Says where the title comes from, beside the title it is about: a
+          linked milestone's title is doqtri's (D-12), and the edit form shows
+          it read-only. Plain text, not a control, so it sits inside the row's
+          own link like the title does.
+        */}
+        {milestone.link ? <FromDoqtriBadge link={milestone.link} /> : null}
+
         <RowMeta
           className="min-w-0 flex-1"
           items={[
@@ -238,6 +251,79 @@ export function MilestoneListRow({
         </p>
       ) : null}
     </ListRow>
+  );
+}
+
+/**
+ * One doqtri plan linked to the project. Read-only here: docs are linked and
+ * unlinked from doqtri (D-10), so the row offers the plan itself and nothing
+ * to change. The doc URL leaves qdit, so it is a plain anchor in a new tab,
+ * not the row's overlay link.
+ *
+ * Only a URL on doqtri's origin is a link (D-45, `listPlanDocs`); any other
+ * shows the title as plain text and says why. The row still names the host
+ * a link opens, so what it says and where it goes cannot differ.
+ */
+export function PlanDocListRow({ doc }: { doc: PlanDocRow }) {
+  return (
+    <ListRow>
+      <div className={LINE}>
+        {doc.url ? (
+          <PlanDocLink title={doc.title} url={doc.url} host={doc.host} />
+        ) : (
+          <span
+            className="min-w-0 shrink truncate font-medium"
+            title="This URL is not on doqtri, so qdit does not link to it."
+          >
+            {doc.title}
+          </span>
+        )}
+
+        <RowMeta
+          className="min-w-0 flex-1"
+          items={[
+            doc.url ? doc.host : "Not a doqtri link",
+            doc.milestoneCount === 1
+              ? "1 linked milestone"
+              : `${doc.milestoneCount} linked milestones`,
+            `Linked ${doc.linkedAt.slice(0, 10)}`,
+          ]}
+        />
+      </div>
+    </ListRow>
+  );
+}
+
+/** The doc title as a link out to doqtri, in a new tab. */
+function PlanDocLink({ title, url, host }: { title: string; url: string; host: string }) {
+  return (
+    <RowControl className="min-w-0 shrink">
+      <a
+        href={url}
+        title={url}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="transition-qdit flex min-w-0 items-center gap-1.5 font-medium hover:underline"
+      >
+        <span className="truncate">{title}</span>
+        <ExternalLink aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+        <span className="sr-only">{host ? `(opens ${host} in a new tab)` : "(opens in a new tab)"}</span>
+      </a>
+    </RowControl>
+  );
+}
+
+/** "From doqtri" on a milestone linked to a plan heading. */
+export function FromDoqtriBadge({ link }: { link: MilestoneLink }) {
+  const source = link.docTitle ? `"${link.docTitle}"` : "a doqtri plan";
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 font-normal text-muted-foreground"
+      title={`Linked to a heading in ${source}. The title is managed by doqtri.`}
+    >
+      From doqtri
+    </Badge>
   );
 }
 

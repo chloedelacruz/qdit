@@ -4,6 +4,7 @@ import {
   CircleDot,
   Clock3,
   Columns3,
+  FileText,
   Folder,
   GitBranch,
   LayoutGrid,
@@ -65,6 +66,11 @@ export const ICON = {
    * being the answer to "am I ready yet".
    */
   ready: Check,
+  /**
+   * A doqtri plan linked to a project (D-09). A page, not a link glyph:
+   * `proof` already owns Link2, and a plan is something you read.
+   */
+  planDoc: FileText,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON;

@@ -137,8 +137,12 @@ export function apiRoute<Params = Record<string, never>>(
  * the `[[...path]]` catch-all exports it for everything. Like every handler
  * here it authenticates first, so an anonymous caller learns nothing about
  * which endpoints exist.
+ *
+ * Its params are typed loosely because it is exported from routes with
+ * different dynamic segments (`[[...path]]`, `[id]`, `[doc_id]`), and Next
+ * checks each export against its own route's params.
  */
-export const endpointNotFound = apiRoute<{ path?: string[] }>(async () => {
+export const endpointNotFound = apiRoute<Record<string, unknown>>(async () => {
   throw new ApiError("not_found", "No such endpoint in qdit API v1.");
 });
 

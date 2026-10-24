@@ -636,6 +636,111 @@ export type Database = {
           },
         ]
       }
+
+      /**
+       * A doqtri doc linked to a project (20261024120000_integration_links.sql).
+       * `doc_id` is unique: a doc belongs to at most one project (D-09).
+       */
+      project_doc_links: {
+        Row: {
+          id: string
+          project_id: string
+          /** doqtri's `documents.id`. */
+          doc_id: string
+          doc_title: string
+          /** Always `https://`. */
+          doc_url: string
+          linked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          doc_id: string
+          doc_title: string
+          doc_url: string
+          linked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        /** Admins in a qdit session only; apps refresh through `link_project_doc`. */
+        Update: {
+          doc_title?: string
+          doc_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'project_doc_links_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * The doqtri heading a milestone is linked to. While a row exists the
+       * milestone's title is doqtri's (D-12); `node_label` always equals it.
+       */
+      milestone_external_links: {
+        Row: {
+          id: string
+          milestone_id: string
+          project_id: string
+          source: 'doqtri'
+          doc_id: string
+          /** doqtri positional node id: `root`, `h0`, `h1`, ... */
+          node_id: string
+          node_label: string
+          /** DoqtriRegistry `Document.version`, or null when not anchored. */
+          doc_version: number | null
+          /** Copy of `project_doc_links.doc_title`, kept in step by trigger. */
+          doc_title: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          milestone_id: string
+          project_id: string
+          source?: 'doqtri'
+          doc_id: string
+          node_id: string
+          /** Must equal the milestone's title. */
+          node_label: string
+          doc_version?: number | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        /**
+         * Only these move after insert (D-21); a trigger refuses the rest.
+         * `node_label` follows the milestone title by trigger.
+         */
+        Update: {
+          node_id?: string
+          doc_version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'milestone_external_links_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: true
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_external_links_doc_fkey'
+            columns: ['project_id', 'doc_id']
+            isOneToOne: false
+            referencedRelation: 'project_doc_links'
+            referencedColumns: ['project_id', 'doc_id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -702,6 +807,54 @@ export type Database = {
         Args: { p_slug: string; p_milestone_id: string }
         Returns: Json
       }
+      /**
+       * POST /api/v1/projects/{id}/docs. Admin and above. Raises P0002 for a
+       * project the caller is not in, 42501 below admin, and QD409 with
+       * message `doc_linked_elsewhere`. `created` is false on a refresh.
+       */
+      link_project_doc: {
+        Args: {
+          p_project_id: string
+          p_doc_id: string
+          p_doc_title: string
+          p_doc_url: string
+        }
+        Returns: {
+          id: string
+          project_id: string
+          doc_id: string
+          doc_title: string
+          doc_url: string
+          created_at: string
+          updated_at: string
+          created: boolean
+        }[]
+      }
+      /**
+       * DELETE /api/v1/projects/{id}/docs/{doc_id}. Admin and above. Returns
+       * the removed milestone link ids (D-22); P0002 when the doc is not linked.
+       */
+      unlink_project_doc: {
+        Args: { p_project_id: string; p_doc_id: string }
+        Returns: string[]
+      }
+      /**
+       * POST /api/v1/milestones. Member and above. Returns the new milestone
+       * id. QD409 `doc_not_linked` or `node_already_linked` (HINT = the
+       * existing milestone id).
+       */
+      create_linked_milestone: {
+        Args: {
+          p_project_id: string
+          p_title: string
+          p_description: string | null
+          p_due_date: string | null
+          p_doc_id: string
+          p_node_id: string
+          p_doc_version: number | null
+        }
+        Returns: string
+      }
     }
 
     Enums: {
@@ -757,6 +910,8 @@ export type Milestone = Tables<'milestones'>
 export type Task = Tables<'tasks'>
 export type StellarProof = Tables<'stellar_proofs'>
 export type Deployment = Tables<'deployments'>
+export type ProjectDocLink = Tables<'project_doc_links'>
+export type MilestoneExternalLink = Tables<'milestone_external_links'>
 
 // Inserts
 export type ProfileInsert = TablesInsert<'profiles'>

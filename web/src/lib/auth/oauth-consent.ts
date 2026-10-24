@@ -59,9 +59,11 @@ export type DecisionOutcome =
  * sentence version of that migration, and the consent screen has to say it
  * because the scope list alone would undersell what "Allow" means.
  *
- * It describes the grant that migration issues today, nothing ahead of it.
- * WP-2.4 adds renaming linked milestones and linking documents; the line for
- * that lands with its migration, not before.
+ * It describes the grant those migrations issue today, nothing ahead of it:
+ * the read and create rules of that one, and the link writes of
+ * 20261024120000_integration_links.sql (WP-2.4) — linking documents and their
+ * headings to projects and milestones, and renaming a linked milestone, whose
+ * title is then the linking app's (D-12).
  */
 export const APP_ACCESS = {
   can: [
@@ -69,9 +71,12 @@ export const APP_ACCESS = {
     "See those projects' milestones and their on-chain proof records",
     "See your own qdit profile",
     "Create milestones, as proposed, in projects where you are a member or above",
+    "Link its documents to projects you administer, and link their headings to milestones where you are a member or above",
+    "Rename a milestone that is linked to one of its headings — the title only",
   ],
   cannot: [
-    "Approve, reject, edit or delete anything",
+    "Approve or reject milestones, or delete projects or milestones",
+    "Change anything about a milestone except a linked milestone's title",
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes, your notifications or qdit's log of its requests",
     "See your teammates' profiles or who else is in your projects",
@@ -89,7 +94,13 @@ export const APP_ACCESS = {
  * tripwire in supabase/tests/oauth_client_guards.test.sql holds the same list.
  */
 export const APP_READ_SCOPE = {
-  readable: ["milestone_anchors", "milestones", "projects"],
+  readable: [
+    "milestone_anchors",
+    "milestone_external_links",
+    "milestones",
+    "project_doc_links",
+    "projects",
+  ],
   ownRowOnly: ["profiles", "project_members"],
   hidden: [
     "api_requests",
