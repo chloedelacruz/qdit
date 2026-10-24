@@ -6,14 +6,26 @@ import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { WalletSetup } from "@/components/auth/wallet-setup";
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { safeNextPath } from "@/lib/auth/next-path";
 import { getUser } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Where to land afterwards. Set by pages that bounce a signed-out visitor
+  // here — /oauth/consent above all, whose visitor came from another app and
+  // has to end up back on the consent screen, not on the dashboard. Every
+  // sign-in path below carries it; safeNextPath() is what keeps it on this
+  // origin (see lib/auth/next-path.ts).
+  const next = safeNextPath((await searchParams).next);
+
   // Already signed in — sending them to a login form would be a dead end.
-  if (await getUser()) redirect("/dashboard");
+  if (await getUser()) redirect(next);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -43,7 +55,7 @@ export default async function LoginPage() {
             */}
             <WalletSetup className="mb-5" />
 
-            <ConnectWalletButton className="w-full" />
+            <ConnectWalletButton className="w-full" redirectTo={next} />
             <p className="mt-3 text-xs text-muted-foreground">
               Connecting signs you in. A wallet that is new here goes to a short
               form first — connecting alone no longer creates an account.
@@ -73,7 +85,7 @@ export default async function LoginPage() {
             </p>
 
             <div className="mt-4">
-              <LoginForm />
+              <LoginForm next={next} />
             </div>
           </div>
         </div>

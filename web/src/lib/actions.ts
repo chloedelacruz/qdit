@@ -22,6 +22,7 @@ import {
   MILESTONE_TRANSITIONS,
   type MilestoneStatus,
 } from "@/lib/constants";
+import { parseClientId } from "@/lib/auth/oauth-grants";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
 
@@ -1010,5 +1011,36 @@ export async function setProjectPublicProofs(
   if (error) return { error: friendly(error.message, error.code) };
 
   revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * Disconnects an app the user authorized through qdit's OAuth server.
+ *
+ * Supabase Auth marks the consent revoked, ends that client's sessions for
+ * this user and invalidates its refresh tokens, so the app's next call gets
+ * 401 and its refresh fails — which is how doqtri learns to show "reconnect"
+ * (integration contract, section 5). The access token it already holds stays
+ * valid until it expires; Auth cannot recall a signed JWT.
+ *
+ * Only ever the caller's own grant: revokeGrant() acts for the session's user,
+ * and the client id is parsed as a UUID before it goes into the request.
+ */
+export async function revokeAuthorizedApp(clientId: string): Promise<ActionState> {
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const id = parseClientId(clientId);
+  if (!id) return { error: "That is not a connected app." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.oauth.revokeGrant({ clientId: id });
+
+  if (error) {
+    console.error("revokeGrant failed", error);
+    return { error: "Could not disconnect that app. Try again." };
+  }
+
+  revalidatePath("/settings");
   return { ok: true };
 }
