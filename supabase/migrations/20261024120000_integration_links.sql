@@ -145,8 +145,10 @@ create table public.project_doc_links (
   -- (DOQTRI_ORIGIN), not data, so that part is enforced where the config is:
   -- POST /api/v1/projects/{id}/docs refuses a URL off the origin, and the
   -- "Plan docs" list links only URLs on it (web/src/lib/doqtri-origin.ts).
-  -- A project admin's own session can still write any https URL here
-  -- directly, past the API; the UI then shows it as plain text, not a link.
+  -- Clients write the table only through link_project_doc() (D-48,
+  -- 20261025090000_integration_hardening.sql), but a project admin's own
+  -- session can call it over PostgREST, past the API, with any https URL;
+  -- the UI then shows such a URL as plain text, not a link.
   doc_url     text not null
     constraint project_doc_links_doc_url_check
     check (
