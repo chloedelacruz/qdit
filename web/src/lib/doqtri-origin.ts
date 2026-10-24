@@ -49,17 +49,17 @@ export function doqtriOrigin(value: string | undefined = process.env.DOQTRI_ORIG
 const UNSAFE = /[\s\u0000-\u001f\u007f-\u009f\\]/;
 
 /**
- * True when `url` starts with `origin` and the origin is the whole authority:
- * what follows it is nothing, or a path, query or fragment. So
- * `https://www.doqtri.xyz.evil.example/` and `https://www.doqtri.xyz@evil.example/`
- * are off the origin even though they start with the same characters, and
- * `HTTPS://WWW.DOQTRI.XYZ/` or `https://www.doqtri.xyz:443/` are refused for
- * not being written the way doqtri writes its own URLs.
+ * True when `url` is a valid absolute https URL that starts with `origin`
+ * followed by `/` (contract v1.0.3, section 8): the origin is the whole
+ * authority and a path follows. So `https://www.doqtri.xyz.evil.example/` and
+ * `https://www.doqtri.xyz@evil.example/` are off the origin even though they
+ * start with the same characters; the bare origin, or the origin straight
+ * into a query or fragment, is not a doc URL; and `HTTPS://WWW.DOQTRI.XYZ/`
+ * or `https://www.doqtri.xyz:443/` are refused for not being written the way
+ * doqtri writes its own URLs.
  */
 export function isDoqtriDocUrl(url: string, origin: string): boolean {
-  if (!url.startsWith(origin) || UNSAFE.test(url)) return false;
-  const rest = url.slice(origin.length);
-  if (rest !== "" && !/^[/?#]/.test(rest)) return false;
+  if (!url.startsWith(`${origin}/`) || UNSAFE.test(url)) return false;
   try {
     return new URL(url).origin === origin;
   } catch {
