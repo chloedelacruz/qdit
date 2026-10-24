@@ -1,6 +1,6 @@
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
-import { updateSession } from '@/lib/supabase/proxy'
+import { isBearerApiPath, updateSession } from '@/lib/supabase/proxy'
 
 /**
  * Next.js 16 renamed the `middleware` file convention to `proxy`: the file must
@@ -21,6 +21,10 @@ import { updateSession } from '@/lib/supabase/proxy'
  * `supabase/migrations/20260731133313_rls.sql` is the real boundary.
  */
 export async function proxy(request: NextRequest) {
+  // The bearer-token API (`/api/v1`) has no cookie session to refresh and must
+  // not be handed one. See isBearerApiPath().
+  if (isBearerApiPath(request.nextUrl.pathname)) return NextResponse.next()
+
   return await updateSession(request)
 }
 
@@ -34,7 +38,9 @@ export const config = {
      * - common static asset extensions served from public/
      *
      * API routes are intentionally *included*: Route Handlers need a refreshed
-     * session just as much as pages do.
+     * session just as much as pages do. The exception, `/api/v1`, is handled
+     * in `proxy()` above rather than here, so that it is a tested function
+     * and not a lookahead in this regex.
      */
     '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|woff|woff2|ttf|otf)$).*)',
   ],
