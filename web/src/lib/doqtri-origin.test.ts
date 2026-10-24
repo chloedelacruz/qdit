@@ -31,12 +31,10 @@ describe("isDoqtriDocUrl", () => {
   const origin = "https://www.doqtri.xyz";
 
   it.each([
-    "https://www.doqtri.xyz",
     "https://www.doqtri.xyz/",
     "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
     "https://www.doqtri.xyz/d/1?v=2#h3",
-    "https://www.doqtri.xyz?doc=1",
-    "https://www.doqtri.xyz#top",
+    "https://www.doqtri.xyz/?doc=1",
   ])("accepts %j", (url) => {
     expect(isDoqtriDocUrl(url, origin)).toBe(true);
   });
@@ -46,6 +44,10 @@ describe("isDoqtriDocUrl", () => {
     "https://www.doqtri.xyz.evil.example/d/1",
     "https://www.doqtri.xyz@evil.example/d/1",
     "https://www.doqtri.xyzz/d/1",
+    // The origin must be followed by `/` (contract v1.0.3).
+    "https://www.doqtri.xyz",
+    "https://www.doqtri.xyz?doc=1",
+    "https://www.doqtri.xyz#top",
     "https://www.doqtri.xyz:8443/d/1",
     // doqtri, but not as doqtri writes its URLs.
     "https://www.doqtri.xyz:443/d/1",

@@ -29,8 +29,9 @@ const NOT_FOUND = "No such project.";
  *
  * The write is `link_project_doc()` (20261024120000_integration_links.sql):
  * insert-or-refresh has to be one statement to be idempotent under retries,
- * and the refresh is an UPDATE the D-03 guard does not give apps directly.
- * The function checks the caller's role itself.
+ * and no client may INSERT or UPDATE the table directly (D-48,
+ * 20261025090000_integration_hardening.sql). The function checks the
+ * caller's role itself.
  */
 export const POST = apiRoute<{ id: string }>(async ({ request, auth, params }) => {
   const projectId = pathId(params.id, NOT_FOUND);

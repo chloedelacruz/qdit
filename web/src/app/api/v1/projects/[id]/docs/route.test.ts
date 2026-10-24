@@ -156,6 +156,10 @@ describe("POST /api/v1/projects/{id}/docs", () => {
     [{ ...BODY, doc_url: "https://www.doqtri.xyz.evil.example/d/1" }, ["doc_url"]],
     [{ ...BODY, doc_url: "https://www.doqtri.xyz@evil.example/d/1" }, ["doc_url"]],
     [{ ...BODY, doc_url: "https://doqtri.xyz/d/1" }, ["doc_url"]],
+    // Contract v1.0.3: the origin followed by `/`, not the bare origin.
+    [{ ...BODY, doc_url: "https://www.doqtri.xyz" }, ["doc_url"]],
+    [{ ...BODY, doc_url: "https://www.doqtri.xyz?d=1" }, ["doc_url"]],
+    [{ ...BODY, doc_url: "https://www.doqtri.xyz#d1" }, ["doc_url"]],
     [{ ...BODY, project_id: PROJECT }, ["project_id"]],
     [{}, ["doc_id", "doc_title", "doc_url"]],
   ])("rejects %j as 400 invalid_request naming %j", async (body, fields) => {

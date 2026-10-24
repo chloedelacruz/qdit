@@ -145,8 +145,9 @@ export function httpsUrlField(errors: FieldErrors, name: string, value: unknown)
 }
 
 /**
- * A `doc_url`: an https URL that starts with doqtri's origin (D-45, contract
- * v1.0.2). `origin` is `doqtriOrigin()`, passed in so this stays pure.
+ * A `doc_url`: a valid absolute https URL that starts with doqtri's origin
+ * followed by `/` (D-45, contract v1.0.3 section 8). `origin` is
+ * `doqtriOrigin()`, passed in so this stays pure.
  */
 export function doqtriUrlField(
   errors: FieldErrors,
