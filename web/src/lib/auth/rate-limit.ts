@@ -38,7 +38,25 @@ const SWEEP_THRESHOLD = 10_000;
 export type RateLimit = { limit: number; windowMs: number };
 
 /** True when the call is allowed. Counts the call as used when it returns true. */
-export function rateLimit(key: string, { limit, windowMs }: RateLimit): boolean {
+export function rateLimit(key: string, limit: RateLimit): boolean {
+  return takeFromWindow(key, limit).allowed;
+}
+
+export type RateLimitResult =
+  | { allowed: true }
+  /** `retryAfterMs` is how long until this key's window resets. */
+  | { allowed: false; retryAfterMs: number };
+
+/**
+ * The same counter, saying how long a refused caller has to wait.
+ *
+ * `/api/v1` needs that number for `Retry-After` (integration contract section
+ * 6); the sign-in routes do not, and keep calling `rateLimit()`.
+ */
+export function takeFromWindow(
+  key: string,
+  { limit, windowMs }: RateLimit,
+): RateLimitResult {
   const now = Date.now();
   const existing = windows.get(key);
 
@@ -50,13 +68,15 @@ export function rateLimit(key: string, { limit, windowMs }: RateLimit): boolean 
     }
 
     windows.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
+    return { allowed: true };
   }
 
-  if (existing.count >= limit) return false;
+  if (existing.count >= limit) {
+    return { allowed: false, retryAfterMs: existing.resetAt - now };
+  }
 
   existing.count += 1;
-  return true;
+  return { allowed: true };
 }
 
 /**
