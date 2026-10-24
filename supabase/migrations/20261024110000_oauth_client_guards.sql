@@ -61,21 +61,24 @@
 -- section lists the ones it may.
 --
 -- ---------------------------------------------------------------------------
--- WHAT AN OAUTH CLIENT KEEPS (D-03)
+-- WHAT AN OAUTH CLIENT KEEPS (D-03, D-32)
 -- ---------------------------------------------------------------------------
--- D-03 says an app may read projects and milestones and nothing else, so reads
--- are guarded too, not only writes. What stays readable, under the user's own
--- permissive policies:
+-- D-03 says an app may read projects and milestones, and D-32 adds their
+-- anchor records; nothing else. So reads are guarded too, not only writes.
+-- What stays readable, under the user's own permissive policies:
 --
 --   projects           the projects the user belongs to (GET /projects)
 --   project_members    their rosters, because /api/v1 has to know the caller's
 --                      role before it creates anything for them
 --   milestones         the thing being linked (GET /milestones/{id})
---   milestone_anchors  each milestone's milestone_proof history. Every column
---                      is a copy of a public ledger entry (D-04: the chain is
---                      the truth, this table only points at it), and
---                      GET /milestones/{id} returns the latest proof hash
---                      from here
+--   milestone_anchors  each milestone's milestone_proof history, readable on
+--                      purpose (D-32): this migration gives it no SELECT
+--                      guard. Every column is a copy of a public ledger entry
+--                      (D-04: the chain is the truth, this table only points
+--                      at it), and the `anchor` object of GET /milestones/{id}
+--                      in docs/integration/CONTRACT.md — version, last_action,
+--                      last_tx_hash, anchored_at, proof_hash — is read from
+--                      here. Writes to it are still guarded (section 9)
 --   profiles           the user's own row only (GET /me) — not teammates',
 --                      which carry their wallet addresses and usernames
 --
@@ -411,8 +414,9 @@ create policy "deployments: no delete by oauth clients"
 -- An anchor row is written by the person who signed the transaction, in this
 -- app. doqtri reads milestone_proof itself (D-04) and never records anchors
 -- here. UPDATE and DELETE have no permissive policy today; see the header.
--- Reads stay open on purpose (see the header): the row is a pointer to a
--- public ledger entry, and GET /api/v1/milestones/{id} serves its proof hash.
+-- Reads stay open on purpose (D-32, see the header): the row is a pointer to
+-- a public ledger entry, and GET /api/v1/milestones/{id} builds its `anchor`
+-- object from it. Do not add a SELECT guard here.
 -- ----------------------------------------------------------------------------
 
 create policy "milestone_anchors: no insert by oauth clients"

@@ -4,7 +4,7 @@
 --
 -- Covers 20261024110000_oauth_client_guards.sql: a request whose JWT carries a
 -- `client_id` claim (a token Supabase's OAuth server issued to doqtri) may read
--- projects, rosters, milestones, anchors and its user's own profile, may
+-- projects, rosters, milestones, anchors (D-32) and its user's own profile, may
 -- create proposed milestones, and may see or change nothing else — while the
 -- same user's own session keeps every right it had.
 --
@@ -33,7 +33,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(59);
+select plan(61);
 
 
 -- ----------------------------------------------------------------------------
@@ -171,6 +171,21 @@ select is_empty(
   'every public table an app may not read has a restrictive SELECT policy'
 );
 
+-- And the other direction: the tables an app may read carry no SELECT guard
+-- at all, so a later one cannot quietly take them away. milestone_anchors is
+-- here by D-32 — the `anchor` object of GET /milestones/{id} is read from it.
+select is_empty(
+  $$
+    select p.tablename, p.policyname
+      from pg_catalog.pg_policies p
+     where p.schemaname = 'public'
+       and p.tablename in ('projects', 'project_members', 'milestones', 'milestone_anchors')
+       and p.cmd = 'SELECT'
+       and p.permissive = 'RESTRICTIVE'
+  $$,
+  'the tables an app may read (D-03, D-32) have no restrictive SELECT policy'
+);
+
 select ok(
   (select bool_and(c.relrowsecurity)
      from pg_catalog.pg_class c
@@ -206,6 +221,14 @@ select is(
   (select count(*)::int from public.milestone_anchors where milestone_id = 'c0000000-0000-4000-8000-000000000001'),
   1,
   'oauth: can read a milestone''s anchors'
+);
+-- Every field the contract's `anchor` object needs, not only the row (D-32).
+select is(
+  (select row(version, action::text, tx_hash, created_at is not null, proof_hash)::text
+     from public.milestone_anchors
+    where milestone_id = 'c0000000-0000-4000-8000-000000000001'),
+  row(1, 'submit', repeat('d', 64), true, repeat('c', 64))::text,
+  'oauth: can read the anchor fields GET /milestones/{id} serves'
 );
 select is(
   (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000001'),
