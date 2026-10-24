@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
+import { endpointNotFound, isRouteMethod } from '@/lib/api/handler'
 import { isBearerApiPath, updateSession } from '@/lib/supabase/proxy'
 
 /**
@@ -11,8 +12,10 @@ import { isBearerApiPath, updateSession } from '@/lib/supabase/proxy'
  * The runtime is Node.js and is not configurable here — setting the `runtime`
  * segment config in a proxy file throws.
  *
- * Its only job is refreshing the Supabase session so Server Components (which
- * cannot write cookies during render) always see a valid token.
+ * Its job is refreshing the Supabase session so Server Components (which
+ * cannot write cookies during render) always see a valid token. The one
+ * other thing it does is answer `/api/v1` requests whose method Next would
+ * refuse before any Route Handler runs (see `ROUTE_METHODS`).
  *
  * This is deliberately *not* an authorization gate. Per the Next.js docs, a
  * matcher change can silently drop proxy coverage for a route, and Server
@@ -23,7 +26,12 @@ import { isBearerApiPath, updateSession } from '@/lib/supabase/proxy'
 export async function proxy(request: NextRequest) {
   // The bearer-token API (`/api/v1`) has no cookie session to refresh and must
   // not be handed one. See isBearerApiPath().
-  if (isBearerApiPath(request.nextUrl.pathname)) return NextResponse.next()
+  if (isBearerApiPath(request.nextUrl.pathname)) {
+    // A method no Route Handler can export never reaches one: Next answers it
+    // with an empty 400. The contract wants the API's own not_found (D-27).
+    if (!isRouteMethod(request.method)) return endpointNotFound(request)
+    return NextResponse.next()
+  }
 
   return await updateSession(request)
 }
