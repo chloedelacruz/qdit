@@ -743,6 +743,39 @@ export type Database = {
       }
 
       /**
+       * Which (user, OAuth client) pairs have written a doc link or its
+       * milestone links, and whether that grant is still usable
+       * (20261025120600_doc_link_connections.sql). Project viewers read
+       * doc_link_id, lost_at and lost_reason only (column grants: selecting
+       * any other column is refused); apps see nothing. Written only by triggers and
+       * `mark_doc_link_connections_revoked`.
+       */
+      doc_link_connections: {
+        Row: {
+          id: string
+          doc_link_id: string
+          user_id: string
+          client_id: string
+          last_write_at: string
+          /** Null while the connection is live. */
+          lost_at: string | null
+          lost_reason: 'revoked' | 'left_project' | null
+        }
+        /** `authenticated` holds no write grant on this table. */
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'doc_link_connections_doc_link_id_fkey'
+            columns: ['doc_link_id']
+            isOneToOne: false
+            referencedRelation: 'project_doc_links'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
        * Where qdit sends milestone events (20261024130000_integration_webhooks.sql).
        * No client role can read it; the cron route reads it only through
        * `claim_integration_events`. The secret columns are ciphertext
@@ -906,6 +939,15 @@ export type Database = {
       unlink_project_doc: {
         Args: { p_project_id: string; p_doc_id: string }
         Returns: string[]
+      }
+      /**
+       * After the user revokes an app in Settings: marks the caller's own doc
+       * link connections through that client lost. First-party sessions only;
+       * returns how many rows it marked.
+       */
+      mark_doc_link_connections_revoked: {
+        Args: { p_client_id: string }
+        Returns: number
       }
       /**
        * POST /api/v1/milestones. Member and above. Returns the new milestone

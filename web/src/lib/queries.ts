@@ -18,6 +18,12 @@ import {
   type TaskStatus,
 } from "@/lib/constants";
 import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
+import {
+  connectionOf,
+  type ConnectionRecord,
+  type LinkedDoc,
+  type MilestoneDocLink,
+} from "@/lib/doqtri-doc-card";
 import { doqtriOrigin, isDoqtriDocUrl } from "@/lib/doqtri-origin";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
@@ -793,12 +799,13 @@ export type MilestoneRow = {
   link: MilestoneLink | null;
 };
 
-export type MilestoneLink = {
-  docId: string;
-  nodeId: string;
-  /** The plan's title as doqtri last sent it; null only for a stale copy. */
-  docTitle: string | null;
-};
+/**
+ * The milestone's `milestone_external_links` row, with the doc link it points
+ * at as far as the viewer can read it (`doc` null: no-access, see
+ * `lib/doqtri-doc-card.ts`). The link row's own copy of the doc title is not
+ * carried: shown in place of an unreadable doc link, it would leak the title.
+ */
+export type MilestoneLink = MilestoneDocLink & { docId: string };
 
 /**
  * One approval or rejection, with the reason given.
@@ -839,7 +846,10 @@ const MILESTONE_SELECT = `
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
   milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at),
   milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at),
-  milestone_external_links(doc_id, node_id, doc_title)
+  milestone_external_links(
+    doc_id, node_id, node_label, doc_version,
+    project_doc_links(doc_title, doc_url, doc_link_connections(lost_at, lost_reason))
+  )
 `;
 
 type MilestoneRecord = {
@@ -890,9 +900,43 @@ type MilestoneRecord = {
   milestone_external_links: ExternalLinkRecord | ExternalLinkRecord[] | null;
 };
 
-type ExternalLinkRecord = { doc_id: string; node_id: string; doc_title: string | null };
+type ExternalLinkRecord = {
+  doc_id: string;
+  node_id: string;
+  node_label: string;
+  doc_version: number | null;
+  /**
+   * Many-to-one through the composite foreign key, so an object, or null when
+   * RLS hides the doc link from this viewer.
+   */
+  project_doc_links: DocLinkRecord | null;
+};
 
-function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
+type DocLinkRecord = {
+  doc_title: string;
+  doc_url: string;
+  doc_link_connections: ConnectionRecord[] | null;
+};
+
+/**
+ * A readable doc link as the doc card takes it: the URL only when it is on
+ * doqtri's origin (D-45), and whether a doqtri connection still keeps it.
+ */
+function toLinkedDoc(record: DocLinkRecord, origin: string | null): LinkedDoc {
+  const url = origin && isDoqtriDocUrl(record.doc_url, origin) ? record.doc_url : null;
+  return {
+    title: record.doc_title,
+    url,
+    host: url ? docUrlHost(url) : "",
+    connection: connectionOf(record.doc_link_connections),
+  };
+}
+
+function toMilestone(
+  row: MilestoneRecord,
+  members: MemberMap,
+  origin: string | null,
+): MilestoneRow {
   const taskCount = countOf(row.tasks);
   const doneCount = countOf(row.done);
 
@@ -996,7 +1040,15 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
         createdAt: review.created_at,
       })),
     link: external
-      ? { docId: external.doc_id, nodeId: external.node_id, docTitle: external.doc_title }
+      ? {
+          docId: external.doc_id,
+          nodeId: external.node_id,
+          nodeLabel: external.node_label,
+          docVersion: external.doc_version,
+          doc: external.project_doc_links
+            ? toLinkedDoc(external.project_doc_links, origin)
+            : null,
+        }
       : null,
   };
 }
@@ -1008,6 +1060,7 @@ export async function listMilestones(
   const supabase = await createClient();
   // Reviews name their reviewer, and a raw uuid names nobody.
   const members = await memberMap();
+  const origin = readDoqtriOrigin();
 
   let totalQuery = supabase.from("milestones").select("id", { count: "exact", head: true });
   if (scope.projectId) totalQuery = totalQuery.eq("project_id", scope.projectId);
@@ -1032,7 +1085,7 @@ export async function listMilestones(
 
   const { data, count } = await ordered.limit(filters.limit);
   const rows = ((data ?? []) as unknown as MilestoneRecord[]).map((row) =>
-    toMilestone(row, members),
+    toMilestone(row, members, origin),
   );
 
   if (filters.sort === "progress") rows.sort((a, b) => b.progress - a.progress);
@@ -1080,21 +1133,15 @@ export async function listMilestoneOptionsByProject(): Promise<
 // Plan docs (doqtri)
 // ---------------------------------------------------------------------------
 
-export type PlanDocRow = {
+export type PlanDocRow = LinkedDoc & {
   id: string;
   docId: string;
-  title: string;
-  /**
-   * The doc's `doc_url`, or null when it is not on doqtri's origin (D-45). The
-   * API refuses such a URL, but a project admin can still write one through
-   * PostgREST, and `DOQTRI_ORIGIN` can change under stored rows; the row then
-   * shows the title without a link rather than send anyone off doqtri.
-   */
-  url: string | null;
-  /** The host `url` opens, or `""` when there is no `url`. */
-  host: string;
   /** Milestones in this project linked to one of the doc's headings. */
   milestoneCount: number;
+  /** Of those, the ones anchored on chain at least once. */
+  anchoredCount: number;
+  /** The newest doc version any of those links was written against. */
+  docVersion: number | null;
   linkedAt: string;
 };
 
@@ -1110,26 +1157,36 @@ export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("project_doc_links")
-    .select("id, doc_id, doc_title, doc_url, created_at, milestone_external_links(count)")
+    .select(
+      `id, doc_id, doc_title, doc_url, created_at,
+       doc_link_connections(lost_at, lost_reason),
+       milestone_external_links(doc_version, milestones(milestone_anchors(count)))`,
+    )
     .eq("project_id", projectId)
     .order("created_at");
 
-  return ((data ?? []) as unknown as {
+  return ((data ?? []) as unknown as (DocLinkRecord & {
     id: string;
     doc_id: string;
-    doc_title: string;
-    doc_url: string;
     created_at: string;
-    milestone_external_links: EmbeddedCount;
-  }[]).map((row) => {
-    const url = origin && isDoqtriDocUrl(row.doc_url, origin) ? row.doc_url : null;
+    milestone_external_links: {
+      doc_version: number | null;
+      // One-to-one through milestone_id; an array is accepted as well.
+      milestones: { milestone_anchors: EmbeddedCount } | { milestone_anchors: EmbeddedCount }[] | null;
+    }[] | null;
+  })[]).map((row) => {
+    const links = row.milestone_external_links ?? [];
+    const versions = links.flatMap((link) => (link.doc_version === null ? [] : [link.doc_version]));
     return {
+      ...toLinkedDoc(row, origin),
       id: row.id,
       docId: row.doc_id,
-      title: row.doc_title,
-      url,
-      host: url ? docUrlHost(url) : "",
-      milestoneCount: countOf(row.milestone_external_links),
+      milestoneCount: links.length,
+      anchoredCount: links.filter((link) => {
+        const milestone = Array.isArray(link.milestones) ? link.milestones[0] : link.milestones;
+        return countOf(milestone?.milestone_anchors) > 0;
+      }).length,
+      docVersion: versions.length > 0 ? Math.max(...versions) : null,
       linkedAt: row.created_at,
     };
   });
