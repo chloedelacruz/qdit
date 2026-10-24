@@ -300,6 +300,7 @@ describe("APP_ACCESS matches the guard migration", () => {
 
   it("tells the user about every hidden table", () => {
     const words: Record<(typeof APP_READ_SCOPE.hidden)[number], string> = {
+      api_requests: "log of its requests",
       deployments: "deployments",
       milestone_reviews: "review notes",
       notifications: "notifications",
