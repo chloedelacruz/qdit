@@ -56,6 +56,11 @@
 --                              columns may change is the trigger's job
 --                              (section 4), for every caller alike.
 --
+-- For every caller, a doc link's `project_id`, `doc_id`, `linked_by` and
+-- `created_at` are fixed once written (section 4): only the copies,
+-- `doc_title` and `doc_url`, are refreshed. Moving a doc to another project is
+-- an unlink and a new link, which is doqtri's call (D-10).
+--
 -- Reads are not guarded: GET /milestones/{id} returns the link, and the API
 -- reads both tables with the caller's token. Both are added to the list of
 -- app-readable tables in supabase/tests/oauth_client_guards.test.sql and in
@@ -72,7 +77,11 @@
 --     else on any milestone — not status, not the description, not the order;
 --   * once a milestone has a link, nobody else may change its title. qdit's
 --     own UI shows it read-only (D-12: doqtri wins on titles), and a hand-made
---     PostgREST request from a qdit session is refused here.
+--     PostgREST request from a qdit session is refused here;
+--   * a linked milestone stays in its project, for every caller. The link is
+--     in the milestone's project (D-09: the doc belongs to that project), so
+--     moving the milestone would leave the link, and the title copy it keeps,
+--     in a project the milestone is no longer in. Unlink it first.
 --
 -- The link's `node_label` follows the title by trigger, so the two never
 -- differ (contract section 8, PATCH /links/{id}).
@@ -239,7 +248,38 @@ create trigger milestone_external_links_set_updated_at
 --     A link is re-pointed within its doc (D-21), never to another milestone,
 --     doc or project; for that, delete it and create another;
 --   * `doc_title` is always the doc link's current title, whatever was sent.
+--
+-- And on the doc link itself: after insert only `doc_title` and `doc_url`
+-- move. A doc link is never re-pointed at another project or doc, and who
+-- linked it is never rewritten (the INSERT policy pins `linked_by` to the
+-- caller; without this an UPDATE could set it to anyone).
 -- ----------------------------------------------------------------------------
+
+create or replace function public.check_project_doc_link()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (new.id, new.project_id, new.doc_id, new.linked_by, new.created_at)
+     is distinct from
+     (old.id, old.project_id, old.doc_id, old.linked_by, old.created_at) then
+    raise exception 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.check_project_doc_link() is
+  'BEFORE UPDATE on project_doc_links: only doc_title and doc_url are movable, for every caller.';
+
+create trigger project_doc_links_check
+  before update on public.project_doc_links
+  for each row execute function public.check_project_doc_link();
+
 
 create or replace function public.check_milestone_external_link()
 returns trigger
@@ -338,6 +378,11 @@ create trigger project_doc_links_sync_title
 --                              limit them either: those are operators, not
 --                              users.
 --
+-- One rule holds for all three: a linked milestone does not change project.
+-- Its link is in the milestone's project, and a moved milestone would leave
+-- the link behind, readable (with the title it copies) by the old project
+-- and invisible to the new one. Unlinking first is the way to move it.
+--
 -- SECURITY DEFINER so "is it linked?" is answered from the table itself and
 -- not from what the caller can see of it. `updated_at` is not compared: the
 -- milestones_set_updated_at trigger stamps it on every update.
@@ -356,6 +401,11 @@ begin
   v_linked := exists (
     select 1 from public.milestone_external_links l where l.milestone_id = old.id
   );
+
+  if v_linked and new.project_id is distinct from old.project_id then
+    raise exception 'A milestone linked to a doqtri plan cannot move to another project; unlink it first.'
+      using errcode = '23514';
+  end if;
 
   if (v_claims ->> 'client_id') is not null then
     if (new.id, new.project_id, new.description, new.status, new.due_date, new.order_index, new.created_at)
@@ -385,7 +435,7 @@ end;
 $$;
 
 comment on function public.guard_milestone_update() is
-  'BEFORE UPDATE on milestones. OAuth clients may change only the title, and only of a linked milestone (D-03, D-12); user sessions may not change a linked milestone''s title (D-12).';
+  'BEFORE UPDATE on milestones. A linked milestone cannot change project (every caller); OAuth clients may change only the title, and only of a linked milestone (D-03, D-12); user sessions may not change a linked milestone''s title (D-12).';
 
 create trigger milestones_guard_update
   before update on public.milestones
@@ -800,6 +850,7 @@ grant select, insert, update, delete on public.project_doc_links        to authe
 grant select, insert, update, delete on public.milestone_external_links to authenticated;
 
 revoke all on function public.check_milestone_external_link() from public, anon, authenticated;
+revoke all on function public.check_project_doc_link()        from public, anon, authenticated;
 revoke all on function public.sync_link_doc_title()           from public, anon, authenticated;
 revoke all on function public.guard_milestone_update()        from public, anon, authenticated;
 revoke all on function public.sync_link_node_label()          from public, anon, authenticated;
