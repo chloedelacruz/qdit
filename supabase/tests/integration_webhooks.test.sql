@@ -11,16 +11,16 @@
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back, so now() is
--- one instant throughout: events written by the triggers tie on occurred_at
--- and are ordered by seq, and a retry is made due again by recording it with a
--- next_attempt_at in the past.
+-- one instant throughout and a retry is made due again by recording it with a
+-- next_attempt_at in the past. occurred_at is not now() but the time of the
+-- write (clock_timestamp()), which section 7 checks.
 -- ============================================================================
 
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(56);
+select plan(62);
 
 
 -- ----------------------------------------------------------------------------
@@ -402,7 +402,64 @@ select is(pg_temp.claim(), 1, 'reactivated, its pending event is claimed again')
 
 
 -- ----------------------------------------------------------------------------
--- 7. Shape and access
+-- 7. occurred_at is the time of the write, not of the transaction
+-- ----------------------------------------------------------------------------
+
+select pg_sleep(0.01);
+update public.milestones set status = 'rejected' where id = 'c2000000-0000-4000-8000-000000000003';
+select pg_sleep(0.01);
+update public.milestones set status = 'approved' where id = 'c2000000-0000-4000-8000-000000000003';
+
+select ok(
+  (select bool_and(occurred_at > now()) from public.integration_events
+    where milestone_id = 'c2000000-0000-4000-8000-000000000003' and delivered_at is null and dead_at is null),
+  'occurred_at is clock time, later than the transaction''s start'
+);
+select ok(
+  (select (array_agg(occurred_at order by seq))[1] < (array_agg(occurred_at order by seq))[2]
+     from public.integration_events
+    where milestone_id = 'c2000000-0000-4000-8000-000000000003' and delivered_at is null and dead_at is null),
+  'two changes in one transaction get times in the order they were applied'
+);
+select is(pg_temp.claim(), 1, 'one head for that milestone');
+select is((select status::text from claimed where milestone_id = 'c2000000-0000-4000-8000-000000000003'),
+  'rejected', 'and it is the change applied first');
+
+
+-- ----------------------------------------------------------------------------
+-- 8. Pruning: delivered over 30 days ago goes, dead stays
+-- ----------------------------------------------------------------------------
+
+insert into public.integration_events (id, webhook_id, milestone_id, project_id, status, cause, occurred_at,
+                                       attempts, delivered_at, dead_at)
+values
+  ('f3000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001',
+   'c2000000-0000-4000-8000-000000000003', 'b2000000-0000-4000-8000-000000000001',
+   'submitted', 'status_changed', now() - interval '40 days', 1, now() - interval '31 days', null),
+  ('f3000000-0000-4000-8000-000000000002', 'e2000000-0000-4000-8000-000000000001',
+   'c2000000-0000-4000-8000-000000000003', 'b2000000-0000-4000-8000-000000000001',
+   'submitted', 'status_changed', now() - interval '40 days', 1, now() - interval '29 days', null),
+  ('f3000000-0000-4000-8000-000000000003', 'e2000000-0000-4000-8000-000000000001',
+   'c2000000-0000-4000-8000-000000000003', 'b2000000-0000-4000-8000-000000000001',
+   'submitted', 'status_changed', now() - interval '90 days', 8, null, now() - interval '89 days');
+
+select pg_temp.claim_none();
+select results_eq(
+  $$ select id from public.integration_events
+      where id::text like 'f3000000-%' order by id $$,
+  $$ values ('f3000000-0000-4000-8000-000000000002'::uuid), ('f3000000-0000-4000-8000-000000000003'::uuid) $$,
+  'a claim prunes events delivered over 30 days ago and keeps newer ones and dead ones'
+);
+select is(
+  (select count(*) from public.integration_events
+    where milestone_id = 'c2000000-0000-4000-8000-000000000003' and delivered_at is null and dead_at is null),
+  2::bigint,
+  'pending events are never pruned'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 9. Shape and access
 -- ----------------------------------------------------------------------------
 
 select throws_ok(

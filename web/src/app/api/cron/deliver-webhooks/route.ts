@@ -7,9 +7,12 @@ import { parseEncryptionKey } from "@/lib/webhooks/secret-box";
 
 /**
  * `GET /api/cron/deliver-webhooks` — sends due webhook events to doqtri
- * (docs/integration/CONTRACT.md section 9). Called every minute by Vercel
- * Cron (web/vercel.json) with `Authorization: Bearer <CRON_SECRET>`; anything
- * else gets a 401 and does nothing.
+ * (docs/integration/CONTRACT.md section 9). Called with
+ * `Authorization: Bearer <CRON_SECRET>` every minute by a pg_cron job through
+ * pg_net (section 8 of supabase/migrations/20261024130000_integration_webhooks.sql),
+ * and once a day by Vercel Cron (web/vercel.json) as a backstop: a Hobby
+ * project rejects deployments with a more frequent Vercel cron. Anything else
+ * gets a 401 and does nothing.
  *
  * One run claims and sends until nothing is due or the time budget is spent,
  * so an event released by its predecessor's delivery goes out in the same
