@@ -254,7 +254,9 @@ describe("APP_ACCESS matches the guard migration", () => {
   const dir = fileURLToPath(new URL("../../../../supabase/migrations/", import.meta.url));
   const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
   const sql = (name: string) => readFileSync(`${dir}${name}`, "utf8");
-  const guards = sql("20261024110000_oauth_client_guards.sql");
+  // The guard migration, and the later ones that guard their own new tables
+  // the same way (20261024130000_integration_webhooks.sql).
+  const guards = files.map(sql).join("\n");
 
   const tables = new Set(
     files.flatMap((name) =>
@@ -302,6 +304,8 @@ describe("APP_ACCESS matches the guard migration", () => {
     const words: Record<(typeof APP_READ_SCOPE.hidden)[number], string> = {
       api_requests: "log of its requests",
       deployments: "deployments",
+      integration_events: "webhook settings and queue",
+      integration_webhooks: "webhook settings",
       milestone_reviews: "review notes",
       notifications: "notifications",
       stellar_proofs: "proofs of work",

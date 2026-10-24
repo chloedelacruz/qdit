@@ -741,6 +741,75 @@ export type Database = {
           },
         ]
       }
+
+      /**
+       * Where qdit sends milestone events (20261024130000_integration_webhooks.sql).
+       * No client role can read it; the cron route reads it only through
+       * `claim_integration_events`. The secret columns are ciphertext
+       * (`lib/webhooks/secret-box.ts`), never a plain secret.
+       */
+      integration_webhooks: {
+        Row: {
+          id: string
+          /** The OAuth client this endpoint belongs to. */
+          client_id: string
+          link_source: 'doqtri'
+          target_url: string
+          secret_ciphertext: string
+          /** Set during rotation; deliveries are then signed with both. */
+          next_secret_ciphertext: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        /** Written by an operator in the SQL editor, never by the app. */
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * The webhook outbox. Written by trigger; settled only through
+       * `record_integration_delivery`. `id` is the event id.
+       */
+      integration_events: {
+        Row: {
+          id: string
+          seq: number
+          webhook_id: string
+          milestone_id: string
+          project_id: string
+          event: 'milestone.status_changed'
+          status: Database['public']['Enums']['milestone_status']
+          cause: 'status_changed' | 'anchor_recorded'
+          occurred_at: string
+          attempts: number
+          next_attempt_at: string
+          claim_token: string | null
+          delivered_at: string | null
+          dead_at: string | null
+          last_error: string | null
+          created_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'integration_events_webhook_id_fkey'
+            columns: ['webhook_id']
+            isOneToOne: false
+            referencedRelation: 'integration_webhooks'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'integration_events_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -854,6 +923,45 @@ export type Database = {
           p_doc_version: number | null
         }
         Returns: string
+      }
+      /**
+       * Webhook delivery (service_role only). Claims up to `p_limit` due
+       * events, at most one per (webhook, milestone) and only the head of
+       * that queue (D-25); counts the attempt and leases the row.
+       */
+      claim_integration_events: {
+        Args: { p_limit?: number; p_lease_seconds?: number }
+        Returns: {
+          id: string
+          webhook_id: string
+          milestone_id: string
+          project_id: string
+          event: 'milestone.status_changed'
+          status: Database['public']['Enums']['milestone_status']
+          occurred_at: string
+          /** Including the attempt this claim is for. */
+          attempts: number
+          claim_token: string
+          client_id: string
+          target_url: string
+          secret_ciphertext: string
+          next_secret_ciphertext: string | null
+        }[]
+      }
+      /**
+       * Settles one claimed attempt. `p_next_attempt_at` null means dead; the
+       * database also makes the 8th failure dead whatever is passed. Returns
+       * `stale` when the claim token no longer matches.
+       */
+      record_integration_delivery: {
+        Args: {
+          p_id: string
+          p_claim_token: string
+          p_delivered: boolean
+          p_error: string | null
+          p_next_attempt_at: string | null
+        }
+        Returns: 'delivered' | 'retry' | 'dead' | 'stale'
       }
     }
 
