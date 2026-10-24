@@ -78,7 +78,7 @@ export const APP_ACCESS = {
     "Approve or reject milestones, or delete projects or milestones",
     "Change anything about a milestone except a linked milestone's title",
     "Change members, roles or project settings",
-    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests or its webhook settings and queue",
+    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, or its record of which connections keep a plan linked",
     "See your teammates' profiles or who else is in your projects",
   ],
 } as const;
@@ -105,6 +105,9 @@ export const APP_READ_SCOPE = {
   hidden: [
     "api_requests",
     "deployments",
+    // Which connections keep a plan linked (20261025120600_doc_link_connections.sql):
+    // qdit's bookkeeping about grants, for the doc card, not data D-03 opens.
+    "doc_link_connections",
     // The webhook outbox and endpoints (20261024130000_integration_webhooks.sql):
     // qdit's own delivery state, closed to every client role, not user data.
     "integration_events",
