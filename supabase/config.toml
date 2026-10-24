@@ -95,6 +95,15 @@ enabled = false
 # anywhere — in the hosted project too, where this file does not reach and the
 # switch is in Dashboard -> Authentication -> OAuth Server.
 #
+# Before enabling it in the hosted project, also check what Auth itself lets
+# such a token do — RLS cannot see any of it. Against a local stack, take a
+# token issued to a test client and confirm Auth refuses it on PUT
+# /auth/v1/user (email and password changes), /auth/v1/factors,
+# /auth/v1/user/oauth/grants and /auth/v1/oauth/authorizations/{id}/consent.
+# If any of those accepts it, the token can take over the account or grant
+# itself more consent: stop and escalate rather than enable. Not yet checked —
+# there was no local Auth to try it against when this was written.
+#
 # No dynamic registration: the only client is doqtri, registered by hand, and
 # an open /register endpoint would let anyone mint a client that can ask our
 # users for consent under any name it likes.
