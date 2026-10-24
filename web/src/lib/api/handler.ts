@@ -131,7 +131,8 @@ export function apiRoute<Params = Record<string, never>>(
  *
  * The contract (section 6) promises a JSON `not_found` for an unknown path,
  * and an endpoint is a method and a path together, so a method a route does
- * not implement gets the same answer rather than Next's empty-body 405. Each
+ * not implement gets the same answer rather than Next's empty-body 405
+ * (D-27). Each
  * `/api/v1` route file exports this for the methods it does not serve, and
  * the `[[...path]]` catch-all exports it for everything. Like every handler
  * here it authenticates first, so an anonymous caller learns nothing about
@@ -140,6 +141,31 @@ export function apiRoute<Params = Record<string, never>>(
 export const endpointNotFound = apiRoute<{ path?: string[] }>(async () => {
   throw new ApiError("not_found", "No such endpoint in qdit API v1.");
 });
+
+/**
+ * The methods a Route Handler can export. Next answers any other method
+ * itself, with an empty `400`, before a route file is consulted, so
+ * `src/proxy.ts` sends those to `endpointNotFound` on `/api/v1` instead.
+ *
+ * Each `/api/v1` route file exports every one of these: its real handlers,
+ * and `endpointNotFound` for the rest. `HEAD` and `OPTIONS` included, because
+ * Next would otherwise answer them on its own (`HEAD` by running `GET`,
+ * `OPTIONS` with an empty `204` and an `Allow` list), and neither is in the
+ * contract (D-27).
+ */
+export const ROUTE_METHODS = [
+  "GET",
+  "HEAD",
+  "OPTIONS",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+] as const;
+
+export function isRouteMethod(method: string): boolean {
+  return (ROUTE_METHODS as readonly string[]).includes(method);
+}
 
 function takeRateLimit({ clientId, userId }: ApiAuth) {
   return takeFromWindows([
