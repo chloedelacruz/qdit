@@ -315,9 +315,20 @@ describe("APP_ACCESS matches the guard migration", () => {
     expect(cannot).toContain("who else is in your projects");
   });
 
-  it("promises no write the migration does not allow yet", () => {
-    // WP-2.4 brings renaming linked milestones and linking documents.
+  it("promises the link writes only alongside the migration that grants them", () => {
+    // 20261024120000_integration_links.sql opens link rows and linked-title
+    // renames to apps (WP-2.4); without it the screen must not promise them.
     const can = APP_ACCESS.can.join(" ").toLowerCase();
-    expect(can).not.toMatch(/rename|link/);
+    const linksMigration = files.includes("20261024120000_integration_links.sql");
+    expect(linksMigration).toBe(true);
+    expect(can).toMatch(/link/);
+    expect(can).toMatch(/rename a milestone that is linked/);
+    expect(can).toContain("the title only");
+  });
+
+  it("still tells the user an app cannot decide or delete", () => {
+    const cannot = APP_ACCESS.cannot.join(" ").toLowerCase();
+    expect(cannot).toContain("approve or reject");
+    expect(cannot).toContain("delete projects or milestones");
   });
 });
