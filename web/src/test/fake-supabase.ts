@@ -46,7 +46,7 @@ export function fakeClient(builder: object) {
   };
 }
 
-type Result = { data: unknown; error: unknown };
+type Result = { data: unknown; error: unknown; count?: number | null };
 
 export type ScriptedRequest = {
   kind: "from" | "rpc";

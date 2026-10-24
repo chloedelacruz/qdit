@@ -192,6 +192,7 @@ export function MilestoneRowActions({
               description: milestone.description,
               dueDate: milestone.dueDate,
             }}
+            titleLocked={Boolean(milestone.link)}
             {...props}
           />
         )}
