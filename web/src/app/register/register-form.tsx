@@ -21,7 +21,14 @@ const EMPTY: RegisterState = {};
  * from the session and the ticket; passing it here as a hidden field would let
  * the client choose, and the client does not get to choose.
  */
-export function RegisterForm({ mode }: { mode: "create" | "complete" }) {
+export function RegisterForm({
+  mode,
+  next,
+}: {
+  mode: "create" | "complete";
+  /** Where to land afterwards. The action sanitises it again. */
+  next: string;
+}) {
   const [state, formAction, pending] = useActionState(
     completeWalletRegistration,
     EMPTY,
@@ -29,6 +36,8 @@ export function RegisterForm({ mode }: { mode: "create" | "complete" }) {
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
+      <input type="hidden" name="next" value={next} />
+
       <div className="space-y-1.5">
         <Label htmlFor="username">Username</Label>
         <Input

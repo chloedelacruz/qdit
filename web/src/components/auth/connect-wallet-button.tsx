@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { registerPath } from "@/lib/auth/next-path";
 import { ICON } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -137,7 +138,11 @@ export function ConnectWalletButton({
       // carried a ticket to make one; "complete-account" means there is one,
       // made by the retired auto-create flow, still missing the email and
       // password it should have been born with.
-      router.push(result.status === "signed-in" ? redirectTo : "/register");
+      //
+      // Registration carries `redirectTo` along, so somebody who came to sign
+      // in on the way to somewhere — another app's consent screen — still gets
+      // there after making the account.
+      router.push(result.status === "signed-in" ? redirectTo : registerPath(redirectTo));
 
       // Deliberately not clearing `busy`. The navigation is what ends this
       // state, and re-enabling the button first invites a second click that
