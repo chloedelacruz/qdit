@@ -42,7 +42,11 @@ yarn-error.log*
 
 # Pitch deck — the shared copy lives in Google Slides, linked from the README.
 # These are local exports, regenerated rather than tracked.
-docs/
+# docs/integration/ is the exception: the doqtri x qdit contract is shared
+# with the doqtri repo and must be tracked. `docs/*` (not `docs/`) so the
+# negation can reach inside the directory.
+docs/*
+!docs/integration/
 docs/qdit-pitch-deck.pptx
 docs/qdit-pitch-deck.pdf
 
