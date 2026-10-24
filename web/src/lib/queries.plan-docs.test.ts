@@ -25,11 +25,23 @@ function row(id: string, docUrl: string) {
     doc_title: `Plan ${id}`,
     doc_url: docUrl,
     created_at: "2026-10-20T13:58:00+00:00",
-    milestone_external_links: [{ count: 2 }],
+    doc_link_connections: [{ lost_at: null, lost_reason: null }],
+    milestone_external_links: [
+      { doc_version: 7, milestones: { milestone_anchors: [{ count: 1 }] } },
+      { doc_version: null, milestones: { milestone_anchors: [{ count: 0 }] } },
+    ],
   };
 }
 
-function database(rows: ReturnType<typeof row>[]) {
+type Row = Omit<ReturnType<typeof row>, "doc_link_connections" | "milestone_external_links"> & {
+  doc_link_connections: { lost_at: string | null; lost_reason: string | null }[];
+  milestone_external_links: {
+    doc_version: number | null;
+    milestones: { milestone_anchors: { count: number }[] } | null;
+  }[];
+};
+
+function database(rows: Row[]) {
   const db = fakeDatabase({ from: { project_doc_links: [{ data: rows, error: null }] } });
   createClient.mockResolvedValue(db.client);
   return db;
@@ -76,5 +88,57 @@ describe("listPlanDocs", () => {
 
     expect(docs.map((doc) => [doc.title, doc.url])).toEqual([["Plan 1", null]]);
     expect(logged).toHaveBeenCalledOnce();
+  });
+});
+
+describe("listPlanDocs for the doc card (WP-2.6)", () => {
+  it("asks for the doc's connections and its milestones' anchors", async () => {
+    const db = database([row("1", "https://www.doqtri.xyz/d/1")]);
+
+    await listPlanDocs(PROJECT);
+
+    const select = String(db.requests[0].calls.find(([method]) => method === "select")?.[1]);
+    expect(select).toContain("doc_link_connections(lost_at, lost_reason)");
+    expect(select).toContain("milestone_external_links(doc_version, milestones(milestone_anchors(count)))");
+  });
+
+  it("counts anchored milestones and keeps the newest doc version", async () => {
+    database([
+      {
+        ...row("1", "https://www.doqtri.xyz/d/1"),
+        milestone_external_links: [
+          { doc_version: 7, milestones: { milestone_anchors: [{ count: 2 }] } },
+          { doc_version: 9, milestones: { milestone_anchors: [{ count: 0 }] } },
+          { doc_version: null, milestones: null },
+        ],
+      },
+      { ...row("2", "https://www.doqtri.xyz/d/2"), milestone_external_links: [] },
+    ]);
+
+    const docs = await listPlanDocs(PROJECT);
+
+    expect(docs.map(({ milestoneCount, anchoredCount, docVersion }) => ({ milestoneCount, anchoredCount, docVersion }))).toEqual([
+      { milestoneCount: 3, anchoredCount: 1, docVersion: 9 },
+      { milestoneCount: 0, anchoredCount: 0, docVersion: null },
+    ]);
+  });
+
+  it("is connected while a connection is live, and lost when none is", async () => {
+    database([
+      row("1", "https://www.doqtri.xyz/d/1"),
+      {
+        ...row("2", "https://www.doqtri.xyz/d/2"),
+        doc_link_connections: [{ lost_at: "2026-10-25T09:00:00Z", lost_reason: "revoked" }],
+      },
+      { ...row("3", "https://www.doqtri.xyz/d/3"), doc_link_connections: [] },
+    ]);
+
+    const docs = await listPlanDocs(PROJECT);
+
+    expect(docs.map((doc) => doc.connection)).toEqual([
+      { live: true },
+      { live: false, reason: "revoked" },
+      { live: false, reason: "unknown" },
+    ]);
   });
 });
