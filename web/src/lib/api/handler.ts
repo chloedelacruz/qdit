@@ -2,7 +2,7 @@ import "server-only";
 
 import { after } from "next/server";
 
-import { takeFromWindow, type RateLimit } from "@/lib/auth/rate-limit";
+import { takeFromWindows, type RateLimit } from "@/lib/auth/rate-limit";
 
 import { recordApiRequest } from "./audit";
 import { authenticate, type ApiAuth } from "./auth";
@@ -17,13 +17,17 @@ import { ApiError, internalError } from "./errors";
  *      errors included, so a caller always has something to quote;
  *   2. authenticate the bearer token (`./auth.ts`) — nothing under `/api/v1`
  *      is anonymous;
- *   3. rate-limit per `(client_id, sub)` and per `client_id` (section 6);
+ *   3. rate-limit per `(client_id, sub)` and per `client_id` (section 6),
+ *      charging both windows only when both allow, so a refused request uses
+ *      up nobody's budget;
  *   4. run the handler with a client scoped to the caller;
  *   5. turn any thrown `ApiError` into the contract's error body, and anything
  *      else into a bare `internal_error` with the real error in the log;
  *   6. after the response is sent, append the `api_requests` audit row
  *      (`./audit.ts`) — only for requests that authenticated, so an anonymous
- *      caller cannot grow the table.
+ *      caller cannot grow the table, and for a rate-limited caller only the
+ *      first 429 of each window, so the audit writes stay bounded by the
+ *      limit they record.
  *
  * Handlers return a `Response` (use `ok()` / `json()` / `noContent()` below)
  * and throw `ApiError` for anything the caller should see.
@@ -81,11 +85,17 @@ export function apiRoute<Params = Record<string, never>>(
   ): Promise<Response> {
     const requestId = crypto.randomUUID();
     let auth: ApiAuth | null = null;
+    let audit = true;
     let response: Response;
 
     try {
       auth = await authenticate(request);
-      enforceRateLimit(auth);
+
+      const verdict = takeRateLimit(auth);
+      if (!verdict.allowed) {
+        audit = verdict.firstRefusal;
+        throw rateLimited(verdict.retryAfterMs);
+      }
 
       const params = (await context?.params) ?? ({} as Params);
       response = await handler({ request, auth, requestId, params });
@@ -97,7 +107,7 @@ export function apiRoute<Params = Record<string, never>>(
     // Per-user data behind a bearer token. No shared cache may keep it.
     response.headers.set("Cache-Control", "no-store");
 
-    if (auth) {
+    if (auth && audit) {
       const { clientId, userId } = auth;
       const status = response.status;
       after(() =>
@@ -116,19 +126,31 @@ export function apiRoute<Params = Record<string, never>>(
   };
 }
 
-function enforceRateLimit({ clientId, userId }: ApiAuth): void {
-  const checks = [
-    takeFromWindow(`api-v1:user:${clientId}:${userId}`, API_RATE_LIMITS.perUser),
-    takeFromWindow(`api-v1:client:${clientId}`, API_RATE_LIMITS.perClient),
-  ];
+/**
+ * The answer for a path, or a method on a path, that no handler serves.
+ *
+ * The contract (section 6) promises a JSON `not_found` for an unknown path,
+ * and an endpoint is a method and a path together, so a method a route does
+ * not implement gets the same answer rather than Next's empty-body 405. Each
+ * `/api/v1` route file exports this for the methods it does not serve, and
+ * the `[[...path]]` catch-all exports it for everything. Like every handler
+ * here it authenticates first, so an anonymous caller learns nothing about
+ * which endpoints exist.
+ */
+export const endpointNotFound = apiRoute<{ path?: string[] }>(async () => {
+  throw new ApiError("not_found", "No such endpoint in qdit API v1.");
+});
 
-  const waits = checks.flatMap((check) =>
-    check.allowed ? [] : [check.retryAfterMs],
-  );
-  if (waits.length === 0) return;
+function takeRateLimit({ clientId, userId }: ApiAuth) {
+  return takeFromWindows([
+    { key: `api-v1:user:${clientId}:${userId}`, limit: API_RATE_LIMITS.perUser },
+    { key: `api-v1:client:${clientId}`, limit: API_RATE_LIMITS.perClient },
+  ]);
+}
 
-  const seconds = Math.max(1, Math.ceil(Math.max(...waits) / 1000));
-  throw new ApiError(
+function rateLimited(retryAfterMs: number): ApiError {
+  const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+  return new ApiError(
     "rate_limited",
     "Too many requests. Wait for Retry-After seconds and try again.",
     { headers: { "Retry-After": String(seconds) } },

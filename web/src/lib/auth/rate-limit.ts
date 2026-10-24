@@ -22,7 +22,12 @@ import "server-only";
  * double the limit across a window boundary) is irrelevant at these numbers.
  */
 
-type Window = { count: number; resetAt: number };
+type Window = {
+  count: number;
+  resetAt: number;
+  /** Calls refused in this window. Refusals never touch `count`. */
+  refused: number;
+};
 
 const windows = new Map<string, Window>();
 
@@ -44,8 +49,13 @@ export function rateLimit(key: string, limit: RateLimit): boolean {
 
 export type RateLimitResult =
   | { allowed: true }
-  /** `retryAfterMs` is how long until this key's window resets. */
-  | { allowed: false; retryAfterMs: number };
+  | {
+      allowed: false;
+      /** How long until every refusing window has reset. */
+      retryAfterMs: number;
+      /** True for the first refusal in a refusing window, false after. */
+      firstRefusal: boolean;
+    };
 
 /**
  * The same counter, saying how long a refused caller has to wait.
@@ -53,30 +63,63 @@ export type RateLimitResult =
  * `/api/v1` needs that number for `Retry-After` (integration contract section
  * 6); the sign-in routes do not, and keep calling `rateLimit()`.
  */
-export function takeFromWindow(
-  key: string,
-  { limit, windowMs }: RateLimit,
+export function takeFromWindow(key: string, limit: RateLimit): RateLimitResult {
+  return takeFromWindows([{ key, limit }]);
+}
+
+/**
+ * One call against several windows at once, all or nothing.
+ *
+ * Every window is checked before any is charged, and a refused call is
+ * charged to none of them. Charging each window as it is checked would let a
+ * call one window refuses still use up another's budget: on `/api/v1`, one
+ * user retrying past their own limit would keep draining the per-client
+ * window until every other user of that client was refused too.
+ */
+export function takeFromWindows(
+  checks: ReadonlyArray<{ key: string; limit: RateLimit }>,
 ): RateLimitResult {
   const now = Date.now();
-  const existing = windows.get(key);
 
-  if (!existing || now >= existing.resetAt) {
-    if (windows.size > SWEEP_THRESHOLD) {
-      for (const [k, window] of windows) {
-        if (now >= window.resetAt) windows.delete(k);
-      }
-    }
+  const full = checks.flatMap(({ key, limit }) => {
+    const window = live(key, now);
+    return window && window.count >= limit.limit ? [window] : [];
+  });
 
-    windows.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true };
+  if (full.length > 0) {
+    const firstRefusal = full.some((window) => window.refused === 0);
+    for (const window of full) window.refused += 1;
+    return {
+      allowed: false,
+      retryAfterMs: Math.max(...full.map((window) => window.resetAt - now)),
+      firstRefusal,
+    };
   }
 
-  if (existing.count >= limit) {
-    return { allowed: false, retryAfterMs: existing.resetAt - now };
-  }
-
-  existing.count += 1;
+  for (const { key, limit } of checks) charge(key, limit, now);
   return { allowed: true };
+}
+
+/** The key's window if it has one that has not reset yet. */
+function live(key: string, now: number): Window | undefined {
+  const window = windows.get(key);
+  return window && now < window.resetAt ? window : undefined;
+}
+
+function charge(key: string, { windowMs }: RateLimit, now: number): void {
+  const existing = live(key, now);
+  if (existing) {
+    existing.count += 1;
+    return;
+  }
+
+  if (windows.size > SWEEP_THRESHOLD) {
+    for (const [k, window] of windows) {
+      if (now >= window.resetAt) windows.delete(k);
+    }
+  }
+
+  windows.set(key, { count: 1, resetAt: now + windowMs, refused: 0 });
 }
 
 /**

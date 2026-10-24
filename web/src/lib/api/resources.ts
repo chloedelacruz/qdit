@@ -48,13 +48,36 @@ export type ProjectRow = Pick<
 export const PROJECT_COLUMNS =
   "id, name, slug, description, status, chain_network, chain_contract_id, created_at, updated_at";
 
+/** The contract's production origin (section 7). */
+const PRODUCTION_ORIGIN = "https://qdit.atalusan.com";
+
+let warnedMissingSite = false;
+
 /**
  * An absolute qdit page URL. The contract leaves the path to qdit (section 7);
- * the origin is `NEXT_PUBLIC_SITE_URL`, `https://qdit.atalusan.com` in
- * production.
+ * the origin is `NEXT_PUBLIC_SITE_URL`.
+ *
+ * Unset, the fallback is localhost only outside production. In production
+ * it is the contract's origin, said once in the log: a `url` pointing at
+ * 127.0.0.1 would reach doqtri users as a dead link and nothing would flag it.
  */
 export function qditUrl(path: string): string {
-  const site = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://127.0.0.1:3000";
+  let site = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (!site) {
+    if (process.env.NODE_ENV === "production") {
+      if (!warnedMissingSite) {
+        warnedMissingSite = true;
+        console.error(
+          `api: NEXT_PUBLIC_SITE_URL is not set; using ${PRODUCTION_ORIGIN} for API urls. See web/.env.example.`,
+        );
+      }
+      site = PRODUCTION_ORIGIN;
+    } else {
+      site = "http://127.0.0.1:3000";
+    }
+  }
+
   return new URL(path, site).toString();
 }
 

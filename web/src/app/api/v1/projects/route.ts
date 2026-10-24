@@ -1,5 +1,5 @@
 import { databaseError } from "@/lib/api/errors";
-import { apiRoute, json } from "@/lib/api/handler";
+import { apiRoute, endpointNotFound, json } from "@/lib/api/handler";
 import {
   afterCursorFilter,
   decodeCursor,
@@ -65,3 +65,10 @@ export const GET = apiRoute(async ({ request, auth }) => {
         : null,
   });
 });
+
+// Read-only endpoint: every other method is an unknown endpoint (see
+// `endpointNotFound`), not Next's empty-body 405.
+export const POST = endpointNotFound;
+export const PUT = endpointNotFound;
+export const PATCH = endpointNotFound;
+export const DELETE = endpointNotFound;

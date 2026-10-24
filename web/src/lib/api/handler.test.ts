@@ -142,6 +142,12 @@ describe("apiRoute", () => {
     });
     expect(recordApiRequest).toHaveBeenLastCalledWith(expect.objectContaining({ status: 429 }));
 
+    // Further 429s in the same window are not audited: the writes stay bounded.
+    recordApiRequest.mockClear();
+    expect((await route(get())).status).toBe(429);
+    expect((await route(get())).status).toBe(429);
+    expect(recordApiRequest).not.toHaveBeenCalled();
+
     // Another user of the same client still has their own budget.
     authenticate.mockResolvedValue(caller("client-busy", "2a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"));
     expect((await route(get())).status).toBe(200);
@@ -162,5 +168,26 @@ describe("apiRoute", () => {
       caller("client-crowded", "00000000-0000-4000-8000-999999999999"),
     );
     expect((await route(get())).status).toBe(429);
+  });
+
+  it("does not charge a refused request to the per-client window", async () => {
+    const route = apiRoute(async () => ok(null));
+    const { perUser, perClient } = API_RATE_LIMITS;
+    const loud = caller("client-shared", "00000000-0000-4000-8000-000000000001");
+
+    authenticate.mockResolvedValue(loud);
+    for (let i = 0; i < perUser.limit; i++) {
+      expect((await route(get())).status).toBe(200);
+    }
+    // One user retrying far past their own limit, more than the client's
+    // whole budget...
+    for (let i = 0; i < perClient.limit; i++) {
+      expect((await route(get())).status).toBe(429);
+    }
+
+    // ...leaves the client's other users their full share.
+    const quiet = caller("client-shared", "00000000-0000-4000-8000-000000000002");
+    authenticate.mockResolvedValue(quiet);
+    expect((await route(get())).status).toBe(200);
   });
 });

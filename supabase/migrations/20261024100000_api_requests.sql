@@ -13,7 +13,9 @@
 -- or doqtri quotes an `X-Request-Id` from a failed call, there has to be a
 -- record that answers by client, by user and by request. This is that record:
 -- one row per authenticated `/api/v1` request — who (client and user), what
--- (method and path) and how it ended (status).
+-- (method and path) and how it ended (status). The one exception is a caller
+-- over its rate limit: only its first 429 in each window gets a row, so a
+-- caller hammering past the limit cannot turn each refusal into a write.
 --
 -- Deliberately not stored: request or response bodies, query strings and
 -- headers. The log says that a call happened, not what it carried, so it never
@@ -85,7 +87,7 @@ create table public.api_requests (
 );
 
 comment on table public.api_requests is
-  'One row per authenticated /api/v1 request: client, user, method, path, status. Written only by the API server with the secret key; RLS on, no policies.';
+  'One row per authenticated /api/v1 request: client, user, method, path, status. Repeat 429s within one rate-limit window are not recorded. Written only by the API server with the secret key; RLS on, no policies.';
 comment on column public.api_requests.request_id is
   'X-Request-Id sent on the response. Quote it to find the row.';
 comment on column public.api_requests.client_id is
