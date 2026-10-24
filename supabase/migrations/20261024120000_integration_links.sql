@@ -57,8 +57,9 @@
 --                              (section 4), for every caller alike.
 --
 -- For every caller, a doc link's `project_id`, `doc_id`, `linked_by` and
--- `created_at` are fixed once written (section 4): only the copies,
--- `doc_title` and `doc_url`, are refreshed. Moving a doc to another project is
+-- `created_at` are fixed once written (section 4; `linked_by` only goes to
+-- null, when its account is deleted): only the copies, `doc_title` and
+-- `doc_url`, are refreshed. Moving a doc to another project is
 -- an unlink and a new link, which is doqtri's call (D-10).
 --
 -- Reads are not guarded: GET /milestones/{id} returns the link, and the API
@@ -144,6 +145,8 @@ create table public.project_doc_links (
   -- (DOQTRI_ORIGIN), not data, so that part is enforced where the config is:
   -- POST /api/v1/projects/{id}/docs refuses a URL off the origin, and the
   -- "Plan docs" list links only URLs on it (web/src/lib/doqtri-origin.ts).
+  -- A project admin's own session can still write any https URL here
+  -- directly, past the API; the UI then shows it as plain text, not a link.
   doc_url     text not null
     constraint project_doc_links_doc_url_check
     check (
@@ -264,7 +267,32 @@ create trigger milestone_external_links_set_updated_at
 -- move. A doc link is never re-pointed at another project or doc, and who
 -- linked it is never rewritten (the INSERT policy pins `linked_by` to the
 -- caller; without this an UPDATE could set it to anyone).
+--
+-- The one exception, on both tables, is the account going: `linked_by` and
+-- `created_by` are `on delete set null`, which Postgres carries out as an
+-- UPDATE that fires these triggers. Without the exception, deleting anyone
+-- who ever linked a doc or a milestone would fail. So the column may become
+-- null, but only once the account it named no longer exists; nulling the
+-- pointer to a live account is still refused.
 -- ----------------------------------------------------------------------------
+
+-- True when an UPDATE's change to a who-wrote-it column is the
+-- `on delete set null` of its account: the value went to null, and the
+-- account it named is gone. Any other change is a rewrite.
+create or replace function public.link_author_gone(p_old uuid, p_new uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_old is not null
+     and p_new is null
+     and not exists (select 1 from auth.users u where u.id = p_old);
+$$;
+
+comment on function public.link_author_gone(uuid, uuid) is
+  'Used by the link triggers: true when linked_by/created_by goes from an account that no longer exists to null, the on delete set null of that account.';
 
 create or replace function public.check_project_doc_link()
 returns trigger
@@ -273,9 +301,11 @@ security definer
 set search_path = ''
 as $$
 begin
-  if (new.id, new.project_id, new.doc_id, new.linked_by, new.created_at)
+  if (new.id, new.project_id, new.doc_id, new.created_at)
      is distinct from
-     (old.id, old.project_id, old.doc_id, old.linked_by, old.created_at) then
+     (old.id, old.project_id, old.doc_id, old.created_at)
+     or (new.linked_by is distinct from old.linked_by
+         and not public.link_author_gone(old.linked_by, new.linked_by)) then
     raise exception 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.'
       using errcode = '42501';
   end if;
@@ -303,9 +333,13 @@ declare
   v_title      text;
 begin
   if tg_op = 'UPDATE' and (
-       new.milestone_id, new.project_id, new.doc_id, new.source, new.created_by, new.created_at
-     ) is distinct from (
-       old.milestone_id, old.project_id, old.doc_id, old.source, old.created_by, old.created_at
+       (
+         new.milestone_id, new.project_id, new.doc_id, new.source, new.created_at
+       ) is distinct from (
+         old.milestone_id, old.project_id, old.doc_id, old.source, old.created_at
+       )
+       or (new.created_by is distinct from old.created_by
+           and not public.link_author_gone(old.created_by, new.created_by))
      ) then
     raise exception 'Only node_id and doc_version of a milestone link can change.'
       using errcode = '42501';
@@ -862,6 +896,7 @@ grant select, insert, update, delete on public.milestone_external_links to authe
 
 revoke all on function public.check_milestone_external_link() from public, anon, authenticated;
 revoke all on function public.check_project_doc_link()        from public, anon, authenticated;
+revoke all on function public.link_author_gone(uuid, uuid)     from public, anon, authenticated;
 revoke all on function public.sync_link_doc_title()           from public, anon, authenticated;
 revoke all on function public.guard_milestone_update()        from public, anon, authenticated;
 revoke all on function public.sync_link_node_label()          from public, anon, authenticated;

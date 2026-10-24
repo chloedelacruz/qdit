@@ -4,9 +4,9 @@
 --
 -- Covers 20261024120000_integration_links.sql: the two doqtri link tables,
 -- their D-23 policies and D-03 guards, the title lock on linked milestones
--- (D-12), the frozen columns of both link tables, the rule that a linked
--- milestone stays in its project, the D-22 cascade, and the three /api/v1
--- RPCs.
+-- (D-12), the frozen columns of both link tables (and their one exception,
+-- the account going), the rule that a linked milestone stays in its project,
+-- the D-22 cascade, and the three /api/v1 RPCs.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back.
@@ -22,7 +22,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(94);
+select plan(101);
 
 
 -- ----------------------------------------------------------------------------
@@ -857,7 +857,7 @@ select ok(
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in ('guard_milestone_update', 'check_milestone_external_link', 'check_project_doc_link',
-                        'sync_link_node_label',
+                        'link_author_gone', 'sync_link_node_label',
                         'sync_link_doc_title', 'assert_project_role', 'link_project_doc',
                         'unlink_project_doc', 'create_linked_milestone')),
   'every new function pins search_path'
@@ -866,6 +866,77 @@ select ok(
   not has_table_privilege('anon', 'public.project_doc_links', 'select')
   and not has_table_privilege('anon', 'public.milestone_external_links', 'select'),
   'anon cannot reach the link tables'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 10. Deleting an account: linked_by and created_by go to null
+--
+-- Both are `on delete set null`, which Postgres runs as an UPDATE that the
+-- frozen-column triggers see. It must pass once the account is gone, and only
+-- then.
+-- ----------------------------------------------------------------------------
+
+select pg_temp.as_postgres();
+insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+values ('00000000-0000-0000-0000-000000000000', 'a1000000-0000-4000-8000-000000000006', 'authenticated', 'authenticated',
+        'links-leaver@qdit.test', '{"provider":"email","providers":["email"]}', '{"full_name":"Leaver","username":"links_leaver"}', now(), now());
+insert into public.project_members (project_id, user_id, role)
+values ('b1000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000006', 'admin');
+insert into public.milestones (id, project_id, title, status, order_index)
+values ('c1000000-0000-4000-8000-000000000006', 'b1000000-0000-4000-8000-000000000001', 'Leaver heading', 'proposed', 9);
+insert into public.project_doc_links (id, project_id, doc_id, doc_title, doc_url, linked_by)
+values ('e1000000-0000-4000-8000-000000000006', 'b1000000-0000-4000-8000-000000000001',
+        'd1000000-0000-4000-8000-000000000006', 'Leaver plan', 'https://www.doqtri.xyz/d/6',
+        'a1000000-0000-4000-8000-000000000006');
+insert into public.milestone_external_links (id, milestone_id, project_id, doc_id, node_id, node_label, created_by)
+values ('f1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000006',
+        'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000006',
+        'h0', 'Leaver heading', 'a1000000-0000-4000-8000-000000000006');
+
+-- While the account exists, nulling the pointer is still a rewrite.
+select pg_temp.as_session('a1000000-0000-4000-8000-000000000006');
+select throws_ok(
+  $$ update public.project_doc_links set linked_by = null
+      where id = 'e1000000-0000-4000-8000-000000000006' $$,
+  '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
+  'session admin: cannot blank who linked a doc while that account exists'
+);
+select throws_ok(
+  $$ update public.milestone_external_links set created_by = null
+      where id = 'f1000000-0000-4000-8000-000000000006' $$,
+  '42501', 'Only node_id and doc_version of a milestone link can change.',
+  'session member: cannot blank who created a milestone link while that account exists'
+);
+select pg_temp.as_postgres();
+select throws_ok(
+  $$ update public.project_doc_links set linked_by = null
+      where id = 'e1000000-0000-4000-8000-000000000006' $$,
+  '42501', null,
+  'a direct database session cannot blank linked_by of a live account either'
+);
+select throws_ok(
+  $$ update public.milestone_external_links set created_by = null
+      where id = 'f1000000-0000-4000-8000-000000000006' $$,
+  '42501', null,
+  'a direct database session cannot blank created_by of a live account either'
+);
+
+select lives_ok(
+  $$ delete from auth.users where id = 'a1000000-0000-4000-8000-000000000006' $$,
+  'deleting the account that linked a doc and created a milestone link succeeds'
+);
+select is(
+  (select row(d.linked_by, d.doc_title, d.doc_url)::text
+     from public.project_doc_links d where d.id = 'e1000000-0000-4000-8000-000000000006'),
+  row(null::uuid, 'Leaver plan', 'https://www.doqtri.xyz/d/6')::text,
+  'the doc link stays, with linked_by null'
+);
+select is(
+  (select row(l.created_by, l.node_id, l.milestone_id)::text
+     from public.milestone_external_links l where l.id = 'f1000000-0000-4000-8000-000000000006'),
+  row(null::uuid, 'h0', 'c1000000-0000-4000-8000-000000000006'::uuid)::text,
+  'the milestone link stays, with created_by null'
 );
 
 
