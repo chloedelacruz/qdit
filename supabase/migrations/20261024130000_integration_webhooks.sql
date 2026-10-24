@@ -43,15 +43,30 @@
 --
 -- `occurred_at` is cut to milliseconds when it is written, so the body sent
 -- on every retry is the same bytes (the contract's timestamps have
--- milliseconds, and JavaScript's Date cannot carry more).
+-- milliseconds, and JavaScript's Date cannot carry more). It is the time of
+-- the write (clock_timestamp()), not the start of the transaction (now()):
+-- two status changes of one milestone are serialised by its row lock, and
+-- the one applied second must not carry the earlier time just because its
+-- transaction began first.
 --
 -- ---------------------------------------------------------------------------
 -- DELIVERY (web/src/app/api/cron/deliver-webhooks/route.ts)
 -- ---------------------------------------------------------------------------
--- A Vercel cron calls the route every minute. It claims due events with
--- claim_integration_events(), posts them, and reports each outcome with
--- record_integration_delivery(). Both are SECURITY DEFINER, granted to
--- service_role only, and the route holds the secret key for exactly this.
+-- Something calls the route with `Authorization: Bearer <CRON_SECRET>`. It
+-- claims due events with claim_integration_events(), posts them, and reports
+-- each outcome with record_integration_delivery(). Both are SECURITY
+-- DEFINER, granted to service_role only, and the route holds the secret key
+-- for exactly this.
+--
+--   Who calls it. pg_cron, every minute, through pg_net (section 8 below).
+--   That works on any Vercel plan; Vercel Cron does not, because a Hobby
+--   project rejects every deployment whose vercel.json runs a cron more than
+--   once a day, and nothing in this repo records which plan qdit is on.
+--   web/vercel.json therefore schedules the route once a day only, as a
+--   backstop if the database job is missing or broken. On a Pro plan it may
+--   be made minutely too; two callers are harmless (leases, below). The job
+--   reads the route's URL and the bearer from Supabase Vault, so it does
+--   nothing until an operator stores them (section 8).
 --
 --   Order (D-25). Only the head of each (webhook, milestone) queue can be
 --   claimed: the earliest event, by `occurred_at` and then `seq` (insertion
@@ -72,6 +87,11 @@
 --   Idempotent. A report only lands with the claim's token, and only while
 --   the row is still pending, so a repeated or stale report changes nothing.
 --   Retries resend the same `id` (contract section 9), so doqtri dedupes them.
+--
+--   Pruning. Every claim also deletes up to 500 events delivered more than
+--   30 days ago (doqtri keeps ids for 7 days of dedupe, so a delivered row is
+--   of no use after that). Dead events are never pruned: they stay for
+--   whoever inspects them, as the contract requires.
 --
 -- ---------------------------------------------------------------------------
 -- THE SIGNING SECRET: ENCRYPTED BY THE APP, NOT STORED IN CLEAR
@@ -189,7 +209,8 @@ create table public.integration_events (
   cause            text not null check (cause in ('status_changed', 'anchor_recorded')),
 
   -- Milliseconds, so the body is the same bytes on every retry (header).
-  occurred_at      timestamptz not null default date_trunc('milliseconds', now()),
+  -- clock_timestamp(): the time of the write, not of the transaction's start.
+  occurred_at      timestamptz not null default date_trunc('milliseconds', clock_timestamp()),
 
   -- Delivery state.
   attempts         smallint not null default 0 check (attempts between 0 and 8),
@@ -222,6 +243,11 @@ create index integration_events_pending_idx
 -- The cascades from milestones and projects.
 create index integration_events_milestone_idx on public.integration_events (milestone_id);
 create index integration_events_project_idx   on public.integration_events (project_id);
+
+-- The prune in claim_integration_events(): oldest delivered first.
+create index integration_events_delivered_idx
+  on public.integration_events (delivered_at)
+  where delivered_at is not null;
 
 -- "What died?", for whoever is on call.
 create index integration_events_dead_idx
@@ -361,6 +387,17 @@ declare
   v_limit integer := greatest(1, least(coalesce(p_limit, 20), 100));
   v_lease interval := make_interval(secs => greatest(30, least(coalesce(p_lease_seconds, 120), 900)));
 begin
+  -- Delivered more than 30 days ago: past doqtri's 7-day dedupe window, so
+  -- of no further use. Bounded per call; dead rows are kept (header).
+  delete from public.integration_events e
+   where e.id in (
+     select p.id
+       from public.integration_events p
+      where p.delivered_at < now() - interval '30 days'
+      order by p.delivered_at
+      limit 500
+   );
+
   -- A run that claimed an 8th attempt and never reported back: its lease is
   -- over and no attempt is left, so it is dead, which releases the next one.
   update public.integration_events e
@@ -420,7 +457,7 @@ end;
 $$;
 
 comment on function public.claim_integration_events(integer, integer) is
-  'SECURITY DEFINER, service_role only. Claims up to p_limit due events, at most one per (webhook, milestone) and only the head of that queue (D-25); counts the attempt and leases the row. Returns each with its webhook URL and secret ciphertext.';
+  'SECURITY DEFINER, service_role only. Prunes events delivered over 30 days ago, then claims up to p_limit due events, at most one per (webhook, milestone) and only the head of that queue (D-25); counts the attempt and leases the row. Returns each with its webhook URL and secret ciphertext.';
 
 
 create or replace function public.record_integration_delivery(
@@ -567,3 +604,77 @@ revoke all on function public.record_integration_delivery(uuid, uuid, boolean, t
 grant execute on function public.claim_integration_events(integer, integer) to service_role;
 grant execute on function public.record_integration_delivery(uuid, uuid, boolean, text, timestamptz)
   to service_role;
+
+
+-- ----------------------------------------------------------------------------
+-- 8. The scheduler: pg_cron calls the delivery route every minute
+--
+-- The job (`qdit-deliver-webhooks`) does a GET through pg_net with the URL
+-- and the bearer read from Supabase Vault at each run, so neither is in this
+-- file, in cron.job, or in a log of it. Until both secrets exist the job runs
+-- and sends nothing. An operator stores them once per environment, in the
+-- SQL editor:
+--
+--   select vault.create_secret('https://<qdit host>/api/cron/deliver-webhooks',
+--                              'qdit_deliver_webhooks_url');
+--   select vault.create_secret('<the CRON_SECRET the app has>', 'qdit_cron_secret');
+--
+-- (vault.update_secret() changes one later.) The CRON_SECRET is in Vault and
+-- not encrypted by the app like the signing secret is (header): what it
+-- unlocks is an early run of an idempotent, leased delivery, not a forged
+-- webhook, and pg_cron has no other way to hold it.
+--
+-- pg_net is asynchronous: the job returns at once and the request runs in
+-- the background, timing out after 60 s, the route's own limit. A run that
+-- is still going when the next minute's starts is fine (leases).
+--
+-- Guarded, because not every database has these extensions: hosted Supabase
+-- and the Supabase CLI's local stack do; plain Postgres and the PGlite test
+-- harness do not. Without them the job is skipped with a NOTICE and the
+-- daily Vercel cron (web/vercel.json) is all that delivers.
+-- ----------------------------------------------------------------------------
+
+do $schedule$
+begin
+  begin
+    if exists (select 1 from pg_catalog.pg_available_extensions where name = 'pg_cron') then
+      create extension if not exists pg_cron;
+    end if;
+    if exists (select 1 from pg_catalog.pg_available_extensions where name = 'pg_net')
+       and to_regnamespace('extensions') is not null then
+      create extension if not exists pg_net with schema extensions;
+    end if;
+  exception when others then
+    -- Available but not loadable here (pg_cron must be preloaded).
+    raise warning 'integration webhooks: could not enable pg_cron/pg_net (%); not scheduling', sqlerrm;
+  end;
+
+  if to_regprocedure('cron.schedule(text, text, text)') is null
+     or to_regnamespace('net') is null
+     or to_regclass('vault.decrypted_secrets') is null then
+    raise notice 'integration webhooks: pg_cron, pg_net or Vault is missing; delivery is not scheduled in the database';
+    return;
+  end if;
+
+  -- Same name again replaces the job, so this is safe to re-run.
+  perform cron.schedule(
+    'qdit-deliver-webhooks',
+    '* * * * *',
+    $job$
+    select net.http_get(
+             url := s.url,
+             headers := jsonb_build_object('Authorization', 'Bearer ' || s.secret),
+             timeout_milliseconds := 60000
+           )
+      from (
+        select (select d.decrypted_secret from vault.decrypted_secrets d
+                 where d.name = 'qdit_deliver_webhooks_url') as url,
+               (select d.decrypted_secret from vault.decrypted_secrets d
+                 where d.name = 'qdit_cron_secret') as secret
+      ) s
+     where s.url is not null
+       and s.secret is not null
+    $job$
+  );
+end;
+$schedule$;

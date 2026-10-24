@@ -3,8 +3,9 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 /**
- * True when `Authorization` is exactly `Bearer <CRON_SECRET>`. Vercel Cron
- * sends that header when the project has CRON_SECRET set.
+ * True when `Authorization` is exactly `Bearer <CRON_SECRET>`. Both callers
+ * send it: the pg_cron job (from Vault) and Vercel Cron, which adds it when
+ * the project has CRON_SECRET set.
  *
  * Both sides are hashed first so the comparison is constant time whatever
  * the lengths, and an unset or empty secret never matches anything.
