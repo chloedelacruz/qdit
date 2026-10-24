@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ZodError } from "zod";
 
+import { safeNextPath } from "@/lib/auth/next-path";
 import { headerKey, rateLimit } from "@/lib/auth/rate-limit";
 import { TICKET_COOKIE, readTicket } from "@/lib/auth/registration-ticket";
 import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
@@ -163,5 +164,8 @@ export async function completeWalletRegistration(
   revalidatePath("/", "layout");
   // Outside every try/catch in this function, deliberately: `redirect` works by
   // throwing, so catching around it swallows the navigation.
-  redirect("/dashboard");
+  //
+  // `next` is a form field and so the client's; safeNextPath() keeps it on
+  // this origin whatever was posted.
+  redirect(safeNextPath(formData.get("next")));
 }
