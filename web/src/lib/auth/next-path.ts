@@ -49,7 +49,6 @@ export function safeNextPath(value: unknown, fallback: string = DEFAULT_NEXT_PAT
   // the URL parser rewrites or drops before it decides which host it is
   // looking at. Nothing legitimate here contains them, so refuse rather than
   // reason about what they turn into.
-  // eslint-disable-next-line no-control-regex
   if (/[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
 
   let url: URL;
