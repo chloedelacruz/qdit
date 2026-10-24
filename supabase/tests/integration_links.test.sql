@@ -6,7 +6,10 @@
 -- their D-23 policies and D-03 guards, the title lock on linked milestones
 -- (D-12), the frozen columns of both link tables (and their one exception,
 -- the account going), the rule that a linked milestone stays in its project,
--- the D-22 cascade, and the three /api/v1 RPCs.
+-- the D-22 cascade, and the three /api/v1 RPCs. Also
+-- 20261025090000_integration_hardening.sql section 1: no client writes a doc
+-- link directly, every INSERT and UPDATE goes through link_project_doc()
+-- (D-48), so the frozen-column trigger is exercised as postgres.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back.
@@ -22,7 +25,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(101);
+select plan(107);
 
 
 -- ----------------------------------------------------------------------------
@@ -304,61 +307,113 @@ select is(
 
 
 -- ----------------------------------------------------------------------------
--- 3. Doc link writes: admin+ (D-23); apps insert and delete, never update
+-- 3. Doc link writes: admin+ (D-23), only through link_project_doc() (D-48);
+-- apps and sessions delete directly
 -- ----------------------------------------------------------------------------
 
-select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
+select ok(
+  not has_table_privilege('authenticated', 'public.project_doc_links', 'insert')
+  and not has_table_privilege('authenticated', 'public.project_doc_links', 'update')
+  and not has_table_privilege('anon', 'public.project_doc_links', 'insert')
+  and not has_table_privilege('anon', 'public.project_doc_links', 'update'),
+  'D-48: neither authenticated nor anon may INSERT or UPDATE doc links'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.project_doc_links', 'select')
+  and has_table_privilege('authenticated', 'public.project_doc_links', 'delete'),
+  'D-48: authenticated still reads and deletes doc links, as the policies allow'
+);
+select is_empty(
+  $$ select p.policyname
+       from pg_catalog.pg_policies p
+      where p.schemaname = 'public'
+        and p.tablename = 'project_doc_links'
+        and p.cmd in ('INSERT', 'UPDATE')
+        and (p.permissive = 'PERMISSIVE'
+             or coalesce(p.qual, 'false') <> 'false'
+             or coalesce(p.with_check, 'false') <> 'false') $$,
+  'D-48: no policy admits a direct INSERT or UPDATE, should a grant come back'
+);
+
+-- A project admin, with their own qdit session and as an app: refused at
+-- the grant, whatever the row says.
+select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
 select throws_ok(
   $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
      values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000003',
-             'By a member', 'https://www.doqtri.xyz/d/3', 'a1000000-0000-4000-8000-000000000003') $$,
+             'Direct', 'https://www.doqtri.xyz/d/3', 'a1000000-0000-4000-8000-000000000002') $$,
+  '42501', 'permission denied for table project_doc_links',
+  'session admin: a direct INSERT is refused (D-48)'
+);
+select throws_ok(
+  $$ update public.project_doc_links set doc_url = 'https://evil.example/d/1'
+      where id = 'e1000000-0000-4000-8000-000000000001' $$,
+  '42501', 'permission denied for table project_doc_links',
+  'session admin: a direct UPDATE is refused (D-48)'
+);
+select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000002');
+select throws_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000003',
+             'Direct', 'https://www.doqtri.xyz/d/3', 'a1000000-0000-4000-8000-000000000002') $$,
+  '42501', 'permission denied for table project_doc_links',
+  'oauth admin: a direct INSERT is refused (D-48)'
+);
+select throws_ok(
+  $$ update public.project_doc_links set doc_title = 'Rewritten by an app'
+      where id = 'e1000000-0000-4000-8000-000000000001' $$,
+  '42501', 'permission denied for table project_doc_links',
+  'oauth admin: a direct UPDATE is refused (D-48)'
+);
+
+select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$ select * from public.link_project_doc(
+       'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000003',
+       'By a member', 'https://www.doqtri.xyz/d/3') $$,
   '42501', null,
   'oauth member: cannot link a doc (admin+)'
 );
 
 select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000002');
 select lives_ok(
-  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
-     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000003',
-             'By an admin', 'https://www.doqtri.xyz/d/3', 'a1000000-0000-4000-8000-000000000002') $$,
-  'oauth admin: links a doc'
+  $$ select * from public.link_project_doc(
+       'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000003',
+       'By an admin', 'https://www.doqtri.xyz/d/3') $$,
+  'oauth admin: links a doc through link_project_doc'
 );
-select throws_ok(
-  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
-     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000004',
-             'As someone else', 'https://www.doqtri.xyz/d/4', 'a1000000-0000-4000-8000-000000000001') $$,
-  '42501', null,
-  'oauth admin: cannot link a doc in another user''s name'
-);
-update public.project_doc_links set doc_title = 'Rewritten by an app'
- where id = 'e1000000-0000-4000-8000-000000000001';
 select pg_temp.as_postgres();
 select is(
-  (select doc_title from public.project_doc_links where id = 'e1000000-0000-4000-8000-000000000001'),
-  'Payroll v1 plan',
-  'oauth admin: cannot update a doc link directly (refresh goes through link_project_doc)'
+  (select linked_by from public.project_doc_links where doc_id = 'd1000000-0000-4000-8000-000000000003'),
+  'a1000000-0000-4000-8000-000000000002'::uuid,
+  'link_project_doc: linked_by is always the caller, never another user'
 );
 
 select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
-update public.project_doc_links set doc_title = 'Payroll v1.1 plan'
- where id = 'e1000000-0000-4000-8000-000000000001';
-select pg_temp.as_postgres();
 select is(
-  (select doc_title from public.project_doc_links where id = 'e1000000-0000-4000-8000-000000000001'),
+  (select doc_title from public.link_project_doc(
+     'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001',
+     'Payroll v1.1 plan', 'https://www.doqtri.xyz/d/d1000000-0000-4000-8000-000000000001')),
   'Payroll v1.1 plan',
-  'session admin: can update a doc link'
+  'session admin: refreshes a doc link through link_project_doc'
 );
+select throws_ok(
+  $$ select * from public.link_project_doc(
+       'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001',
+       'Payroll', 'http://www.doqtri.xyz/d/1') $$,
+  '23514', null,
+  'link_project_doc: the https CHECK holds for the function too (D-45)'
+);
+select pg_temp.as_postgres();
 select is(
   (select doc_title from public.milestone_external_links where id = 'f1000000-0000-4000-8000-000000000001'),
   'Payroll v1.1 plan',
   'the milestone link''s doc_title follows the doc link'
 );
 
--- Only doc_title and doc_url move. u2 is made an admin of P2 for the
--- project move, so RLS would allow it and only the trigger stands in the way.
-select pg_temp.as_postgres();
-insert into public.project_members (project_id, user_id, role)
-values ('b1000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000002', 'admin');
+-- Only doc_title and doc_url move. No client can UPDATE the table any more,
+-- so the trigger is tested as a privileged session, which RLS does not stop:
+-- what refuses these is check_project_doc_link(), for every caller.
 -- A doc with no milestone links, so the composite foreign key cannot be what
 -- refuses the move.
 insert into public.project_doc_links (id, project_id, doc_id, doc_title, doc_url, linked_by)
@@ -366,37 +421,30 @@ values ('e1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-0000000
         'd1000000-0000-4000-8000-000000000008', 'Unused plan', 'https://www.doqtri.xyz/d/8',
         'a1000000-0000-4000-8000-000000000002');
 
-select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
 select throws_ok(
   $$ update public.project_doc_links set project_id = 'b1000000-0000-4000-8000-000000000002'
       where id = 'e1000000-0000-4000-8000-000000000002' $$,
   '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
-  'session admin of both projects: cannot move a doc link to another project'
+  'a direct database session cannot move a doc link to another project'
 );
 select throws_ok(
   $$ update public.project_doc_links set doc_id = 'd1000000-0000-4000-8000-000000000009'
       where id = 'e1000000-0000-4000-8000-000000000002' $$,
   '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
-  'session admin: cannot re-point a doc link at another doc'
+  'a direct database session cannot re-point a doc link at another doc'
 );
 select throws_ok(
   $$ update public.project_doc_links set linked_by = 'a1000000-0000-4000-8000-000000000001'
       where id = 'e1000000-0000-4000-8000-000000000002' $$,
   '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
-  'session admin: cannot rewrite who linked a doc'
+  'a direct database session cannot rewrite who linked a doc'
 );
-
-select pg_temp.as_postgres();
-select throws_ok(
-  $$ update public.project_doc_links set doc_id = 'd1000000-0000-4000-8000-000000000009'
+select lives_ok(
+  $$ update public.project_doc_links set doc_title = 'Unused plan (ops)'
       where id = 'e1000000-0000-4000-8000-000000000002' $$,
-  '42501', null,
-  'a direct database session cannot re-point a doc link either'
+  'a direct database session may still refresh the copies'
 );
 delete from public.project_doc_links where id = 'e1000000-0000-4000-8000-000000000002';
-delete from public.project_members
- where project_id = 'b1000000-0000-4000-8000-000000000002'
-   and user_id = 'a1000000-0000-4000-8000-000000000002';
 
 select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
 delete from public.project_doc_links where doc_id = 'd1000000-0000-4000-8000-000000000003';
@@ -894,14 +942,10 @@ values ('f1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-0000000
         'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000006',
         'h0', 'Leaver heading', 'a1000000-0000-4000-8000-000000000006');
 
--- While the account exists, nulling the pointer is still a rewrite.
+-- While the account exists, nulling the pointer is still a rewrite. (A
+-- session cannot UPDATE a doc link at all, D-48; the trigger is checked as
+-- postgres below.)
 select pg_temp.as_session('a1000000-0000-4000-8000-000000000006');
-select throws_ok(
-  $$ update public.project_doc_links set linked_by = null
-      where id = 'e1000000-0000-4000-8000-000000000006' $$,
-  '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
-  'session admin: cannot blank who linked a doc while that account exists'
-);
 select throws_ok(
   $$ update public.milestone_external_links set created_by = null
       where id = 'f1000000-0000-4000-8000-000000000006' $$,
