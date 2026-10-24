@@ -1,11 +1,10 @@
 /**
  * The host a plan doc's link goes to, as the row shows it.
  *
- * `doc_url` is whatever https URL the linking admin (or the doqtri app acting
- * for them) sent; the contract does not pin it to doqtri's origin. So the
- * "Plan docs" row names the host it will open rather than promising doqtri.
- * `URL` gives the punycode form of an internationalised host, which is the
- * honest one to show: a look-alike domain reads as `xn--...`, not as doqtri.
+ * The row links only a `doc_url` on doqtri's origin (D-45, see
+ * `isDoqtriDocUrl`), and still names the host it opens, so the text and the
+ * link cannot disagree. `URL` gives the punycode form of an internationalised
+ * host, which is the honest one to show: a look-alike reads as `xn--...`.
  */
 export function docUrlHost(url: string): string {
   try {
