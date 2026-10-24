@@ -4,9 +4,10 @@
 --
 -- Covers 20261024110000_oauth_client_guards.sql: a request whose JWT carries a
 -- `client_id` claim (a token Supabase's OAuth server issued to doqtri) may read
--- projects, rosters, milestones, anchors (D-32) and its user's own profile, may
--- create proposed milestones, and may see or change nothing else — while the
--- same user's own session keeps every right it had.
+-- projects, milestones, anchors (D-32), and its user's own profile and own
+-- membership rows (their role, not the roster), may create proposed
+-- milestones, and may see or change nothing else — while the same user's own
+-- session keeps every right it had.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back, so it leaves
@@ -33,7 +34,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(61);
+select plan(64);
 
 
 -- ----------------------------------------------------------------------------
@@ -158,7 +159,7 @@ select is_empty(
     select t.tablename
       from pg_catalog.pg_tables t
      where t.schemaname = 'public'
-       and t.tablename not in ('projects', 'project_members', 'milestones', 'milestone_anchors')
+       and t.tablename not in ('projects', 'milestones', 'milestone_anchors')
        and not exists (
          select 1
            from pg_catalog.pg_policies p
@@ -179,7 +180,7 @@ select is_empty(
     select p.tablename, p.policyname
       from pg_catalog.pg_policies p
      where p.schemaname = 'public'
-       and p.tablename in ('projects', 'project_members', 'milestones', 'milestone_anchors')
+       and p.tablename in ('projects', 'milestones', 'milestone_anchors')
        and p.cmd = 'SELECT'
        and p.permissive = 'RESTRICTIVE'
   $$,
@@ -212,10 +213,12 @@ select is(
   1,
   'oauth: can read a member project'
 );
+-- Its own membership row, which is how /api/v1 learns the caller's role.
 select is(
-  (select count(*)::int from public.project_members where project_id = 'b0000000-0000-4000-8000-000000000001'),
-  2,
-  'oauth: can read the roster of a member project'
+  (select array_agg(user_id::text || ':' || role::text)
+     from public.project_members where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  array['a0000000-0000-4000-8000-000000000001:owner'],
+  'oauth: can read only its own membership row of a member project'
 );
 select is(
   (select count(*)::int from public.milestone_anchors where milestone_id = 'c0000000-0000-4000-8000-000000000001'),
@@ -241,6 +244,11 @@ select is(
   (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000002'),
   0,
   'oauth: cannot read a teammate''s profile'
+);
+select is(
+  (select count(*)::int from public.project_members where user_id = 'a0000000-0000-4000-8000-000000000002'),
+  0,
+  'oauth: cannot read a teammate''s membership (the roster)'
 );
 select is(
   (select count(*)::int from public.tasks),
@@ -357,9 +365,11 @@ select throws_ok(
   '42501', null,
   'oauth: cannot add a member directly'
 );
+-- u2's row is hidden from the app, so these are checked as postgres.
 update public.project_members set role = 'viewer'
  where project_id = 'b0000000-0000-4000-8000-000000000001'
    and user_id = 'a0000000-0000-4000-8000-000000000002';
+select pg_temp.as_postgres();
 select is(
   (select role::text from public.project_members
     where project_id = 'b0000000-0000-4000-8000-000000000001'
@@ -367,9 +377,11 @@ select is(
   'admin',
   'oauth: cannot change a member''s role'
 );
+select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
 delete from public.project_members
  where project_id = 'b0000000-0000-4000-8000-000000000001'
    and user_id = 'a0000000-0000-4000-8000-000000000002';
+select pg_temp.as_postgres();
 select is(
   (select count(*)::int from public.project_members
     where project_id = 'b0000000-0000-4000-8000-000000000001'
@@ -377,6 +389,21 @@ select is(
   1,
   'oauth: cannot remove a member'
 );
+-- Nor take the user out of the project: "leave" is a delete of their own row,
+-- which the app can see.
+select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
+delete from public.project_members
+ where project_id = 'b0000000-0000-4000-8000-000000000001'
+   and user_id = 'a0000000-0000-4000-8000-000000000001';
+select pg_temp.as_postgres();
+select is(
+  (select count(*)::int from public.project_members
+    where project_id = 'b0000000-0000-4000-8000-000000000001'
+      and user_id = 'a0000000-0000-4000-8000-000000000001'),
+  1,
+  'oauth: cannot remove the user from a project'
+);
+select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
 
 -- The SECURITY DEFINER invites, which RLS cannot see into.
 select throws_ok(
@@ -462,6 +489,11 @@ select is(
   (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000002'),
   1,
   'session: can read a teammate''s profile'
+);
+select is(
+  (select count(*)::int from public.project_members where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  2,
+  'session: can read the whole roster of a member project'
 );
 select is(
   (select count(*)::int from public.tasks where project_id = 'b0000000-0000-4000-8000-000000000001'),

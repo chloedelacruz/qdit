@@ -65,7 +65,7 @@ export type DecisionOutcome =
  */
 export const APP_ACCESS = {
   can: [
-    "See the projects you belong to and who is in them",
+    "See the projects you belong to and your role in each",
     "See those projects' milestones and their on-chain proof records",
     "See your own qdit profile",
     "Create milestones, as proposed, in projects where you are a member or above",
@@ -74,7 +74,7 @@ export const APP_ACCESS = {
     "Approve, reject, edit or delete anything",
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes or your notifications",
-    "See your teammates' profiles",
+    "See your teammates' profiles or who else is in your projects",
   ],
 } as const;
 
@@ -89,8 +89,8 @@ export const APP_ACCESS = {
  * tripwire in supabase/tests/oauth_client_guards.test.sql holds the same list.
  */
 export const APP_READ_SCOPE = {
-  readable: ["milestone_anchors", "milestones", "project_members", "projects"],
-  ownRowOnly: ["profiles"],
+  readable: ["milestone_anchors", "milestones", "projects"],
+  ownRowOnly: ["profiles", "project_members"],
   hidden: ["deployments", "milestone_reviews", "notifications", "stellar_proofs", "tasks"],
 } as const;
 

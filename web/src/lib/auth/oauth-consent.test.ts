@@ -288,7 +288,8 @@ describe("APP_ACCESS matches the guard migration", () => {
 
   it("lets an app read its user's own row only where it says so", () => {
     for (const table of APP_READ_SCOPE.ownRowOnly) {
-      expect(selectGuards.get(table), table).toMatch(/or id = \(select auth\.uid\(\)\)/);
+      // profiles keys the user by `id`, project_members by `user_id`.
+      expect(selectGuards.get(table), table).toMatch(/or (user_)?id = \(select auth\.uid\(\)\)/);
     }
     for (const table of APP_READ_SCOPE.hidden) {
       expect(selectGuards.get(table)?.trim(), table).toBe(
@@ -310,6 +311,7 @@ describe("APP_ACCESS matches the guard migration", () => {
       expect(cannot, table).toContain(words[table]);
     }
     expect(cannot).toContain("teammates' profiles");
+    expect(cannot).toContain("who else is in your projects");
   });
 
   it("promises no write the migration does not allow yet", () => {
