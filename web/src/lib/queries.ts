@@ -20,6 +20,7 @@ import {
 import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
+import { docUrlHost } from "@/lib/plan-docs";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
@@ -1084,6 +1085,11 @@ export type PlanDocRow = {
   title: string;
   /** Always https — the table's CHECK refuses anything else. */
   url: string;
+  /**
+   * The host `url` opens. Any https host is accepted, so the row shows this
+   * instead of claiming the link goes to doqtri.
+   */
+  host: string;
   /** Milestones in this project linked to one of the doc's headings. */
   milestoneCount: number;
   linkedAt: string;
@@ -1116,6 +1122,7 @@ export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
     docId: row.doc_id,
     title: row.doc_title,
     url: row.doc_url,
+    host: docUrlHost(row.doc_url),
     milestoneCount: countOf(row.milestone_external_links),
     linkedAt: row.created_at,
   }));

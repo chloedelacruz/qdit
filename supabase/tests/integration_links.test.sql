@@ -4,7 +4,9 @@
 --
 -- Covers 20261024120000_integration_links.sql: the two doqtri link tables,
 -- their D-23 policies and D-03 guards, the title lock on linked milestones
--- (D-12), the D-22 cascade, and the three /api/v1 RPCs.
+-- (D-12), the frozen columns of both link tables, the rule that a linked
+-- milestone stays in its project, the D-22 cascade, and the three /api/v1
+-- RPCs.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back.
@@ -20,7 +22,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(77);
+select plan(86);
 
 
 -- ----------------------------------------------------------------------------
@@ -278,6 +280,50 @@ select is(
   'the milestone link''s doc_title follows the doc link'
 );
 
+-- Only doc_title and doc_url move. u2 is made an admin of P2 for the
+-- project move, so RLS would allow it and only the trigger stands in the way.
+select pg_temp.as_postgres();
+insert into public.project_members (project_id, user_id, role)
+values ('b1000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000002', 'admin');
+-- A doc with no milestone links, so the composite foreign key cannot be what
+-- refuses the move.
+insert into public.project_doc_links (id, project_id, doc_id, doc_title, doc_url, linked_by)
+values ('e1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000001',
+        'd1000000-0000-4000-8000-000000000008', 'Unused plan', 'https://www.doqtri.xyz/d/8',
+        'a1000000-0000-4000-8000-000000000002');
+
+select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
+select throws_ok(
+  $$ update public.project_doc_links set project_id = 'b1000000-0000-4000-8000-000000000002'
+      where id = 'e1000000-0000-4000-8000-000000000002' $$,
+  '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
+  'session admin of both projects: cannot move a doc link to another project'
+);
+select throws_ok(
+  $$ update public.project_doc_links set doc_id = 'd1000000-0000-4000-8000-000000000009'
+      where id = 'e1000000-0000-4000-8000-000000000002' $$,
+  '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
+  'session admin: cannot re-point a doc link at another doc'
+);
+select throws_ok(
+  $$ update public.project_doc_links set linked_by = 'a1000000-0000-4000-8000-000000000001'
+      where id = 'e1000000-0000-4000-8000-000000000002' $$,
+  '42501', 'Only doc_title and doc_url of a doc link can change; unlink the doc and link it again instead.',
+  'session admin: cannot rewrite who linked a doc'
+);
+
+select pg_temp.as_postgres();
+select throws_ok(
+  $$ update public.project_doc_links set doc_id = 'd1000000-0000-4000-8000-000000000009'
+      where id = 'e1000000-0000-4000-8000-000000000002' $$,
+  '42501', null,
+  'a direct database session cannot re-point a doc link either'
+);
+delete from public.project_doc_links where id = 'e1000000-0000-4000-8000-000000000002';
+delete from public.project_members
+ where project_id = 'b1000000-0000-4000-8000-000000000002'
+   and user_id = 'a1000000-0000-4000-8000-000000000002';
+
 select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
 delete from public.project_doc_links where doc_id = 'd1000000-0000-4000-8000-000000000003';
 select pg_temp.as_postgres();
@@ -458,6 +504,50 @@ select lives_ok(
       where id = 'c1000000-0000-4000-8000-000000000002' $$,
   'a direct database session (no JWT) is not limited by the lock'
 );
+
+-- A linked milestone stays in its project, for every caller. u3 is made a
+-- member of P2 too, so RLS would allow the move.
+insert into public.project_members (project_id, user_id, role)
+values ('b1000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000003', 'member');
+
+select pg_temp.as_session('a1000000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$ update public.milestones set project_id = 'b1000000-0000-4000-8000-000000000002'
+      where id = 'c1000000-0000-4000-8000-000000000002' $$,
+  '23514', 'A milestone linked to a doqtri plan cannot move to another project; unlink it first.',
+  'session member of both projects: cannot move a linked milestone'
+);
+select lives_ok(
+  $$ update public.milestones set project_id = 'b1000000-0000-4000-8000-000000000002'
+      where id = 'c1000000-0000-4000-8000-000000000001' $$,
+  'session member of both projects: still moves an unlinked milestone'
+);
+
+select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$ update public.milestones set project_id = 'b1000000-0000-4000-8000-000000000002'
+      where id = 'c1000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'oauth member of both projects: cannot move a linked milestone'
+);
+
+select pg_temp.as_postgres();
+select is(
+  (select project_id from public.milestones where id = 'c1000000-0000-4000-8000-000000000001'),
+  'b1000000-0000-4000-8000-000000000002'::uuid,
+  'the unlinked milestone moved'
+);
+select throws_ok(
+  $$ update public.milestones set project_id = 'b1000000-0000-4000-8000-000000000002'
+      where id = 'c1000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'a direct database session cannot move a linked milestone either'
+);
+update public.milestones set project_id = 'b1000000-0000-4000-8000-000000000001'
+ where id = 'c1000000-0000-4000-8000-000000000001';
+delete from public.project_members
+ where project_id = 'b1000000-0000-4000-8000-000000000002'
+   and user_id = 'a1000000-0000-4000-8000-000000000003';
 
 
 -- ----------------------------------------------------------------------------
@@ -669,6 +759,7 @@ select is(
 select ok(
   not has_function_privilege('authenticated', 'public.guard_milestone_update()', 'execute')
   and not has_function_privilege('authenticated', 'public.check_milestone_external_link()', 'execute')
+  and not has_function_privilege('authenticated', 'public.check_project_doc_link()', 'execute')
   and not has_function_privilege('authenticated', 'public.sync_link_node_label()', 'execute')
   and not has_function_privilege('authenticated', 'public.sync_link_doc_title()', 'execute')
   and not has_function_privilege('authenticated', 'public.assert_project_role(uuid, text)', 'execute'),
@@ -691,7 +782,8 @@ select ok(
      from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('guard_milestone_update', 'check_milestone_external_link', 'sync_link_node_label',
+      and p.proname in ('guard_milestone_update', 'check_milestone_external_link', 'check_project_doc_link',
+                        'sync_link_node_label',
                         'sync_link_doc_title', 'assert_project_role', 'link_project_doc',
                         'unlink_project_doc', 'create_linked_milestone')),
   'every new function pins search_path'
