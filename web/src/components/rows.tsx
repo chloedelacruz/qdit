@@ -2,11 +2,11 @@ import { ExternalLink } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
+import { FromDoqtriBadge, PlanDocConnectionBadge } from "@/components/doqtri-doc-card";
 import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   DEPLOYMENT_STATUS,
@@ -18,10 +18,10 @@ import {
   type TaskPriority,
   type Tone,
 } from "@/lib/constants";
+import { milestoneDocCard, planDocCard } from "@/lib/doqtri-doc-card";
 import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import type {
   DeploymentRow,
-  MilestoneLink,
   MilestoneRow,
   PlanDocRow,
   ProjectMember,
@@ -180,10 +180,27 @@ export function MilestoneListRow({
         {/*
           Says where the title comes from, beside the title it is about: a
           linked milestone's title is doqtri's (D-12), and the edit form shows
-          it read-only. Plain text, not a control, so it sits inside the row's
-          own link like the title does.
+          it read-only. It opens the doc card (WP-2.6), so it is a control
+          lifted above the row's own link.
         */}
-        {milestone.link ? <FromDoqtriBadge link={milestone.link} /> : null}
+        {milestone.link ? (
+          <RowControl>
+            <FromDoqtriBadge
+              card={milestoneDocCard(
+                milestone.link,
+                milestone.anchor
+                  ? {
+                      action: milestone.anchor.action,
+                      version: milestone.anchor.version,
+                      txHash: milestone.anchor.txHash,
+                      network: milestone.anchor.network,
+                    }
+                  : null,
+                milestone.anchorStale,
+              )}
+            />
+          </RowControl>
+        ) : null}
 
         <RowMeta
           className="min-w-0 flex-1"
@@ -289,6 +306,12 @@ export function PlanDocListRow({ doc }: { doc: PlanDocRow }) {
             `Linked ${doc.linkedAt.slice(0, 10)}`,
           ]}
         />
+
+        {/* The doc card (WP-2.6): version, proof state and whether doqtri
+            still keeps this plan linked. */}
+        <RowControl>
+          <PlanDocConnectionBadge card={planDocCard(doc)} />
+        </RowControl>
       </div>
     </ListRow>
   );
@@ -310,20 +333,6 @@ function PlanDocLink({ title, url, host }: { title: string; url: string; host: s
         <span className="sr-only">{host ? `(opens ${host} in a new tab)` : "(opens in a new tab)"}</span>
       </a>
     </RowControl>
-  );
-}
-
-/** "From doqtri" on a milestone linked to a plan heading. */
-export function FromDoqtriBadge({ link }: { link: MilestoneLink }) {
-  const source = link.docTitle ? `"${link.docTitle}"` : "a doqtri plan";
-  return (
-    <Badge
-      variant="outline"
-      className="shrink-0 font-normal text-muted-foreground"
-      title={`Linked to a heading in ${source}. The title is managed by doqtri.`}
-    >
-      From doqtri
-    </Badge>
   );
 }
 
