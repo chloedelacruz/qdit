@@ -1054,6 +1054,16 @@ export async function revokeAuthorizedApp(clientId: string): Promise<ActionState
     return { error: "Could not disconnect that app. Try again." };
   }
 
-  revalidatePath("/settings");
+  // The grant is gone. Tell the plan docs this user's connection kept linked
+  // that it no longer does, so their doc cards say "Connection to doqtri lost"
+  // (20261025120600_doc_link_connections.sql). Only after Auth accepted the
+  // revoke: marking first would show a live connection as lost if the revoke
+  // then failed. A failure here leaves the card optimistic until the next
+  // write, which is worth a log line, not a failed disconnect.
+  const marked = await supabase.rpc("mark_doc_link_connections_revoked", { p_client_id: id });
+  if (marked.error) console.error("mark_doc_link_connections_revoked failed", marked.error);
+
+  // Settings, and every page that shows a doc card.
+  revalidateAll();
   return { ok: true };
 }
