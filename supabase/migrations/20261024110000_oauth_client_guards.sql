@@ -68,8 +68,6 @@
 -- What stays readable, under the user's own permissive policies:
 --
 --   projects           the projects the user belongs to (GET /projects)
---   project_members    their rosters, because /api/v1 has to know the caller's
---                      role before it creates anything for them
 --   milestones         the thing being linked (GET /milestones/{id})
 --   milestone_anchors  each milestone's milestone_proof history, readable on
 --                      purpose (D-32): this migration gives it no SELECT
@@ -81,6 +79,13 @@
 --                      here. Writes to it are still guarded (section 9)
 --   profiles           the user's own row only (GET /me) — not teammates',
 --                      which carry their wallet addresses and usernames
+--   project_members    the user's own row in each project only — that is,
+--                      their role, which /api/v1 needs before it creates
+--                      anything for them. Not the roster: who else is in a
+--                      project is not something D-03 hands an app. The
+--                      permissive policies on every other table ask
+--                      is_project_member(), which reads the table as its
+--                      owner, so none of them needs the roster to be visible.
 --
 -- And nothing at all from tasks, stellar_proofs, deployments,
 -- milestone_reviews (rejection reasons are written to a person, not to an
@@ -122,12 +127,22 @@
 -- public.assert_first_party_session(). The other definer functions need
 -- nothing:
 --
---   is_project_member, shares_project_with
---       read only, and answer yes/no about the caller's own memberships,
---       which the readable project_members roster shows anyway.
+--   is_project_member
+--       read only, and answers yes/no about the caller's own membership,
+--       which the caller's own project_members row shows anyway.
+--   shares_project_with
+--       read only, and answers yes/no to "do I share a project with this
+--       user id". An app cannot list teammates' ids — the roster and their
+--       profiles are hidden from it — so all it can do is confirm a guess,
+--       and every id it can see without guessing (milestone_anchors.created_by,
+--       projects.owner_id) is already one it knows shares a project.
 --   public_milestone_proof
---       read only, granted to anon, and answers only to a share token, so an
---       OAuth token reaches nothing through it that a stranger could not.
+--       read only, and granted to anon: it returns data only for projects
+--       with public_proofs = true, and then to anyone holding the slug and
+--       milestone id. So an OAuth token gets nothing through it — including
+--       the milestone_reviews reasons it returns, which section 10 otherwise
+--       hides — that a signed-out visitor with the same slug and milestone id
+--       could not.
 --   handle_new_user      trigger on auth.users; not callable by clients.
 --   handle_new_project   AFTER INSERT trigger on projects; the projects INSERT
 --                        guard rejects the row before it can fire.
@@ -241,11 +256,27 @@ create policy "projects: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 4. project_members — no member management (D-03)
+-- 4. project_members — the user's own role, and no member management (D-03)
 --
--- Includes leaving: "delete as admin or leave" lets a user remove their own
--- row, and an app has no business taking a user out of a project either.
+-- The SELECT guard keeps the user's own row in each project, which is all
+-- /api/v1 needs to know their role, and hides everyone else's: "read as
+-- member" would otherwise hand an app the whole roster — teammates' user ids
+-- and roles — of every project the user is in.
+--
+-- The write guards include leaving: "delete as admin or leave" lets a user
+-- remove their own row, and an app has no business taking a user out of a
+-- project either.
 -- ----------------------------------------------------------------------------
+
+create policy "project_members: only own row for oauth clients"
+  on public.project_members
+  as restrictive
+  for select
+  to public
+  using (
+    ((select auth.jwt()) ->> 'client_id') is null
+    or user_id = (select auth.uid())
+  );
 
 create policy "project_members: no insert by oauth clients"
   on public.project_members
