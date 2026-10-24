@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
 import { deliverDueEvents } from "@/lib/webhooks/deliver";
 import { supabaseOutbox } from "@/lib/webhooks/outbox";
+import { readSchedulerHealth, schedulerWarning } from "@/lib/webhooks/scheduler-health";
 import { parseEncryptionKey } from "@/lib/webhooks/secret-box";
 
 /**
@@ -18,6 +19,12 @@ import { parseEncryptionKey } from "@/lib/webhooks/secret-box";
  * so an event released by its predecessor's delivery goes out in the same
  * run. The next run picks up the rest; leases keep two overlapping runs from
  * sending one event twice (supabase/migrations/20261024130000_integration_webhooks.sql).
+ *
+ * Each run also reports whether the pg_cron job can run at all
+ * (`data.scheduler`, D-57, lib/webhooks/scheduler-health.ts) and logs a
+ * warning when it cannot, so the daily Vercel run says so when it is the only
+ * thing delivering. An operator can call the route with the CRON_SECRET to
+ * read it.
  *
  * Configuration faults answer 503 and are logged by name, never by value.
  */
@@ -59,13 +66,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const summary = await deliverDueEvents({
-      outbox: supabaseOutbox(secretKey),
-      fetch,
-      encryptionKey,
-      deadline: Date.now() + RUN_BUDGET_MS,
-    });
-    return NextResponse.json({ data: summary }, { headers: NO_STORE });
+    const [summary, scheduler] = await Promise.all([
+      deliverDueEvents({
+        outbox: supabaseOutbox(secretKey),
+        fetch,
+        encryptionKey,
+        deadline: Date.now() + RUN_BUDGET_MS,
+      }),
+      readSchedulerHealth(secretKey),
+    ]);
+    const warning = schedulerWarning(scheduler);
+    if (warning) console.warn(warning);
+    return NextResponse.json({ data: { ...summary, scheduler } }, { headers: NO_STORE });
   } catch (error) {
     console.error("webhooks cron: delivery run failed", error);
     return failure(500, "internal_error", "Webhook delivery run failed.");

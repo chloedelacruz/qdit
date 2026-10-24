@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
+import type { SchedulerHealth } from "@/lib/webhooks/scheduler-health";
 
 /**
  * `GET /api/cron/deliver-webhooks`: who may run it and what it answers. The
@@ -12,6 +13,13 @@ import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
 const claim = vi.fn(async () => []);
 const supabaseOutbox = vi.fn(() => ({ claim, record: vi.fn() }));
 vi.mock("@/lib/webhooks/outbox", () => ({ supabaseOutbox }));
+
+const CONFIGURED: SchedulerHealth = { status: "configured", job: true, missingSecrets: [] };
+const readSchedulerHealth = vi.fn<(secretKey: string) => Promise<SchedulerHealth>>(async () => CONFIGURED);
+vi.mock("@/lib/webhooks/scheduler-health", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/webhooks/scheduler-health")>()),
+  readSchedulerHealth,
+}));
 
 const { GET } = await import("./route");
 
@@ -30,6 +38,7 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test");
   vi.stubEnv("INTEGRATION_WEBHOOK_ENCRYPTION_KEY", KEY);
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -45,10 +54,41 @@ describe("GET /api/cron/deliver-webhooks", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({
-      data: { claimed: 0, delivered: 0, retrying: 0, dead: 0, stale: 0 },
+      data: { claimed: 0, delivered: 0, retrying: 0, dead: 0, stale: 0, scheduler: CONFIGURED },
     });
     expect(supabaseOutbox).toHaveBeenCalledWith("sb_secret_test");
     expect(claim).toHaveBeenCalledTimes(1);
+    expect(readSchedulerHealth).toHaveBeenCalledWith("sb_secret_test");
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("reports and logs a pg_cron job whose Vault secrets are missing (D-57)", async () => {
+    const missing: SchedulerHealth = {
+      status: "missing",
+      job: true,
+      missingSecrets: ["qdit_deliver_webhooks_url", "qdit_cron_secret"],
+    };
+    readSchedulerHealth.mockResolvedValueOnce(missing);
+
+    const response = await call(`Bearer ${CRON_SECRET}`);
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.scheduler).toEqual(missing);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(
+      /sends nothing until Vault holds qdit_deliver_webhooks_url, qdit_cron_secret/,
+    );
+    // Delivery still ran: the daily call is then the only one.
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a database without pg_cron as unavailable, and warns", async () => {
+    readSchedulerHealth.mockResolvedValueOnce({ status: "unavailable", job: false, missingSecrets: [] });
+
+    const response = await call(`Bearer ${CRON_SECRET}`);
+
+    expect((await response.json()).data.scheduler.status).toBe("unavailable");
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(/no pg_cron, pg_net or Vault/);
   });
 
   it.each([
@@ -62,6 +102,7 @@ describe("GET /api/cron/deliver-webhooks", () => {
     expect(response.status).toBe(401);
     expect((await response.json()).error.code).toBe("unauthorized");
     expect(supabaseOutbox).not.toHaveBeenCalled();
+    expect(readSchedulerHealth).not.toHaveBeenCalled();
   });
 
   it("refuses everything when CRON_SECRET is not set", async () => {
