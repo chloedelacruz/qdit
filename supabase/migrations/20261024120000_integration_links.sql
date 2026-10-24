@@ -135,10 +135,21 @@ create table public.project_doc_links (
   -- re-post, so it is a refreshable copy.
   doc_title   text not null check (char_length(btrim(doc_title)) between 1 and 300),
 
-  -- Where a qdit user goes to read the plan. https only: it is rendered as a
-  -- link, and anything else is either a mistake or an attempt at one.
+  -- Where a qdit user goes to read the plan. It is rendered as a link, so it
+  -- is held to a plain https URL: an ASCII host (so no user info and no
+  -- look-alike Unicode), an optional port, then nothing or a path, query or
+  -- fragment, with no whitespace, control character or backslash anywhere.
+  --
+  -- D-45 also pins it to doqtri's origin. The origin is deployment config
+  -- (DOQTRI_ORIGIN), not data, so that part is enforced where the config is:
+  -- POST /api/v1/projects/{id}/docs refuses a URL off the origin, and the
+  -- "Plan docs" list links only URLs on it (web/src/lib/doqtri-origin.ts).
   doc_url     text not null
-    check (char_length(doc_url) <= 2048 and doc_url ~ '^https://[^/?#[:space:]]+'),
+    constraint project_doc_links_doc_url_check
+    check (
+      char_length(doc_url) <= 2048
+      and doc_url ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?([/?#][^[:space:][:cntrl:]\\]*)?$'
+    ),
 
   -- Who linked it. Kept when the account goes, as an empty pointer.
   linked_by   uuid references auth.users (id) on delete set null,

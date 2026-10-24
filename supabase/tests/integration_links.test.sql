@@ -22,7 +22,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(86);
+select plan(94);
 
 
 -- ----------------------------------------------------------------------------
@@ -151,6 +151,80 @@ select throws_ok(
   '23514', null,
   'doc_url must be https'
 );
+
+-- The rest of the https rule (D-45's origin is the app's, see the migration).
+select lives_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000020',
+             'Port, query and fragment', 'https://www.doqtri.xyz:8443/d/1?v=2#h3') $$,
+  'doc_url: a port, a query and a fragment are fine'
+);
+select lives_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000021',
+             'Bare origin', 'https://www.doqtri.xyz') $$,
+  'doc_url: a bare origin is fine'
+);
+select is(
+  (select count(*)::int from (values
+     ('https://www.doqtri.xyz@evil.example/d/1'),
+     ('https://user:pw@www.doqtri.xyz/d/1'),
+     ('https://d' || chr(1086) || 'qtri.xyz/d/1'),
+     ('https://www.doqtri.xyz/d/1 2'),
+     ('https://www.doqtri.xyz/d/1' || chr(10)),
+     ('https://www.doqtri.xyz/d/' || chr(0x7f)),
+     ('https://www.doqtri.xyz\evil.example/'),
+     ('https://www.doqtri.xyz/\evil.example'),
+     ('https://www.doqtri.xyz:/d/1'),
+     ('https://www.doqtri.xyz:123456/d/1'),
+     ('https:///d/1'),
+     (' https://www.doqtri.xyz/d/1'),
+     ('HTTPS://www.doqtri.xyz/d/1'),
+     ('https://www.doqtri.xyz/' || repeat('a', 2048))
+   ) as bad (url)
+   where bad.url ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?([/?#][^[:space:][:cntrl:]\\]*)?$'
+     and char_length(bad.url) <= 2048),
+  0,
+  'every bad doc_url in the list fails the CHECK expression'
+);
+select is(
+  (select pg_catalog.strpos(pg_catalog.pg_get_constraintdef(c.oid),
+            '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?([/?#][^[:space:][:cntrl:]\\]*)?$') > 0
+     from pg_catalog.pg_constraint c
+    where c.conname = 'project_doc_links_doc_url_check'),
+  true,
+  'the CHECK on doc_url is the expression the list above was run against'
+);
+select throws_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000022',
+             'User info', 'https://www.doqtri.xyz@evil.example/d/1') $$,
+  '23514', null,
+  'doc_url: user info in the authority is refused'
+);
+select throws_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000023',
+             'Look-alike', 'https://d' || chr(1086) || 'qtri.xyz/d/1') $$,
+  '23514', null,
+  'doc_url: a non-ASCII host is refused'
+);
+select throws_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000024',
+             'Whitespace', 'https://www.doqtri.xyz/d/1 onmouseover=x') $$,
+  '23514', null,
+  'doc_url: whitespace after the host is refused'
+);
+select throws_ok(
+  $$ insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url)
+     values ('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000025',
+             'Backslash', 'https://www.doqtri.xyz\evil.example/') $$,
+  '23514', null,
+  'doc_url: a backslash is refused'
+);
+delete from public.project_doc_links
+ where doc_id in ('d1000000-0000-4000-8000-000000000020', 'd1000000-0000-4000-8000-000000000021');
 select throws_ok(
   $$ insert into public.milestone_external_links (milestone_id, project_id, doc_id, node_id, node_label)
      values ('c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001',
