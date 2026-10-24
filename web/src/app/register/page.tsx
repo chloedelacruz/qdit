@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { HashLink } from "@/components/hash-link";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { safeNextPath } from "@/lib/auth/next-path";
 import { TICKET_COOKIE, readTicket } from "@/lib/auth/registration-ticket";
 import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
 import type { StellarNetwork } from "@/lib/stellar";
@@ -39,12 +40,12 @@ export const metadata: Metadata = { title: "Finish setting up" };
 
 type Mode = "create" | "complete";
 
-async function resolve(): Promise<{ mode: Mode; address: string | null }> {
+async function resolve(next: string): Promise<{ mode: Mode; address: string | null }> {
   const user = await getUser();
 
   if (user) {
     // Already has a way back in. Nothing to finish.
-    if (hasRecoveryCredential(user.email)) redirect("/dashboard");
+    if (hasRecoveryCredential(user.email)) redirect(next);
 
     const supabase = await createClient();
     const { data } = await supabase
@@ -82,8 +83,15 @@ async function resolve(): Promise<{ mode: Mode; address: string | null }> {
   return { mode: "create", address };
 }
 
-export default async function RegisterPage() {
-  const { mode, address } = await resolve();
+export default async function RegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Where to land once the account exists — carried from /login, so a visitor
+  // who came from another app's consent link goes back to it.
+  const next = safeNextPath((await searchParams).next);
+  const { mode, address } = await resolve(next);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -130,7 +138,7 @@ export default async function RegisterPage() {
               </div>
             ) : null}
 
-            <RegisterForm mode={mode} />
+            <RegisterForm mode={mode} next={next} />
           </div>
 
           <p className="mt-4 text-xs text-muted-foreground">
