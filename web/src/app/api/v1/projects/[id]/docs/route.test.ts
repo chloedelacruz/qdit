@@ -49,11 +49,13 @@ const post = (body: unknown, project = PROJECT, init: Parameters<typeof apiReque
 
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  delete process.env.DOQTRI_ORIGIN;
 });
 
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  delete process.env.DOQTRI_ORIGIN;
 });
 
 describe("POST /api/v1/projects/{id}/docs", () => {
@@ -149,6 +151,11 @@ describe("POST /api/v1/projects/{id}/docs", () => {
     [{ ...BODY, doc_url: "http://www.doqtri.xyz/d/1" }, ["doc_url"]],
     [{ ...BODY, doc_url: "javascript:alert(1)" }, ["doc_url"]],
     [{ ...BODY, doc_url: `https://www.doqtri.xyz/${"a".repeat(2048)}` }, ["doc_url"]],
+    // D-45: https is not enough, it has to be doqtri's origin.
+    [{ ...BODY, doc_url: "https://evil.example/d/1" }, ["doc_url"]],
+    [{ ...BODY, doc_url: "https://www.doqtri.xyz.evil.example/d/1" }, ["doc_url"]],
+    [{ ...BODY, doc_url: "https://www.doqtri.xyz@evil.example/d/1" }, ["doc_url"]],
+    [{ ...BODY, doc_url: "https://doqtri.xyz/d/1" }, ["doc_url"]],
     [{ ...BODY, project_id: PROJECT }, ["project_id"]],
     [{}, ["doc_id", "doc_title", "doc_url"]],
   ])("rejects %j as 400 invalid_request naming %j", async (body, fields) => {
@@ -160,6 +167,44 @@ describe("POST /api/v1/projects/{id}/docs", () => {
     const error = (await response.json()).error;
     expect(error.code).toBe("invalid_request");
     expect(Object.keys(error.details.fields).sort()).toEqual([...fields].sort());
+    expect(db.requests).toEqual([]);
+  });
+
+  it("names doqtri's origin when it refuses a doc_url off it (D-45)", async () => {
+    const db = signedIn();
+
+    const response = await post({ ...BODY, doc_url: "https://evil.example/d/1" });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.details.fields).toEqual({
+      doc_url: "must be a doqtri URL starting with https://www.doqtri.xyz/",
+    });
+    expect(db.requests).toEqual([]);
+  });
+
+  it("follows DOQTRI_ORIGIN", async () => {
+    process.env.DOQTRI_ORIGIN = "https://staging.doqtri.xyz/";
+    const staging = `https://staging.doqtri.xyz/d/${DOC}`;
+    const db = signedIn({
+      rpc: { link_project_doc: [{ data: [{ ...docLinkRow(true), doc_url: staging }], error: null }] },
+    });
+
+    expect((await post(BODY)).status).toBe(400);
+
+    const response = await post({ ...BODY, doc_url: staging });
+    expect(response.status).toBe(201);
+    expect(db.requests.map((r) => (r.args as { p_doc_url: string }).p_doc_url)).toEqual([staging]);
+  });
+
+  it("answers 500 without touching the database when DOQTRI_ORIGIN is not an https origin", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.DOQTRI_ORIGIN = "http://www.doqtri.xyz";
+    const db = signedIn();
+
+    const response = await post(BODY);
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error.code).toBe("internal_error");
     expect(db.requests).toEqual([]);
   });
 

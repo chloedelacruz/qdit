@@ -1,3 +1,5 @@
+import { isDoqtriDocUrl } from "@/lib/doqtri-origin";
+
 import { ApiError, invalidRequest } from "./errors";
 
 /**
@@ -140,6 +142,22 @@ export function httpsUrlField(errors: FieldErrors, name: string, value: unknown)
   }
   if (value.length > MAX_URL_LENGTH) return void errors.add(name, "must be at most 2048 characters");
   return value;
+}
+
+/**
+ * A `doc_url`: an https URL that starts with doqtri's origin (D-45, contract
+ * v1.0.2). `origin` is `doqtriOrigin()`, passed in so this stays pure.
+ */
+export function doqtriUrlField(
+  errors: FieldErrors,
+  name: string,
+  value: unknown,
+  origin: string,
+): string | undefined {
+  const url = httpsUrlField(errors, name, value);
+  if (url === undefined) return undefined;
+  if (!isDoqtriDocUrl(url, origin)) return void errors.add(name, `must be a doqtri URL starting with ${origin}/`);
+  return url;
 }
 
 export function nodeIdField(errors: FieldErrors, name: string, value: unknown): string | undefined {
