@@ -78,7 +78,7 @@ export const APP_ACCESS = {
     "Approve or reject milestones, or delete projects or milestones",
     "Change anything about a milestone except a linked milestone's title",
     "Change members, roles or project settings",
-    "See or change tasks, proofs of work, deployments, review notes, your notifications or qdit's log of its requests",
+    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests or its webhook settings and queue",
     "See your teammates' profiles or who else is in your projects",
   ],
 } as const;
@@ -105,6 +105,10 @@ export const APP_READ_SCOPE = {
   hidden: [
     "api_requests",
     "deployments",
+    // The webhook outbox and endpoints (20261024130000_integration_webhooks.sql):
+    // qdit's own delivery state, closed to every client role, not user data.
+    "integration_events",
+    "integration_webhooks",
     "milestone_reviews",
     "notifications",
     "stellar_proofs",
