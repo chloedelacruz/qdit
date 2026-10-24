@@ -274,6 +274,9 @@ describe("PATCH /api/v1/milestones/{id}", () => {
     [{ title: null }, ["title"]],
     [{ title: "Ok", description: "no" }, ["description"]],
     [{ title: "Ok", status: "approved" }, ["status"]],
+    // D-46: a linked milestone stays in its project, and the API has no way
+    // to move any milestone.
+    [{ title: "Ok", project_id: "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34" }, ["project_id"]],
   ])("rejects %j as 400 invalid_request naming %j", async (body, fields) => {
     const db = signedIn();
 
