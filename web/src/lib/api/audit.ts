@@ -6,7 +6,8 @@ import { getSupabaseUrl } from "@/lib/supabase/env";
 import type { Database } from "@/lib/types/database";
 
 /**
- * Writes one `api_requests` row per authenticated `/api/v1` request.
+ * Writes one `api_requests` row per authenticated `/api/v1` request (bar
+ * repeat 429s within a rate-limit window, which `./handler.ts` skips).
  *
  * ---------------------------------------------------------------------------
  * WHY THE SERVICE ROLE, AND WHY ONLY HERE

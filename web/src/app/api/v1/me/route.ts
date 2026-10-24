@@ -1,5 +1,5 @@
 import { databaseError } from "@/lib/api/errors";
-import { apiRoute, ok } from "@/lib/api/handler";
+import { apiRoute, endpointNotFound, ok } from "@/lib/api/handler";
 import type { ApiUser } from "@/lib/api/resources";
 
 /**
@@ -36,3 +36,10 @@ export const GET = apiRoute(async ({ auth }) => {
 
   return ok({ user, client_id: auth.clientId });
 });
+
+// Read-only endpoint: every other method is an unknown endpoint (see
+// `endpointNotFound`), not Next's empty-body 405.
+export const POST = endpointNotFound;
+export const PUT = endpointNotFound;
+export const PATCH = endpointNotFound;
+export const DELETE = endpointNotFound;
