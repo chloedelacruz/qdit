@@ -1,6 +1,11 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  APP_ACCESS,
+  APP_READ_SCOPE,
   EXPIRED_MESSAGE,
   consentPath,
   decideConsent,
@@ -242,5 +247,74 @@ describe("decideConsent", () => {
     await expect(
       decideConsent(fakeApi({ approveAuthorization }), "auth_123", "approve"),
     ).resolves.toEqual({ kind: "error", message: EXPIRED_MESSAGE });
+  });
+});
+
+describe("APP_ACCESS matches the guard migration", () => {
+  const dir = fileURLToPath(new URL("../../../../supabase/migrations/", import.meta.url));
+  const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
+  const sql = (name: string) => readFileSync(`${dir}${name}`, "utf8");
+  const guards = sql("20261024110000_oauth_client_guards.sql");
+
+  const tables = new Set(
+    files.flatMap((name) =>
+      [...sql(name).matchAll(/^create table public\.(\w+)/gm)].map((m) => m[1]),
+    ),
+  );
+
+  // `create policy "…"` / `on public.<table>` / `as restrictive` / `for select`
+  // / `to public` / `using (…);` — the shape every guard in the file is written in.
+  const selectGuards = new Map(
+    [
+      ...guards.matchAll(
+        /create policy "[^"]+"\s+on public\.(\w+)\s+as restrictive\s+for select\s+to public\s+using \(([\s\S]*?)\);/g,
+      ),
+    ].map((m) => [m[1], m[2]]),
+  );
+
+  const sorted = (values: Iterable<string>) => [...values].sort();
+
+  it("names every table, each once", () => {
+    const named = [...APP_READ_SCOPE.readable, ...APP_READ_SCOPE.ownRowOnly, ...APP_READ_SCOPE.hidden];
+    expect(new Set(named).size).toBe(named.length);
+    expect(sorted(named)).toEqual(sorted(tables));
+  });
+
+  it("hides exactly the tables the migration puts a SELECT guard on", () => {
+    expect(sorted(selectGuards.keys())).toEqual(
+      sorted([...APP_READ_SCOPE.ownRowOnly, ...APP_READ_SCOPE.hidden]),
+    );
+  });
+
+  it("lets an app read its user's own row only where it says so", () => {
+    for (const table of APP_READ_SCOPE.ownRowOnly) {
+      expect(selectGuards.get(table), table).toMatch(/or id = \(select auth\.uid\(\)\)/);
+    }
+    for (const table of APP_READ_SCOPE.hidden) {
+      expect(selectGuards.get(table)?.trim(), table).toBe(
+        "((select auth.jwt()) ->> 'client_id') is null",
+      );
+    }
+  });
+
+  it("tells the user about every hidden table", () => {
+    const words: Record<(typeof APP_READ_SCOPE.hidden)[number], string> = {
+      deployments: "deployments",
+      milestone_reviews: "review notes",
+      notifications: "notifications",
+      stellar_proofs: "proofs of work",
+      tasks: "tasks",
+    };
+    const cannot = APP_ACCESS.cannot.join(" ");
+    for (const table of APP_READ_SCOPE.hidden) {
+      expect(cannot, table).toContain(words[table]);
+    }
+    expect(cannot).toContain("teammates' profiles");
+  });
+
+  it("promises no write the migration does not allow yet", () => {
+    // WP-2.4 brings renaming linked milestones and linking documents.
+    const can = APP_ACCESS.can.join(" ").toLowerCase();
+    expect(can).not.toMatch(/rename|link/);
   });
 });

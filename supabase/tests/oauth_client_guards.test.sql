@@ -4,7 +4,8 @@
 --
 -- Covers 20261024110000_oauth_client_guards.sql: a request whose JWT carries a
 -- `client_id` claim (a token Supabase's OAuth server issued to doqtri) may read
--- and may create proposed milestones, and may change nothing else — while the
+-- projects, rosters, milestones, anchors and its user's own profile, may
+-- create proposed milestones, and may see or change nothing else — while the
 -- same user's own session keeps every right it had.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
@@ -16,16 +17,23 @@
 -- exactly those two things, which is all auth.uid() and auth.jwt() read.
 --
 -- A note on reading the assertions. RLS answers a refused INSERT with an error
--- (42501), but a refused UPDATE or DELETE by filtering the row out of the
--- statement: it succeeds and touches nothing. So inserts are checked with
--- throws_ok, and updates and deletes by checking the row afterwards.
+-- (42501), but a refused SELECT, UPDATE or DELETE by filtering the row out of
+-- the statement: it succeeds and touches nothing. So inserts are checked with
+-- throws_ok, reads by counting rows, and updates and deletes by checking the
+-- row afterwards — as postgres when the table is one the app cannot read, or
+-- the check would see nothing either way.
+--
+-- A 42501 does not say which policy refused, and the permissive ones raise the
+-- same code. So every insert an OAuth client is refused is also made, the same
+-- statement for the same user, under that user's session in section 3, where
+-- it must succeed: that is what shows the guard, and nothing else, said no.
 -- ============================================================================
 
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(59);
 
 
 -- ----------------------------------------------------------------------------
@@ -64,6 +72,24 @@ values ('e0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-0000000
         'b0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001',
         'milestone_submitted', 'Submitted for approval: Escrow contract (OAuth guard)');
 
+-- One row in each of the other tables, so "an app sees none" is a real zero
+-- and not an empty table.
+insert into public.stellar_proofs (project_id, milestone_id, proof_url, created_by)
+values ('b0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001',
+        'https://example.com/proof', 'a0000000-0000-4000-8000-000000000001');
+
+insert into public.deployments (project_id, status, network, deployed_by)
+values ('b0000000-0000-4000-8000-000000000001', 'testnet', 'testnet', 'a0000000-0000-4000-8000-000000000001');
+
+insert into public.milestone_reviews (milestone_id, project_id, from_status, to_status, reason, reviewer_id)
+values ('c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001',
+        'proposed', 'submitted', null, 'a0000000-0000-4000-8000-000000000001');
+
+insert into public.milestone_anchors (milestone_id, project_id, action, proof_hash, version, contract_id, tx_hash, signer_address, created_by)
+values ('c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'submit',
+        repeat('c', 64), 1, 'CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG', repeat('d', 64),
+        'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7', 'a0000000-0000-4000-8000-000000000001');
+
 
 -- ----------------------------------------------------------------------------
 -- Caller switches
@@ -101,7 +127,8 @@ $$;
 -- 1. Every public table is guarded
 --
 -- A tripwire for the rule in the migration header: a table added later without
--- its three restrictive policies fails here rather than shipping writable.
+-- its restrictive policies fails here rather than shipping writable, or
+-- readable, by every connected app.
 -- ----------------------------------------------------------------------------
 
 select is_empty(
@@ -122,6 +149,28 @@ select is_empty(
   'every public table has a restrictive policy for INSERT, UPDATE and DELETE'
 );
 
+-- Reads: the tables D-03 lets an app read are named here, deliberately, and
+-- every other table must hide itself. Adding a name to this list is a decision
+-- about what doqtri can see, and the consent screen's wording has to follow it
+-- (web/src/lib/auth/oauth-consent.ts, APP_READ_SCOPE).
+select is_empty(
+  $$
+    select t.tablename
+      from pg_catalog.pg_tables t
+     where t.schemaname = 'public'
+       and t.tablename not in ('projects', 'project_members', 'milestones', 'milestone_anchors')
+       and not exists (
+         select 1
+           from pg_catalog.pg_policies p
+          where p.schemaname = 'public'
+            and p.tablename = t.tablename
+            and p.cmd = 'SELECT'
+            and p.permissive = 'RESTRICTIVE'
+       )
+  $$,
+  'every public table an app may not read has a restrictive SELECT policy'
+);
+
 select ok(
   (select bool_and(c.relrowsecurity)
      from pg_catalog.pg_class c
@@ -137,7 +186,7 @@ select ok(
 
 select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
 
--- Reads are untouched.
+-- What D-03 lets it read.
 select is(
   (select count(*)::int from public.milestones where project_id = 'b0000000-0000-4000-8000-000000000001'),
   1,
@@ -147,6 +196,53 @@ select is(
   (select count(*)::int from public.projects where id = 'b0000000-0000-4000-8000-000000000001'),
   1,
   'oauth: can read a member project'
+);
+select is(
+  (select count(*)::int from public.project_members where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  2,
+  'oauth: can read the roster of a member project'
+);
+select is(
+  (select count(*)::int from public.milestone_anchors where milestone_id = 'c0000000-0000-4000-8000-000000000001'),
+  1,
+  'oauth: can read a milestone''s anchors'
+);
+select is(
+  (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000001'),
+  1,
+  'oauth: can read the user''s own profile'
+);
+
+-- And nothing else.
+select is(
+  (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000002'),
+  0,
+  'oauth: cannot read a teammate''s profile'
+);
+select is(
+  (select count(*)::int from public.tasks),
+  0,
+  'oauth: cannot read tasks'
+);
+select is(
+  (select count(*)::int from public.stellar_proofs),
+  0,
+  'oauth: cannot read proofs of work'
+);
+select is(
+  (select count(*)::int from public.deployments),
+  0,
+  'oauth: cannot read deployments'
+);
+select is(
+  (select count(*)::int from public.milestone_reviews),
+  0,
+  'oauth: cannot read review decisions'
+);
+select is(
+  (select count(*)::int from public.notifications),
+  0,
+  'oauth: cannot read notifications'
 );
 
 -- Creating a milestone is the one write it keeps.
@@ -285,11 +381,13 @@ select throws_ok(
   'oauth: cannot create a task'
 );
 delete from public.tasks where id = 'd0000000-0000-4000-8000-000000000001';
+select pg_temp.as_postgres();
 select is(
   (select count(*)::int from public.tasks where id = 'd0000000-0000-4000-8000-000000000001'),
   1,
   'oauth: cannot delete a task'
 );
+select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
 select throws_ok(
   $$ insert into public.stellar_proofs (project_id, proof_url, created_by)
      values ('b0000000-0000-4000-8000-000000000001', 'https://example.com', 'a0000000-0000-4000-8000-000000000001') $$,
@@ -312,10 +410,12 @@ select throws_ok(
 );
 update public.notifications set read_at = now()
  where id = 'e0000000-0000-4000-8000-000000000001';
+select pg_temp.as_postgres();
 select ok(
   (select read_at is null from public.notifications where id = 'e0000000-0000-4000-8000-000000000001'),
   'oauth: cannot mark a notification read'
 );
+select pg_temp.as_oauth_client('a0000000-0000-4000-8000-000000000001');
 update public.profiles set display_name = 'Set by an app'
  where id = 'a0000000-0000-4000-8000-000000000001';
 select is(
@@ -327,16 +427,91 @@ select is(
 
 -- ----------------------------------------------------------------------------
 -- 3. The same user's own session is unaffected
+--
+-- Including every insert section 2 saw refused, verbatim: each one passing here
+-- is what pins that refusal on the guard rather than on a permissive policy.
 -- ----------------------------------------------------------------------------
 
 select pg_temp.as_session('a0000000-0000-4000-8000-000000000001');
 
+-- Reads the app could not make.
+select is(
+  (select count(*)::int from public.profiles where id = 'a0000000-0000-4000-8000-000000000002'),
+  1,
+  'session: can read a teammate''s profile'
+);
+select is(
+  (select count(*)::int from public.tasks where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  1,
+  'session: can read tasks'
+);
+select is(
+  (select count(*)::int from public.stellar_proofs where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  1,
+  'session: can read proofs of work'
+);
+select is(
+  (select count(*)::int from public.deployments where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  1,
+  'session: can read deployments'
+);
+select is(
+  (select count(*)::int from public.milestone_reviews where project_id = 'b0000000-0000-4000-8000-000000000001'),
+  1,
+  'session: can read review decisions'
+);
+select is(
+  (select count(*)::int from public.notifications where recipient_id = 'a0000000-0000-4000-8000-000000000001'),
+  1,
+  'session: can read own notifications'
+);
+
+-- The inserts section 2 refused.
 select lives_ok(
   $$ insert into public.milestone_reviews (milestone_id, project_id, from_status, to_status, reason, reviewer_id)
      values ('c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001',
-             'submitted', 'approved', null, 'a0000000-0000-4000-8000-000000000001') $$,
+             'submitted', 'rejected', 'No tests', 'a0000000-0000-4000-8000-000000000001') $$,
   'session: can record a review decision'
 );
+select lives_ok(
+  $$ insert into public.milestones (project_id, title, status)
+     values ('b0000000-0000-4000-8000-000000000001', 'Pre-approved', 'approved') $$,
+  'session: may still insert a milestone in any status'
+);
+select lives_ok(
+  $$ insert into public.projects (owner_id, name, slug)
+     values ('a0000000-0000-4000-8000-000000000001', 'New', 'oauth-guard-new') $$,
+  'session: can create a project'
+);
+select lives_ok(
+  $$ insert into public.project_members (project_id, user_id, role)
+     values ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000003', 'member') $$,
+  'session: can add a member directly'
+);
+select lives_ok(
+  $$ insert into public.tasks (project_id, title)
+     values ('b0000000-0000-4000-8000-000000000001', 'From an app') $$,
+  'session: can create a task'
+);
+select lives_ok(
+  $$ insert into public.stellar_proofs (project_id, proof_url, created_by)
+     values ('b0000000-0000-4000-8000-000000000001', 'https://example.com', 'a0000000-0000-4000-8000-000000000001') $$,
+  'session: can attach a proof'
+);
+select lives_ok(
+  $$ insert into public.deployments (project_id, status)
+     values ('b0000000-0000-4000-8000-000000000001', 'not_started') $$,
+  'session: can log a deployment'
+);
+select lives_ok(
+  $$ insert into public.milestone_anchors (milestone_id, project_id, action, proof_hash, version, contract_id, tx_hash, signer_address, created_by)
+     values ('c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'submit',
+             repeat('a', 64), 1, 'CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG', repeat('b', 64),
+             'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7', 'a0000000-0000-4000-8000-000000000001') $$,
+  'session: can record an anchor'
+);
+
+-- The writes section 2 saw filtered out.
 update public.milestones set status = 'approved'
  where id = 'c0000000-0000-4000-8000-000000000001';
 select is(
@@ -344,14 +519,11 @@ select is(
   'approved',
   'session: can approve a milestone'
 );
-select lives_ok(
-  $$ insert into public.milestones (project_id, title, status)
-     values ('b0000000-0000-4000-8000-000000000001', 'Imported as done', 'approved') $$,
-  'session: may still insert a milestone in any status'
-);
-select lives_ok(
-  $$ select public.add_project_member_by_username('b0000000-0000-4000-8000-000000000001', 'oauth_guest', 'member') $$,
-  'session: add_project_member_by_username works'
+update public.notifications set read_at = now()
+ where id = 'e0000000-0000-4000-8000-000000000001';
+select ok(
+  (select read_at is not null from public.notifications where id = 'e0000000-0000-4000-8000-000000000001'),
+  'session: can mark own notification read'
 );
 update public.profiles set display_name = 'Owner, renamed'
  where id = 'a0000000-0000-4000-8000-000000000001';
@@ -369,6 +541,11 @@ select is(
       and user_id = 'a0000000-0000-4000-8000-000000000003'),
   0,
   'session: can remove a member'
+);
+-- After the removal, so the invite does not collide with the direct insert.
+select lives_ok(
+  $$ select public.add_project_member_by_username('b0000000-0000-4000-8000-000000000001', 'oauth_guest', 'member') $$,
+  'session: add_project_member_by_username works'
 );
 delete from public.projects where id = 'b0000000-0000-4000-8000-000000000001';
 

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { HashLink } from "@/components/hash-link";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { safeNextPath } from "@/lib/auth/next-path";
+import { loginPath, safeNextPath } from "@/lib/auth/next-path";
 import { TICKET_COOKIE, readTicket } from "@/lib/auth/registration-ticket";
 import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
 import type { StellarNetwork } from "@/lib/stellar";
@@ -77,8 +77,9 @@ async function resolve(next: string): Promise<{ mode: Mode; address: string | nu
 
   // No proof, no registration. Expired, tampered with, or simply a stranger
   // typing the URL — all the same answer, and `/login` is where the wallet
-  // button lives.
-  if (!address) redirect("/login");
+  // button lives. `next` goes along, so a ticket that expired on the way from
+  // a consent link still ends back on it.
+  if (!address) redirect(loginPath(next));
 
   return { mode: "create", address };
 }

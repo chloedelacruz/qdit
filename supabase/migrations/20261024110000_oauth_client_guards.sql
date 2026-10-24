@@ -13,7 +13,8 @@
 -- `authenticated` and its `sub` is the user, so every policy in
 -- 20260731133313_rls.sql reads it exactly as it reads the user's own session —
 -- a token doqtri holds could approve milestones, delete projects and hand out
--- memberships, because the user it names can.
+-- memberships, and read every task, review note and notification, because
+-- the user it names can.
 --
 -- And it is not only reachable through /api/v1. PostgREST accepts the same JWT
 -- with the publishable key that ships in every browser, so whatever an API
@@ -56,11 +57,35 @@
 -- notifications has no INSERT or DELETE). A restrictive policy grants nothing
 -- by itself, so these cost nothing now, and they mean a permissive policy
 -- added later does not quietly open the command to OAuth clients as well.
+-- SELECT gets one on every table an app has no reason to read; the next
+-- section lists the ones it may.
 --
 -- ---------------------------------------------------------------------------
 -- WHAT AN OAUTH CLIENT KEEPS (D-03)
 -- ---------------------------------------------------------------------------
---   * Every SELECT the user has. Nothing here touches reads.
+-- D-03 says an app may read projects and milestones and nothing else, so reads
+-- are guarded too, not only writes. What stays readable, under the user's own
+-- permissive policies:
+--
+--   projects           the projects the user belongs to (GET /projects)
+--   project_members    their rosters, because /api/v1 has to know the caller's
+--                      role before it creates anything for them
+--   milestones         the thing being linked (GET /milestones/{id})
+--   milestone_anchors  each milestone's milestone_proof history. Every column
+--                      is a copy of a public ledger entry (D-04: the chain is
+--                      the truth, this table only points at it), and
+--                      GET /milestones/{id} returns the latest proof hash
+--                      from here
+--   profiles           the user's own row only (GET /me) — not teammates',
+--                      which carry their wallet addresses and usernames
+--
+-- And nothing at all from tasks, stellar_proofs, deployments,
+-- milestone_reviews (rejection reasons are written to a person, not to an
+-- app) or notifications. A restrictive SELECT policy hides rows rather than
+-- raising, so a request for those tables answers with an empty list.
+--
+-- Writes it keeps:
+--
 --   * INSERT on public.milestones, under the existing "member+" policy, and
 --     only with status 'proposed'. A milestone created already `approved`
 --     would be an approval that never went through review, which is the exact
@@ -72,8 +97,11 @@
 -- (D-12), and INSERT on the link tables (project_doc_links,
 -- milestone_external_links). WP-2.4 relaxes the milestones UPDATE guard below
 -- for that one case and gives its own tables their own guards. Any table added
--- after this migration MUST add the same three restrictive policies, or it is
--- writable by every OAuth client its users have approved.
+-- after this migration MUST add the same restrictive policies — one for each
+-- of SELECT, INSERT, UPDATE and DELETE — or it is readable and writable by
+-- every OAuth client its users have approved. A table that apps should read
+-- skips only the SELECT one, and says so; supabase/tests/
+-- oauth_client_guards.test.sql keeps the list of those and fails on any other.
 --
 -- ---------------------------------------------------------------------------
 -- SECURITY DEFINER FUNCTIONS
@@ -91,8 +119,12 @@
 -- public.assert_first_party_session(). The other definer functions need
 -- nothing:
 --
---   is_project_member, shares_project_with, public_milestone_proof
---       read only.
+--   is_project_member, shares_project_with
+--       read only, and answer yes/no about the caller's own memberships,
+--       which the readable project_members roster shows anyway.
+--   public_milestone_proof
+--       read only, granted to anon, and answers only to a share token, so an
+--       OAuth token reaches nothing through it that a stranger could not.
 --   handle_new_user      trigger on auth.users; not callable by clients.
 --   handle_new_project   AFTER INSERT trigger on projects; the projects INSERT
 --                        guard rejects the row before it can fire.
@@ -138,8 +170,22 @@ revoke all on function public.assert_first_party_session() from public, anon, au
 
 
 -- ----------------------------------------------------------------------------
--- 2. profiles — an app never edits who you are
+-- 2. profiles — an app never edits who you are, and sees only you
+--
+-- The SELECT guard keeps the user's own row so GET /api/v1/me can answer, and
+-- hides teammates' rows, which "read own or teammate" would otherwise hand
+-- over with their wallet addresses and usernames.
 -- ----------------------------------------------------------------------------
+
+create policy "profiles: only own row for oauth clients"
+  on public.profiles
+  as restrictive
+  for select
+  to public
+  using (
+    ((select auth.jwt()) ->> 'client_id') is null
+    or id = (select auth.uid())
+  );
 
 create policy "profiles: no insert by oauth clients"
   on public.profiles
@@ -256,8 +302,16 @@ create policy "milestones: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 6. tasks — not part of the integration at all (D-07: milestones only)
+-- 6. tasks — not part of the integration at all (D-07: milestones only), so
+-- not readable either
 -- ----------------------------------------------------------------------------
+
+create policy "tasks: no select by oauth clients"
+  on public.tasks
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
 
 create policy "tasks: no insert by oauth clients"
   on public.tasks
@@ -283,8 +337,16 @@ create policy "tasks: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 7. stellar_proofs — proof of work is attached by the person who did it
+-- 7. stellar_proofs — proof of work is attached, and read, by the people who
+-- did it
 -- ----------------------------------------------------------------------------
+
+create policy "stellar_proofs: no select by oauth clients"
+  on public.stellar_proofs
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
 
 create policy "stellar_proofs: no insert by oauth clients"
   on public.stellar_proofs
@@ -310,8 +372,15 @@ create policy "stellar_proofs: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 8. deployments
+-- 8. deployments — not part of the integration; hidden and read-only
 -- ----------------------------------------------------------------------------
+
+create policy "deployments: no select by oauth clients"
+  on public.deployments
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
 
 create policy "deployments: no insert by oauth clients"
   on public.deployments
@@ -342,6 +411,8 @@ create policy "deployments: no delete by oauth clients"
 -- An anchor row is written by the person who signed the transaction, in this
 -- app. doqtri reads milestone_proof itself (D-04) and never records anchors
 -- here. UPDATE and DELETE have no permissive policy today; see the header.
+-- Reads stay open on purpose (see the header): the row is a pointer to a
+-- public ledger entry, and GET /api/v1/milestones/{id} serves its proof hash.
 -- ----------------------------------------------------------------------------
 
 create policy "milestone_anchors: no insert by oauth clients"
@@ -369,8 +440,17 @@ create policy "milestone_anchors: no delete by oauth clients"
 
 -- ----------------------------------------------------------------------------
 -- 10. milestone_reviews — approve and reject write here, so this is half of
--- what keeps a decision first-party (the milestones UPDATE guard is the other)
+-- what keeps a decision first-party (the milestones UPDATE guard is the other).
+-- Hidden as well: a rejection reason is written to the person who did the
+-- work, and doqtri gets the outcome from milestones.status and the chain.
 -- ----------------------------------------------------------------------------
+
+create policy "milestone_reviews: no select by oauth clients"
+  on public.milestone_reviews
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
 
 create policy "milestone_reviews: no insert by oauth clients"
   on public.milestone_reviews
@@ -396,8 +476,15 @@ create policy "milestone_reviews: no delete by oauth clients"
 
 
 -- ----------------------------------------------------------------------------
--- 11. notifications — marking read is the user's own act
+-- 11. notifications — the user's inbox; an app neither reads nor marks it
 -- ----------------------------------------------------------------------------
+
+create policy "notifications: no select by oauth clients"
+  on public.notifications
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
 
 create policy "notifications: no insert by oauth clients"
   on public.notifications
