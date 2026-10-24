@@ -10,8 +10,9 @@
  *   - the API refuses a `doc_url` off the origin (`POST /projects/{id}/docs`,
  *     `400 invalid_request` on `doc_url`);
  *   - the "Plan docs" row renders `doc_url` as a link only when it is on the
- *     origin, which covers rows written some other way (a direct PostgREST
- *     insert by a project admin, or a row written before the origin changed).
+ *     origin, which covers rows the API did not check (a row written before
+ *     the origin changed, or `link_project_doc()` called over PostgREST by a
+ *     project admin's own session; no client writes the table directly, D-48).
  *
  * Server-only by convention: `DOQTRI_ORIGIN` has no `NEXT_PUBLIC_` prefix.
  * Pure otherwise, so the rules are unit tested directly.
