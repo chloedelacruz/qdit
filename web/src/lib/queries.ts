@@ -18,6 +18,7 @@ import {
   type TaskStatus,
 } from "@/lib/constants";
 import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
+import { doqtriOrigin, isDoqtriDocUrl } from "@/lib/doqtri-origin";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
 import { docUrlHost } from "@/lib/plan-docs";
@@ -1083,12 +1084,14 @@ export type PlanDocRow = {
   id: string;
   docId: string;
   title: string;
-  /** Always https — the table's CHECK refuses anything else. */
-  url: string;
   /**
-   * The host `url` opens. Any https host is accepted, so the row shows this
-   * instead of claiming the link goes to doqtri.
+   * The doc's `doc_url`, or null when it is not on doqtri's origin (D-45). The
+   * API refuses such a URL, but a project admin can still write one through
+   * PostgREST, and `DOQTRI_ORIGIN` can change under stored rows; the row then
+   * shows the title without a link rather than send anyone off doqtri.
    */
+  url: string | null;
+  /** The host `url` opens, or `""` when there is no `url`. */
   host: string;
   /** Milestones in this project linked to one of the doc's headings. */
   milestoneCount: number;
@@ -1103,6 +1106,7 @@ export type PlanDocRow = {
  * qdit only lists them, so this is read-only.
  */
 export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
+  const origin = readDoqtriOrigin();
   const supabase = await createClient();
   const { data } = await supabase
     .from("project_doc_links")
@@ -1117,15 +1121,31 @@ export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
     doc_url: string;
     created_at: string;
     milestone_external_links: EmbeddedCount;
-  }[]).map((row) => ({
-    id: row.id,
-    docId: row.doc_id,
-    title: row.doc_title,
-    url: row.doc_url,
-    host: docUrlHost(row.doc_url),
-    milestoneCount: countOf(row.milestone_external_links),
-    linkedAt: row.created_at,
-  }));
+  }[]).map((row) => {
+    const url = origin && isDoqtriDocUrl(row.doc_url, origin) ? row.doc_url : null;
+    return {
+      id: row.id,
+      docId: row.doc_id,
+      title: row.doc_title,
+      url,
+      host: url ? docUrlHost(url) : "",
+      milestoneCount: countOf(row.milestone_external_links),
+      linkedAt: row.created_at,
+    };
+  });
+}
+
+/**
+ * `doqtriOrigin()`, or null when `DOQTRI_ORIGIN` is misconfigured: the page
+ * still renders, with no doc links, and the error is logged.
+ */
+function readDoqtriOrigin(): string | null {
+  try {
+    return doqtriOrigin();
+  } catch (error) {
+    console.error("plan docs:", error);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
