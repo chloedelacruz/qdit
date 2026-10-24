@@ -745,8 +745,9 @@ export type Database = {
       /**
        * Which (user, OAuth client) pairs have written a doc link or its
        * milestone links, and whether that grant is still usable
-       * (20261025120600_doc_link_connections.sql). Project viewers read it;
-       * apps see nothing. Written only by triggers and
+       * (20261025120600_doc_link_connections.sql). Project viewers read
+       * doc_link_id, lost_at and lost_reason only (column grants: selecting
+       * any other column is refused); apps see nothing. Written only by triggers and
        * `mark_doc_link_connections_revoked`.
        */
       doc_link_connections: {

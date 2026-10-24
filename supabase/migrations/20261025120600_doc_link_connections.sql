@@ -31,17 +31,38 @@
 --   deleted     deleting the account deletes its rows (on delete cascade).
 --
 -- A doc link is connected while at least one of its rows is live (lost_at is
--- null). Any new write through an app makes its row live again, so
--- reconnecting doqtri and saving the doc restores the card.
+-- null). A new write through an app makes its row live again, so reconnecting
+-- doqtri and saving the doc restores the card, with one exception:
+--
+--   stale token  revoking cannot recall an access token doqtri already holds
+--                (Auth cannot unsign a JWT; it stays valid until exp, and
+--                CONTRACT.md section 5 accepts it). A write made with a token
+--                issued (iat) at or before the user's latest revoke of that
+--                client, as recorded on any of their rows, does not revive
+--                anything: it only refreshes last_write_at on an existing row,
+--                and a first write to another doc records that row as already
+--                revoked. A token without a numeric iat counts as old. iat has
+--                whole seconds, so a token issued in the second of the revoke
+--                counts as old too; doqtri's next refresh fixes that.
 --
 -- Known limits: a grant that ends outside qdit's revoke action (the OAuth
 -- client deleted by an operator, a refresh token that lapsed) is not seen
--- here; neither is a role dropping to viewer without leaving.
+-- here; neither is a role dropping to viewer without leaving. A revoke by a
+-- user with no live rows for that client marks nothing, so it leaves no time
+-- to compare against, and a pre-revoke
+-- token's writes in its remaining lifetime (up to about 1h) record live rows.
+-- Every OAuth client counts, not only doqtri: qdit does not pin doqtri's
+-- client id (CONTRACT.md names none), so if a second client is ever
+-- registered, its writes to these link tables would keep a doc card loaded
+-- after doqtri's own grants are gone.
 --
 -- ---------------------------------------------------------------------------
 -- WHO MAY DO WHAT
 -- ---------------------------------------------------------------------------
--- Read: viewer and above of the doc link's project, like the link itself.
+-- Read: viewer and above of the doc link's project, like the link itself, and
+-- only the columns the card needs (doc_link_id, lost_at, lost_reason): who
+-- authorized doqtri, through which client and when they last wrote is each
+-- user's own grant bookkeeping, not something teammates need to see.
 -- Write: nobody directly. The rows are written by the SECURITY DEFINER
 -- triggers and the revoke RPC below; authenticated gets SELECT only.
 -- OAuth clients see nothing (restrictive guards, as for the webhook tables):
@@ -110,9 +131,12 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_client  text := auth.jwt() ->> 'client_id';
-  v_user    uuid := auth.uid();
-  v_link_id uuid;
+  v_client     text := auth.jwt() ->> 'client_id';
+  v_user       uuid := auth.uid();
+  v_iat_text   text := auth.jwt() ->> 'iat';
+  v_iat        timestamptz;
+  v_link_id    uuid;
+  v_revoked_at timestamptz;
 begin
   -- Supabase issues client ids as UUIDs. Anything else is not recorded rather
   -- than cast: a failed cast here would fail the write it is watching.
@@ -137,6 +161,28 @@ begin
     return null;
   end if;
 
+  -- When this user last revoked this client, if any of their rows remembers.
+  select max(c.lost_at)
+    into v_revoked_at
+    from public.doc_link_connections c
+   where c.user_id = v_user
+     and c.client_id = v_client::uuid
+     and c.lost_reason = 'revoked';
+
+  if v_iat_text ~ '^[0-9]{1,12}(\.[0-9]+)?$' then
+    v_iat := to_timestamp(v_iat_text::double precision);
+  end if;
+
+  -- A token from before that revoke (or with no iat to tell) is one doqtri
+  -- held when the user revoked it: see "stale token" in the header.
+  if v_revoked_at is not null and (v_iat is null or v_iat <= v_revoked_at) then
+    insert into public.doc_link_connections (doc_link_id, user_id, client_id, lost_at, lost_reason)
+    values (v_link_id, v_user, v_client::uuid, v_revoked_at, 'revoked')
+    on conflict on constraint doc_link_connections_key do update
+      set last_write_at = now();
+    return null;
+  end if;
+
   insert into public.doc_link_connections (doc_link_id, user_id, client_id)
   values (v_link_id, v_user, v_client::uuid)
   on conflict on constraint doc_link_connections_key do update
@@ -149,7 +195,7 @@ end;
 $$;
 
 comment on function public.record_doc_link_connection() is
-  'AFTER INSERT OR UPDATE on project_doc_links and milestone_external_links: for a write by an OAuth client, records (doc link, user, client) as a live connection. First-party writes record nothing.';
+  'AFTER INSERT OR UPDATE on project_doc_links and milestone_external_links: for a write by an OAuth client, records (doc link, user, client) as a live connection, unless the token was issued at or before that user''s latest revoke of that client. First-party writes record nothing.';
 
 create trigger project_doc_links_record_connection
   after insert or update of doc_title, doc_url on public.project_doc_links
@@ -167,8 +213,9 @@ create trigger milestone_external_links_record_connection
 -- Called by revokeAuthorizedApp() (web/src/lib/actions.ts) once Supabase Auth
 -- has revoked the grant. Only the caller's own rows, and only from the user's
 -- own session: an app cannot mark itself, or anyone, disconnected. Calling it
--- without revoking only makes the caller's own links read as lost until their
--- next write through doqtri, which harms nobody else.
+-- without revoking only makes the caller's own links read as lost until
+-- doqtri writes with a token issued after the call (its next refresh), which
+-- harms nobody else.
 create or replace function public.mark_doc_link_connections_revoked(p_client_id uuid)
 returns integer
 language plpgsql
@@ -282,13 +329,15 @@ create policy "doc_link_connections: no delete by oauth clients"
 -- ----------------------------------------------------------------------------
 -- 5. Grants
 --
--- Read only for authenticated: no permissive write policy exists either, so
--- the triggers and the RPC above are the only writers. The trigger functions
+-- Read only for authenticated, and only the three columns the card selects
+-- (see WHO MAY DO WHAT): a `select *` or a read of user_id, client_id or
+-- last_write_at is refused. No permissive write policy exists either, so the
+-- triggers and the RPC above are the only writers. The trigger functions
 -- are called by Postgres alone (20260731133429_function_grants.sql's rule).
 -- ----------------------------------------------------------------------------
 
 revoke all on table public.doc_link_connections from public, anon, authenticated;
-grant select on table public.doc_link_connections to authenticated;
+grant select (doc_link_id, lost_at, lost_reason) on table public.doc_link_connections to authenticated;
 
 revoke all on function public.record_doc_link_connection()     from public, anon, authenticated;
 revoke all on function public.mark_doc_link_connections_left() from public, anon, authenticated;

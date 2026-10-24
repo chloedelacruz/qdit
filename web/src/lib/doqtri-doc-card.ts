@@ -57,7 +57,10 @@ export type ConnectionLoss =
 
 export type DocConnection = { live: true } | { live: false; reason: ConnectionLoss };
 
-/** A `doc_link_connections` row as the card's queries select it. */
+/**
+ * A `doc_link_connections` row as the card's queries select it. These are the
+ * only columns a session may read; who the row belongs to is not one of them.
+ */
 export type ConnectionRecord = {
   lost_at: string | null;
   lost_reason: "revoked" | "left_project" | null;

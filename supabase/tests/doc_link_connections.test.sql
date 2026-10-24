@@ -6,8 +6,10 @@
 -- keep a doc link alive, as the WP-2.6 doc card reads them. A write through
 -- an OAuth client records a live row; a first-party write records nothing;
 -- revoking the app, leaving the project and deleting the account each end the
--- user's rows; a new write through the app revives them. Also who may read
--- the rows (project viewers, never apps) and that nobody writes them directly.
+-- user's rows; a new write through the app revives them, but not one made
+-- with a token issued before the revoke. Also who may read the rows (project
+-- viewers, only the card's columns, never apps) and that nobody writes them
+-- directly.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
@@ -18,7 +20,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(38);
 
 
 -- ----------------------------------------------------------------------------
@@ -53,15 +55,26 @@ values
 -- Caller switches
 -- ----------------------------------------------------------------------------
 
-create function pg_temp.as_oauth_client(p_user uuid, p_client text default '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d')
+-- p_iat_offset: the token's iat in seconds from now(), which is the
+-- transaction's start and so also every lost_at the revoke RPC sets here.
+-- Null leaves iat out of the token.
+create function pg_temp.as_oauth_client(
+  p_user uuid,
+  p_client text default '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d',
+  p_iat_offset integer default -60
+)
 returns void
 language sql as $$
   select set_config('role', 'authenticated', true);
-  select set_config('request.jwt.claims', json_build_object(
-    'sub', p_user,
-    'role', 'authenticated',
-    'aud', 'authenticated',
-    'client_id', p_client
+  select set_config('request.jwt.claims', (
+    jsonb_build_object(
+      'sub', p_user,
+      'role', 'authenticated',
+      'aud', 'authenticated',
+      'client_id', p_client
+    ) || case when p_iat_offset is null then '{}'::jsonb
+              else jsonb_build_object('iat', floor(extract(epoch from now()))::bigint + p_iat_offset)
+         end
   )::text, true);
 $$;
 
@@ -104,12 +117,17 @@ select ok(
 );
 
 select ok(
-  has_table_privilege('authenticated', 'public.doc_link_connections', 'select')
+  has_column_privilege('authenticated', 'public.doc_link_connections', 'doc_link_id', 'select')
+  and has_column_privilege('authenticated', 'public.doc_link_connections', 'lost_at', 'select')
+  and has_column_privilege('authenticated', 'public.doc_link_connections', 'lost_reason', 'select')
+  and not has_column_privilege('authenticated', 'public.doc_link_connections', 'user_id', 'select')
+  and not has_column_privilege('authenticated', 'public.doc_link_connections', 'client_id', 'select')
+  and not has_column_privilege('authenticated', 'public.doc_link_connections', 'last_write_at', 'select')
   and not has_table_privilege('authenticated', 'public.doc_link_connections', 'insert')
   and not has_table_privilege('authenticated', 'public.doc_link_connections', 'update')
   and not has_table_privilege('authenticated', 'public.doc_link_connections', 'delete')
-  and not has_table_privilege('anon', 'public.doc_link_connections', 'select'),
-  'authenticated may only read doc_link_connections; anon not even that'
+  and not has_any_column_privilege('anon', 'public.doc_link_connections', 'select'),
+  'authenticated may only read the card''s three columns of doc_link_connections; anon not even that'
 );
 
 select is(
@@ -218,6 +236,18 @@ select pg_temp.as_session('a2000000-0000-4000-8000-000000000004');
 select is((select count(*)::int from public.doc_link_connections), 2,
   'a project viewer reads the connections of the project''s docs');
 
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000004');
+select throws_ok(
+  $$ select user_id from public.doc_link_connections $$,
+  '42501', null,
+  'a viewer cannot read who the connection belongs to'
+);
+select throws_ok(
+  $$ select client_id, last_write_at from public.doc_link_connections $$,
+  '42501', null,
+  '... nor through which client, or when it last wrote'
+);
+
 select pg_temp.as_session('a2000000-0000-4000-8000-000000000005');
 select is((select count(*)::int from public.doc_link_connections), 0,
   'a stranger reads none');
@@ -262,8 +292,39 @@ delete from public.project_members
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:revoked', '3:left_project'],
   'leaving the project marks the member''s connection lost: D1 has none live');
 
--- The admin reconnects doqtri and doqtri re-posts the doc.
+-- doqtri still holds the admin's access token from before the revoke (it
+-- stays valid until it expires) and saves the doc with it.
 select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
+select lives_ok(
+  $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+       'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
+       'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000001') $$,
+  'a write with a token issued before the revoke still succeeds'
+);
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:revoked', '3:left_project'],
+  '... but does not make the revoked connection live again');
+
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => null);
+select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+  'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
+  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000001');
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:revoked', '3:left_project'],
+  'a token with no iat counts as one from before the revoke');
+
+-- The same old token links another doc, which the admin never wrote before.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
+select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+  'd2000000-0000-4000-8000-000000000004', 'Late plan',
+  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000004');
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000004'), array['2:revoked'],
+  'a pre-revoke token''s first write to another doc records it as already revoked');
+
+-- The admin reconnects doqtri, and doqtri re-posts the doc with the new
+-- grant's token, issued after the revoke.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => 60);
 select lives_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
@@ -272,7 +333,9 @@ select lives_ok(
 );
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:live', '3:left_project'],
-  'a new write through the app makes the connection live again');
+  'a write with a token issued after the revoke makes the connection live again');
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000004'), array['2:revoked'],
+  '... that doc only: the other stays revoked until it is written again');
 
 -- The member's account is deleted: its rows go with it, and the delete works
 -- (their milestone link's created_by is set null, which records nothing).
@@ -295,7 +358,7 @@ select lives_ok(
   'oauth admin unlinks D1'
 );
 select pg_temp.as_postgres();
-select is((select count(*)::int from public.doc_link_connections), 0,
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), '{}'::text[],
   'unlinking a doc removes its connections');
 
 -- A project with a connected doc can still be deleted (the membership rows go
