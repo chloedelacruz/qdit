@@ -103,3 +103,170 @@ export function toProject(
     updated_at: row.updated_at,
   };
 }
+
+/** `link` on a Milestone (section 7): the milestone_external_links row. */
+export type ApiMilestoneLink = {
+  id: string;
+  doc_id: string;
+  node_id: string;
+  node_label: string;
+  doc_version: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** `anchor` on a Milestone (section 7, D-32): a summary of milestone_anchors. */
+export type ApiAnchor = {
+  network: Tables<"milestone_anchors">["network"];
+  contract_id: string;
+  version: number;
+  proof_hash: string | null;
+  last_action: Tables<"milestone_anchors">["action"];
+  last_tx_hash: string;
+  anchored_at: string;
+};
+
+export type ApiMilestone = {
+  id: string;
+  project: { id: string; name: string; slug: string };
+  title: string;
+  description: string | null;
+  status: Tables<"milestones">["status"];
+  due_date: string | null;
+  order_index: number;
+  url: string;
+  link: ApiMilestoneLink | null;
+  anchor: ApiAnchor | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiDocLink = {
+  id: string;
+  project_id: string;
+  doc_id: string;
+  doc_title: string;
+  doc_url: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type AnchorRow = Pick<
+  Tables<"milestone_anchors">,
+  "network" | "contract_id" | "version" | "action" | "proof_hash" | "tx_hash" | "created_at"
+>;
+
+type LinkRow = Pick<
+  Tables<"milestone_external_links">,
+  "id" | "doc_id" | "node_id" | "node_label" | "doc_version" | "created_at" | "updated_at"
+>;
+
+/**
+ * What `toMilestone()` reads. `link` is a one-to-one embed (milestone_id is
+ * unique), which PostgREST returns as an object or null; an array is accepted
+ * too, so a change in how the relationship is detected cannot drop the link.
+ */
+export type MilestoneResourceRow = Pick<
+  Tables<"milestones">,
+  | "id"
+  | "title"
+  | "description"
+  | "status"
+  | "due_date"
+  | "order_index"
+  | "created_at"
+  | "updated_at"
+> & {
+  project: { id: string; name: string; slug: string } | null;
+  link: LinkRow | LinkRow[] | null;
+  anchors: AnchorRow[] | null;
+};
+
+/** The select list `toMilestone()` reads, as one PostgREST request. */
+export const MILESTONE_RESOURCE_COLUMNS = [
+  "id, title, description, status, due_date, order_index, created_at, updated_at",
+  "project:projects!inner(id, name, slug)",
+  "link:milestone_external_links(id, doc_id, node_id, node_label, doc_version, created_at, updated_at)",
+  "anchors:milestone_anchors(network, contract_id, version, action, proof_hash, tx_hash, created_at)",
+].join(", ");
+
+/**
+ * Newest first, as the contract defines "newest" (section 7): highest
+ * `version`, then latest `created_at`. Rows are recorded by clients after the
+ * transaction, so arrival order is not chain order.
+ */
+function newestFirst(a: AnchorRow, b: AnchorRow): number {
+  if (a.version !== b.version) return b.version - a.version;
+  const at = Date.parse(a.created_at);
+  const bt = Date.parse(b.created_at);
+  if (at !== bt) return bt - at;
+  // Same millisecond: Postgres prints microseconds, and for one column the
+  // strings compare in time order.
+  return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+}
+
+export function toAnchor(rows: readonly AnchorRow[]): ApiAnchor | null {
+  const ordered = [...rows].sort(newestFirst);
+  const newest = ordered[0];
+  if (!newest) return null;
+
+  // Only `submit` carries a hash; approve and reject attest to the one on chain.
+  const submitted = ordered.find((row) => row.action === "submit");
+
+  return {
+    network: newest.network,
+    contract_id: newest.contract_id,
+    version: newest.version,
+    proof_hash: submitted?.proof_hash ?? null,
+    last_action: newest.action,
+    last_tx_hash: newest.tx_hash,
+    anchored_at: newest.created_at,
+  };
+}
+
+export function toMilestone(row: MilestoneResourceRow): ApiMilestone {
+  const link = Array.isArray(row.link) ? (row.link[0] ?? null) : row.link;
+  const project = row.project ?? { id: "", name: "", slug: "" };
+
+  return {
+    id: row.id,
+    project: { id: project.id, name: project.name, slug: project.slug },
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    due_date: row.due_date,
+    order_index: row.order_index,
+    url: qditUrl(`/projects/${encodeURIComponent(project.slug)}/milestones`),
+    link: link
+      ? {
+          id: link.id,
+          doc_id: link.doc_id,
+          node_id: link.node_id,
+          node_label: link.node_label,
+          doc_version: link.doc_version,
+          created_at: link.created_at,
+          updated_at: link.updated_at,
+        }
+      : null,
+    anchor: toAnchor(row.anchors ?? []),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function toDocLink(
+  row: Pick<
+    Tables<"project_doc_links">,
+    "id" | "project_id" | "doc_id" | "doc_title" | "doc_url" | "created_at" | "updated_at"
+  >,
+): ApiDocLink {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    doc_id: row.doc_id,
+    doc_title: row.doc_title,
+    doc_url: row.doc_url,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
