@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   docVersionField,
+  doqtriUrlField,
   FieldErrors,
   httpsUrlField,
   MAX_BODY_BYTES,
@@ -70,6 +71,22 @@ describe("field readers", () => {
     // 300 emoji are 600 UTF-16 units but 300 characters.
     expect(titleField(errors, "title", "🙂".repeat(300))).toBe("🙂".repeat(300));
     expect(titleField(errors, "title", "🙂".repeat(301))).toBeUndefined();
+  });
+
+  it("holds a doc_url to doqtri's origin, after the https rules", () => {
+    const origin = "https://www.doqtri.xyz";
+    const errors = new FieldErrors();
+    expect(doqtriUrlField(errors, "a", "https://www.doqtri.xyz/d/1", origin)).toBe("https://www.doqtri.xyz/d/1");
+    expect(doqtriUrlField(errors, "b", "https://evil.example/d/1", origin)).toBeUndefined();
+    expect(doqtriUrlField(errors, "c", "https://www.doqtri.xyz.evil.example/d/1", origin)).toBeUndefined();
+    expect(doqtriUrlField(errors, "d", "http://www.doqtri.xyz/d/1", origin)).toBeUndefined();
+    expect(doqtriUrlField(errors, "e", undefined, origin)).toBeUndefined();
+    expect(errors.fields).toEqual({
+      b: "must be a doqtri URL starting with https://www.doqtri.xyz/",
+      c: "must be a doqtri URL starting with https://www.doqtri.xyz/",
+      d: "must be an https URL",
+      e: "is required",
+    });
   });
 
   it("refuses an https URL with no host, or with leading spaces", () => {

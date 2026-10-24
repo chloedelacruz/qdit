@@ -1,6 +1,6 @@
 import {
+  doqtriUrlField,
   FieldErrors,
-  httpsUrlField,
   pathId,
   readJsonObject,
   titleField,
@@ -9,6 +9,7 @@ import {
 import { internalError, rpcError } from "@/lib/api/errors";
 import { apiRoute, endpointNotFound, ok } from "@/lib/api/handler";
 import { toDocLink } from "@/lib/api/resources";
+import { doqtriOrigin } from "@/lib/doqtri-origin";
 
 const NOT_FOUND = "No such project.";
 
@@ -20,6 +21,11 @@ const NOT_FOUND = "No such project.";
  * here — a re-post refreshes `doc_title` and `doc_url` and is otherwise a
  * no-op, so doqtri can retry freely. A doc linked to another project is
  * `409 doc_linked_elsewhere`.
+ *
+ * `doc_url` must start with doqtri's origin (D-45, `DOQTRI_ORIGIN`); the
+ * database holds it only to https, since the origin is deployment config.
+ * A misconfigured `DOQTRI_ORIGIN` throws here and answers `500`, rather than
+ * accepting or refusing every doc on a typo.
  *
  * The write is `link_project_doc()` (20261024120000_integration_links.sql):
  * insert-or-refresh has to be one statement to be idempotent under retries,
@@ -34,7 +40,7 @@ export const POST = apiRoute<{ id: string }>(async ({ request, auth, params }) =
   errors.rejectUnknown(body, ["doc_id", "doc_title", "doc_url"]);
   const docId = uuidField(errors, "doc_id", body.doc_id);
   const docTitle = titleField(errors, "doc_title", body.doc_title);
-  const docUrl = httpsUrlField(errors, "doc_url", body.doc_url);
+  const docUrl = doqtriUrlField(errors, "doc_url", body.doc_url, doqtriOrigin());
   errors.throwIfAny();
 
   const { data, error } = await auth.supabase.rpc("link_project_doc", {
