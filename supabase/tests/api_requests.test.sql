@@ -8,6 +8,7 @@
 -- rewrite a row.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
+-- It also runs under PGlite with stubbed auth/storage schemas (no Docker).
 -- Everything happens inside one transaction that is rolled back.
 --
 -- How callers are simulated: PostgREST runs each request as the JWT's role
@@ -21,7 +22,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(22);
 
 
 -- ----------------------------------------------------------------------------
@@ -111,6 +112,32 @@ select throws_ok(
      values (gen_random_uuid(), 'c', 'a1000000-0000-4000-8000-000000000001', 'GET', '/dashboard', 200) $$,
   '23514', null,
   'path is restricted to /api/v1/'
+);
+
+select lives_ok(
+  $$ insert into public.api_requests (request_id, client_id, user_id, method, path, status)
+     values (gen_random_uuid(), 'c', 'a1000000-0000-4000-8000-000000000001', 'GET', '/api/v1', 404) $$,
+  'the bare /api/v1 path can be recorded (it answers not_found, D-27)'
+);
+
+select throws_ok(
+  $$ insert into public.api_requests (request_id, client_id, user_id, method, path, status)
+     values (gen_random_uuid(), 'c', 'a1000000-0000-4000-8000-000000000001', 'GET', '/api/v10', 404) $$,
+  '23514', null,
+  'a path that only starts with /api/v1 is not the API'
+);
+
+select lives_ok(
+  $$ insert into public.api_requests (request_id, client_id, user_id, method, path, status)
+     values (gen_random_uuid(), 'c', 'a1000000-0000-4000-8000-000000000001', 'M-SEARCH', '/api/v1/me', 404) $$,
+  'a method no endpoint serves can be recorded (it answers not_found, D-27)'
+);
+
+select throws_ok(
+  $$ insert into public.api_requests (request_id, client_id, user_id, method, path, status)
+     values (gen_random_uuid(), 'c', 'a1000000-0000-4000-8000-000000000001', 'get; drop', '/api/v1/me', 404) $$,
+  '23514', null,
+  'method must look like an HTTP method'
 );
 
 select throws_ok(

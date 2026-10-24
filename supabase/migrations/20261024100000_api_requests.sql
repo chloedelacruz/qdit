@@ -73,13 +73,21 @@ create table public.api_requests (
   -- remaining purpose, and keeping it would keep personal data past deletion.
   user_id     uuid not null references auth.users (id) on delete cascade,
 
+  -- Any method a caller sends, not only the ones an endpoint serves: an
+  -- unsupported method is answered `404 not_found` like an unknown path
+  -- (D-27), and that answer is audited like any other. Uppercase letters and
+  -- `-` are all an HTTP method the server accepts can contain (`M-SEARCH`).
   method      text not null
-    check (method in ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')),
+    check (char_length(method) between 1 and 32 and method ~ '^[A-Z-]+$'),
 
-  -- Path only, no query string. Restricted to the API so the table cannot be
+  -- Path only, no query string. Restricted to the API, `/api/v1` itself
+  -- included (it answers `404 not_found` too), so the table cannot be
   -- repurposed as a general-purpose log.
   path        text not null
-    check (char_length(path) <= 2048 and path like '/api/v1/%'),
+    check (
+      char_length(path) <= 2048
+      and (path = '/api/v1' or path like '/api/v1/%')
+    ),
 
   status      smallint not null check (status between 100 and 599),
 
