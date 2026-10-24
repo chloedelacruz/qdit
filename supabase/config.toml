@@ -80,3 +80,25 @@ secure_password_change = false
 
 [analytics]
 enabled = false
+
+# qdit as an OAuth 2.1 provider (masterplan D-02): doqtri is a confidential
+# client that asks a qdit user for consent and then calls /api/v1 as that user.
+#
+# Beta in Supabase Auth. Auth sends the browser to `site_url` +
+# `authorization_url_path` with an `authorization_id`, and that page —
+# web/src/app/oauth/consent/page.tsx — shows the request and approves or denies
+# it on the signed-in user's behalf.
+#
+# Tokens this issues carry a `client_id` claim, and
+# supabase/migrations/20261024110000_oauth_client_guards.sql uses it to limit
+# what they can write. That migration has to be applied before this is enabled
+# anywhere — in the hosted project too, where this file does not reach and the
+# switch is in Dashboard -> Authentication -> OAuth Server.
+#
+# No dynamic registration: the only client is doqtri, registered by hand, and
+# an open /register endpoint would let anyone mint a client that can ask our
+# users for consent under any name it likes.
+[auth.oauth_server]
+enabled = true
+authorization_url_path = "/oauth/consent"
+allow_dynamic_registration = false
