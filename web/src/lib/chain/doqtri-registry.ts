@@ -20,11 +20,19 @@ import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL, isContractId, type StellarNetwork 
  * link was last written against (`milestone_external_links.doc_version`,
  * contract section 7). That number is qdit's copy; the chain is the truth
  * (D-04). So before the public page says which plan a milestone was planned
- * in, it asks DoqtriRegistry itself, on the project's network, through a
- * Soroban RPC simulation: read-only, no signer, no fee, no token for doqtri.
+ * in, it asks DoqtriRegistry itself through a Soroban RPC simulation:
+ * read-only, no signer, no fee, no token for doqtri.
  *
- * The two reads, as doqtri's `contract/src/lib.rs` defines them (mirrored, not
- * imported — the two apps share nothing but the contract, D-01):
+ * Which registry. There is one per deployment pair (contract section 1):
+ * `DOQTRI_REGISTRY_CONTRACT_ID` on `DOQTRI_REGISTRY_NETWORK`, the constants
+ * doqtri's side of the pair also uses. The network is doqtri's, not the qdit
+ * project's: a mainnet project can be planned in a doc doqtri anchors on
+ * testnet. The project's own network and contract only matter for the
+ * heading's `artifact_ref`, which names the project's `milestone_proof`.
+ *
+ * The two registry reads, as doqtri's `contract/src/lib.rs` defines them
+ * (mirrored, not imported — the two apps share nothing but the contract,
+ * D-01):
  *
  *   get_document(doc_id: String) -> Result<Document, Error>
  *       Document { owner: Address, content_hash: BytesN<32>, version: u32,
@@ -39,16 +47,26 @@ import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL, isContractId, type StellarNetwork 
  * `doc_id` is doqtri's `documents.id`, passed as an `ScString` (the contract
  * takes any string; doqtri's app notes use their UUID).
  *
+ * And one of qdit's own, for a heading signed for this milestone (contract
+ * section 12: a node signed Verified is fact 4 only together with fact 3,
+ * the milestone Approved at the version the node names):
+ *
+ *   milestone_proof.get_milestone_status(project_id, milestone_id)
+ *       -> Result<MilestoneRecord, Error>, Error::MilestoneNotFound = 3
+ *
+ * on the project's own contract and network, read by hand like the other two
+ * so the three share one simulation path and one notion of "could not read".
+ *
  * What the comparison can and cannot say. The registry keeps only a
- * document's current version, and versions only go up, so "the chain is at
- * the stored version" is a match and "the chain is past it" means the plan
- * was anchored again since the milestone was linked. Nothing here checks the
+ * document's current version, and versions only go up, so a chain at or past
+ * the stored version verifies it (past it: the plan was anchored again since
+ * the milestone was linked, which the page says). Nothing here checks the
  * plan's content: doqtri keeps the text, only its hash is on chain.
  *
- * Every failure to get a trustworthy answer — no registry configured for the
- * network, the RPC down or slow, a reply that does not decode — is its own
- * state that the page shows as "could not check". Nothing is ever shown as
- * verified because a read failed.
+ * Every failure to get a trustworthy answer — no registry configured, the RPC
+ * down or slow, a reply that does not decode — is its own state that the page
+ * shows as "could not check". Nothing is ever shown as verified because a
+ * read failed.
  */
 
 // ---------------------------------------------------------------------------
@@ -61,37 +79,39 @@ export type RegistryConfig = {
   rpcUrl: string;
 };
 
-const ENV_CONTRACT: Record<StellarNetwork, string> = {
-  testnet: "DOQTRI_REGISTRY_CONTRACT_ID_TESTNET",
-  mainnet: "DOQTRI_REGISTRY_CONTRACT_ID_MAINNET",
-};
+const ENV_CONTRACT = "DOQTRI_REGISTRY_CONTRACT_ID";
+const ENV_NETWORK = "DOQTRI_REGISTRY_NETWORK";
+const ENV_RPC = "DOQTRI_REGISTRY_RPC_URL";
 
-const ENV_RPC: Record<StellarNetwork, string> = {
-  testnet: "DOQTRI_REGISTRY_RPC_URL_TESTNET",
-  mainnet: "DOQTRI_REGISTRY_RPC_URL_MAINNET",
-};
+const NETWORKS: readonly StellarNetwork[] = ["testnet", "mainnet"];
 
 /**
- * The registry on `network`, or null when this deployment has none.
+ * This deployment's DoqtriRegistry, or null when it has none.
  *
- * Unset is "not configured", quietly. A value that is not a contract id, or
- * an RPC override that is not an https URL, is a typo in the config: it is
- * logged and also treated as not configured, so the page says it could not
- * check rather than reading some other contract or endpoint.
+ * An unset contract id is "not configured", quietly. A contract id that is
+ * not one, a network that is missing or not `testnet`/`mainnet`, or an RPC
+ * override that is not an https URL, is a typo in the config: it is logged
+ * and also treated as not configured, so the page says it could not check
+ * rather than reading some other contract, network or endpoint.
  */
-export function registryConfig(
-  network: StellarNetwork,
-  env: Record<string, string | undefined> = process.env,
-): RegistryConfig | null {
-  const contractId = env[ENV_CONTRACT[network]]?.trim() ?? "";
+export function registryConfig(env: Record<string, string | undefined> = process.env): RegistryConfig | null {
+  const contractId = env[ENV_CONTRACT]?.trim() ?? "";
   if (contractId === "") return null;
   if (!isContractId(contractId)) {
-    console.error(`doqtri registry: ${ENV_CONTRACT[network]} is not a contract id, so it is ignored.`);
+    console.error(`doqtri registry: ${ENV_CONTRACT} is not a contract id, so it is ignored.`);
     return null;
   }
 
-  const override = env[ENV_RPC[network]]?.trim() ?? "";
-  if (override === "") return { network, contractId, rpcUrl: SOROBAN_RPC_URL[network] };
+  const network = env[ENV_NETWORK]?.trim() ?? "";
+  if (!NETWORKS.includes(network as StellarNetwork)) {
+    console.error(`doqtri registry: ${ENV_NETWORK} must be testnet or mainnet, so the registry is not read.`);
+    return null;
+  }
+
+  const override = env[ENV_RPC]?.trim() ?? "";
+  if (override === "") {
+    return { network: network as StellarNetwork, contractId, rpcUrl: SOROBAN_RPC_URL[network as StellarNetwork] };
+  }
 
   let url: URL | null;
   try {
@@ -100,10 +120,10 @@ export function registryConfig(
     url = null;
   }
   if (!url || url.protocol !== "https:") {
-    console.error(`doqtri registry: ${ENV_RPC[network]} is not an https URL, so the registry is not read.`);
+    console.error(`doqtri registry: ${ENV_RPC} is not an https URL, so the registry is not read.`);
     return null;
   }
-  return { network, contractId, rpcUrl: override };
+  return { network: network as StellarNetwork, contractId, rpcUrl: override };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,14 +150,32 @@ export type RegistryNode = {
   updatedAt: number;
 };
 
+export type ReadFailure = "rpc" | "timeout" | "decode";
+
 /** One read of a document and one of its nodes; null where the contract has none. */
 export type RegistryRead =
   | { ok: true; document: RegistryDocument | null; node: RegistryNode | null }
-  | { ok: false; reason: "rpc" | "timeout" | "decode" };
+  | { ok: false; reason: ReadFailure };
+
+/** `milestone_proof`'s `MilestoneStatus`, a unit enum like `NodeStatus`. */
+export const MILESTONE_STATUSES = ["Proposed", "Submitted", "Approved", "Rejected"] as const;
+export type ChainMilestoneStatus = (typeof MILESTONE_STATUSES)[number];
+
+/** The fields of a `MilestoneRecord` the comparison needs. */
+export type ChainMilestone = {
+  status: ChainMilestoneStatus;
+  /** Submissions so far, from 1; approve and reject keep it. */
+  version: number;
+};
+
+/** One `get_milestone_status` read; `record` is null for MilestoneNotFound. */
+export type MilestoneRead = { ok: true; record: ChainMilestone | null } | { ok: false; reason: ReadFailure };
 
 /** DoqtriRegistry's `Error` codes for "no such record". */
 const DOCUMENT_NOT_FOUND = 2;
 const NODE_NOT_FOUND = 3;
+/** milestone_proof's `Error::MilestoneNotFound`. */
+const MILESTONE_NOT_FOUND = 3;
 
 /**
  * The account a read is simulated from. Simulation never checks that the
@@ -150,7 +188,7 @@ const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 export const READ_TIMEOUT_MS = 5_000;
 
 class RegistryReadError extends Error {
-  constructor(readonly reason: "rpc" | "timeout" | "decode", message: string) {
+  constructor(readonly reason: ReadFailure, message: string) {
     super(message);
   }
 }
@@ -176,16 +214,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 async function simulate(
   server: rpc.Server,
-  config: RegistryConfig,
-  method: "get_document" | "get_node",
+  target: { network: StellarNetwork; contractId: string },
+  method: "get_document" | "get_node" | "get_milestone_status",
   args: xdr.ScVal[],
   notFound: number,
 ): Promise<xdr.ScVal | null> {
   const tx = new TransactionBuilder(new Account(NULL_ACCOUNT, "0"), {
     fee: BASE_FEE,
-    networkPassphrase: NETWORK_PASSPHRASE[config.network],
+    networkPassphrase: NETWORK_PASSPHRASE[target.network],
   })
-    .addOperation(new Contract(config.contractId).call(method, ...args))
+    .addOperation(new Contract(target.contractId).call(method, ...args))
     .setTimeout(30)
     .build();
 
@@ -264,6 +302,23 @@ export function decodeNode(value: xdr.ScVal): RegistryNode {
   };
 }
 
+/** `MilestoneRecord`, keeping its status and version. */
+export function decodeMilestone(value: xdr.ScVal): ChainMilestone {
+  const fields = record(scValToNative(value), "get_milestone_status");
+  const tag = Array.isArray(fields.status) ? fields.status[0] : undefined;
+  if (!MILESTONE_STATUSES.includes(tag as ChainMilestoneStatus)) {
+    throw new RegistryReadError("decode", "get_milestone_status: status is not a MilestoneStatus");
+  }
+  // The other fields are checked too, so a value of another shape that
+  // happens to carry a status and a version is not taken for a record.
+  text(fields.project_id, "get_milestone_status", "project_id");
+  text(fields.milestone_id, "get_milestone_status", "milestone_id");
+  return {
+    status: tag as ChainMilestoneStatus,
+    version: u32(fields.version, "get_milestone_status", "version"),
+  };
+}
+
 /** Both reads, in parallel, on one RPC server. Never throws. */
 export async function readRegistry(
   config: RegistryConfig,
@@ -291,6 +346,36 @@ export async function readRegistry(
   }
 }
 
+/** Where a project's `milestone_proof` lives: its own network and contract. */
+export type MilestoneTarget = {
+  network: StellarNetwork;
+  contractId: string;
+  rpcUrl: string;
+};
+
+/** `get_milestone_status(project_id, milestone_id)` on the project's contract. Never throws. */
+export async function readMilestone(
+  target: MilestoneTarget,
+  projectId: string,
+  milestoneId: string,
+): Promise<MilestoneRead> {
+  const server = new rpc.Server(target.rpcUrl, { timeout: READ_TIMEOUT_MS });
+  try {
+    const value = await simulate(
+      server,
+      target,
+      "get_milestone_status",
+      [nativeToScVal(projectId, { type: "string" }), nativeToScVal(milestoneId, { type: "string" })],
+      MILESTONE_NOT_FOUND,
+    );
+    return { ok: true, record: value ? decodeMilestone(value) : null };
+  } catch (error) {
+    const reason = error instanceof RegistryReadError ? error.reason : "decode";
+    console.error(`doqtri registry: could not read milestone ${milestoneId} on ${target.network}:`, error);
+    return { ok: false, reason };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
@@ -303,62 +388,109 @@ export type StoredDocSource = {
   docVersion: number | null;
 };
 
-/** What the page is checking the reference for. */
+/** What the page is checking the heading's record against. */
 export type DocSourceContext = {
-  network: StellarNetwork;
   milestoneId: string;
-  /** The project's `milestone_proof` contract, when it has registered. */
-  contractId: string | null;
+  /**
+   * The project's registration on `milestone_proof`, or null when it has
+   * none (then nothing on chain can speak for the milestone).
+   */
+  project: { id: string; network: StellarNetwork; contractId: string } | null;
 };
 
 /**
- * How the chain's document compares with the stored version:
+ * Contract section 12's check of the plan version (fact 1):
  *
- *   verified      the registry is at the stored version
- *   newer         the registry is past it: the plan changed since the link
- *                 was written (or was first anchored since, when the link has
- *                 no version)
+ *   verified      the document is on the registry at or past the stored
+ *                 version (past it: the plan changed since, which the page
+ *                 says alongside)
+ *   not-anchored  the link has no version: the doc was not anchored when it
+ *                 was linked, whatever the registry holds now
+ *   not-found     the link has a version, the registry has no such document
  *   mismatch      the registry is behind the stored version, which a correct
  *                 link cannot produce
- *   not-found     the link has a version, the registry has no such document
- *   not-anchored  neither has one: the plan was never anchored, so there is
- *                 nothing to check against
  *   unreachable   the read failed (RPC down, timed out, undecodable reply)
- *   unconfigured  this deployment has no registry for the network
+ *   unconfigured  this deployment has no registry configured
  */
 export type DocSourceState =
   | "verified"
-  | "newer"
-  | "mismatch"
-  | "not-found"
   | "not-anchored"
+  | "not-found"
+  | "mismatch"
   | "unreachable"
   | "unconfigured";
 
+/** Why a heading signed for this milestone does not line up with the chain. */
+export type InconsistentReason =
+  /** The project is not registered on `milestone_proof`. */
+  | "no-chain"
+  /** The `artifact_ref` names another network than the project's. */
+  | "network"
+  /** The `artifact_ref` names another contract than the project's. */
+  | "contract"
+  /** `get_milestone_status` has no record for the milestone. */
+  | "not-found"
+  /** The milestone's record is at a lower version than the node names. */
+  | "older";
+
 /**
  * The heading's own on-chain record, against this milestone (contract
- * section 10): a node linked to a qdit milestone is signed with
- * `tool = "qdit"` and an `artifact_ref` naming the milestone.
+ * sections 10 and 12). A node linked to a qdit milestone is signed with
+ * `tool = "qdit"` and an `artifact_ref` naming `P/M@vV`; what it says is
+ * then read against `milestone_proof`'s current record for `M`:
  *
- *   attests    signed for this milestone, on this network (and this
- *              project's contract, when the project has one)
- *   elsewhere  signed with `tool = "qdit"`, but the reference names another
- *              milestone, network or contract, or does not parse
- *   other      signed with another tool (for example `rollup`)
- *   none       never signed
+ *   none          never signed
+ *   other         signed with another tool (for example `rollup`)
+ *   elsewhere     signed with `tool = "qdit"`, but the reference does not
+ *                 parse or names another project or milestone
+ *   inconsistent  names this project and milestone, but on another network
+ *                 or contract, or the record is missing or older than `V`
+ *   unchecked     names this milestone; its record could not be read
+ *   current       the record is at `V`: it speaks for the submission the
+ *                 node was signed against
+ *   resubmitted   the record is past `V`: the milestone was resubmitted
+ *                 after the node was signed, so the signature refers to `vV`
+ *
+ * Only `current` with the node `Verified` and the record `Approved` is fact
+ * 4 (`verifiedOnChain`). After a resubmission the record cannot attest an
+ * approval at `vV`: `milestone_proof` makes an approval final (a submit
+ * after one is `InvalidStatus`), so a record past `V` means `vV` was never
+ * approved.
  */
 export type NodeAttestation =
-  | { state: "attests"; status: NodeStatus; milestoneVersion: number }
-  | { state: "elsewhere"; status: NodeStatus }
+  | { state: "none" }
   | { state: "other"; status: NodeStatus; tool: string }
-  | { state: "none" };
+  | { state: "elsewhere"; status: NodeStatus }
+  | {
+      state: "inconsistent";
+      status: NodeStatus;
+      signedVersion: number;
+      reason: InconsistentReason;
+      /** The record's version for "older"; else null. */
+      chainVersion: number | null;
+    }
+  | { state: "unchecked"; status: NodeStatus; signedVersion: number }
+  | { state: "current"; status: NodeStatus; signedVersion: number; milestoneStatus: ChainMilestoneStatus }
+  | {
+      state: "resubmitted";
+      status: NodeStatus;
+      signedVersion: number;
+      chainVersion: number;
+      milestoneStatus: ChainMilestoneStatus;
+    };
+
+/** Fact 4: the node is signed Verified and the milestone is Approved at the version it names. */
+export function verifiedOnChain(node: NodeAttestation | null): boolean {
+  return node?.state === "current" && node.status === "Verified" && node.milestoneStatus === "Approved";
+}
 
 export type DocSourceCheck = {
   state: DocSourceState;
-  network: StellarNetwork;
-  /** The registry contract that was (or would have been) read. */
+  /** The registry's network; null when none is configured. */
+  network: StellarNetwork | null;
+  /** The registry contract that was read; null when none is configured. */
   registryId: string | null;
-  /** The registry's current `Document.version`, when it was read. */
+  /** The registry's current `Document.version`, when it was read and exists. */
   chainVersion: number | null;
   /** Null when the registry was not read. */
   node: NodeAttestation | null;
@@ -391,43 +523,102 @@ export function parseQditArtifactRef(ref: string): QditArtifactRef | null {
   };
 }
 
-export function nodeAttestation(node: RegistryNode | null, context: DocSourceContext): NodeAttestation {
+/**
+ * The milestone record a node's reference calls for, or null when none is
+ * needed: the node is not signed for this project's milestone, or what it
+ * names cannot be this project's record (no registration, another network
+ * or contract) and is inconsistent without a read.
+ */
+export function milestoneToRead(
+  node: RegistryNode | null,
+  context: DocSourceContext,
+): { network: StellarNetwork; contractId: string; projectId: string; milestoneId: string } | null {
+  const ref = signedFor(node, context);
+  const project = context.project;
+  if (!ref || !project || ref.network !== project.network || ref.contractId !== project.contractId) return null;
+  return {
+    network: project.network,
+    contractId: project.contractId,
+    projectId: project.id,
+    milestoneId: ref.milestoneId,
+  };
+}
+
+/**
+ * The reference, when the node is signed `tool = "qdit"` for this project
+ * and milestone. Without a registration the project id is not public, so
+ * only the milestone id is compared, and the node ends up inconsistent
+ * ("no-chain") either way.
+ */
+function signedFor(node: RegistryNode | null, context: DocSourceContext): QditArtifactRef | null {
+  if (!node || node.tool !== "qdit") return null;
+  const ref = parseQditArtifactRef(node.artifactRef);
+  if (!ref || ref.milestoneId !== context.milestoneId) return null;
+  if (context.project && ref.projectId !== context.project.id) return null;
+  return ref;
+}
+
+/**
+ * What the heading's record says about this milestone. `milestone` is the
+ * read `milestoneToRead()` asked for, or null when it asked for none. Pure.
+ */
+export function nodeAttestation(
+  node: RegistryNode | null,
+  context: DocSourceContext,
+  milestone: MilestoneRead | null,
+): NodeAttestation {
   if (!node) return { state: "none" };
   if (node.tool !== "qdit") return { state: "other", status: node.status, tool: node.tool };
 
-  const ref = parseQditArtifactRef(node.artifactRef);
-  const matches =
-    ref !== null &&
-    ref.milestoneId === context.milestoneId &&
-    ref.network === context.network &&
-    (context.contractId === null || ref.contractId === context.contractId);
+  const ref = signedFor(node, context);
+  if (!ref) return { state: "elsewhere", status: node.status };
 
-  return matches
-    ? { state: "attests", status: node.status, milestoneVersion: ref.version }
-    : { state: "elsewhere", status: node.status };
+  const signed = { status: node.status, signedVersion: ref.version };
+  const inconsistent = (reason: InconsistentReason, chainVersion: number | null = null): NodeAttestation => ({
+    state: "inconsistent",
+    ...signed,
+    reason,
+    chainVersion,
+  });
+
+  const project = context.project;
+  if (!project) return inconsistent("no-chain");
+  if (ref.network !== project.network) return inconsistent("network");
+  if (ref.contractId !== project.contractId) return inconsistent("contract");
+
+  if (!milestone || !milestone.ok) return { state: "unchecked", ...signed };
+  const record = milestone.record;
+  if (!record) return inconsistent("not-found");
+  if (record.version < ref.version) return inconsistent("older", record.version);
+  if (record.version === ref.version) return { state: "current", ...signed, milestoneStatus: record.status };
+  return { state: "resubmitted", ...signed, chainVersion: record.version, milestoneStatus: record.status };
 }
 
-/** Compare a read with the stored reference. Pure. */
+/** Contract section 12's verdict on the plan version, from the registry's answer. Pure. */
+export function docVerdict(stored: StoredDocSource, chainVersion: number | null): DocSourceState {
+  if (stored.docVersion === null) return "not-anchored";
+  if (chainVersion === null) return "not-found";
+  return chainVersion >= stored.docVersion ? "verified" : "mismatch";
+}
+
+/** Compare the reads with the stored reference. Pure. */
 export function compareDocSource(
   stored: StoredDocSource,
   read: RegistryRead,
   context: DocSourceContext,
-  registryId: string,
+  config: Pick<RegistryConfig, "network" | "contractId">,
+  milestone: MilestoneRead | null = null,
 ): DocSourceCheck {
-  const base = { network: context.network, registryId };
+  const base = { network: config.network, registryId: config.contractId };
   if (!read.ok) return { ...base, state: "unreachable", chainVersion: null, node: null };
 
-  const node = nodeAttestation(read.node, context);
-  const chain = read.document?.version ?? null;
-  const linked = stored.docVersion;
-
-  let state: DocSourceState;
-  if (chain === null) state = linked === null ? "not-anchored" : "not-found";
-  else if (linked === null || chain > linked) state = "newer";
-  else if (chain === linked) state = "verified";
-  else state = "mismatch";
-
-  return { ...base, state, chainVersion: chain, node };
+  const chainVersion = read.document?.version ?? null;
+  return {
+    ...base,
+    state: docVerdict(stored, chainVersion),
+    chainVersion,
+    node: nodeAttestation(read.node, context, milestone),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,45 +631,69 @@ export const CACHE_TTL_MS = 30_000;
 export const FAILURE_TTL_MS = 5_000;
 const CACHE_LIMIT = 500;
 
-const cache = new Map<string, { at: number; read: RegistryRead }>();
+type Cached = { at: number; read: RegistryRead | MilestoneRead };
+const cache = new Map<string, Cached>();
 
 /** Empties the read cache. For tests. */
 export function clearRegistryCache(): void {
   cache.clear();
 }
 
+/** A read through the cache: CACHE_TTL_MS for an answer, FAILURE_TTL_MS for a failure. */
+async function cached<T extends RegistryRead | MilestoneRead>(
+  key: string,
+  now: number,
+  read: () => Promise<T>,
+): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && now - hit.at < (hit.read.ok ? CACHE_TTL_MS : FAILURE_TTL_MS)) return hit.read as T;
+
+  const fresh = await read();
+  cache.delete(key);
+  cache.set(key, { at: now, read: fresh });
+  // Oldest first, by insertion order.
+  while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+  return fresh;
+}
+
 /**
- * Check a linked milestone's doc reference against DoqtriRegistry on the
- * project's network. Reads are cached per document and node for
- * CACHE_TTL_MS (FAILURE_TTL_MS for a failed one), server side, in memory: a
- * public page can be reloaded by anyone, and the answer it shows is a few
- * seconds old at most.
+ * Check a linked milestone's doc reference against this deployment's
+ * DoqtriRegistry, and the heading's record against the project's
+ * `milestone_proof` when it names this milestone. Each read is cached per
+ * record for CACHE_TTL_MS (FAILURE_TTL_MS for a failed one), server side, in
+ * memory: a public page can be reloaded by anyone, and the answer it shows is
+ * a few seconds old at most.
  */
 export async function checkDocSource(
   stored: StoredDocSource,
   context: DocSourceContext,
   options: { now?: () => number; env?: Record<string, string | undefined> } = {},
 ): Promise<DocSourceCheck> {
-  const config = registryConfig(context.network, options.env);
+  const config = registryConfig(options.env);
   if (!config) {
-    return { state: "unconfigured", network: context.network, registryId: null, chainVersion: null, node: null };
+    return { state: "unconfigured", network: null, registryId: null, chainVersion: null, node: null };
   }
 
   const now = (options.now ?? Date.now)();
-  const key = [config.network, config.contractId, config.rpcUrl, stored.docId, stored.nodeId].join("|");
-  const hit = cache.get(key);
-  const fresh = hit && now - hit.at < (hit.read.ok ? CACHE_TTL_MS : FAILURE_TTL_MS);
+  const read = await cached(
+    ["registry", config.network, config.contractId, config.rpcUrl, stored.docId, stored.nodeId].join("|"),
+    now,
+    () => readRegistry(config, stored.docId, stored.nodeId),
+  );
 
-  let read: RegistryRead;
-  if (hit && fresh) {
-    read = hit.read;
-  } else {
-    read = await readRegistry(config, stored.docId, stored.nodeId);
-    cache.delete(key);
-    cache.set(key, { at: now, read });
-    // Oldest first, by insertion order.
-    while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-  }
+  const wanted = read.ok ? milestoneToRead(read.node, context) : null;
+  const milestone = wanted
+    ? await cached(
+        ["milestone", wanted.network, wanted.contractId, wanted.projectId, wanted.milestoneId].join("|"),
+        now,
+        () =>
+          readMilestone(
+            { network: wanted.network, contractId: wanted.contractId, rpcUrl: SOROBAN_RPC_URL[wanted.network] },
+            wanted.projectId,
+            wanted.milestoneId,
+          ),
+      )
+    : null;
 
-  return compareDocSource(stored, read, context, config.contractId);
+  return compareDocSource(stored, read, context, config, milestone);
 }

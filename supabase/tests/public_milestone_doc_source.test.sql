@@ -5,7 +5,8 @@
 -- Covers 20261025140000_public_milestone_doc_source.sql: the doqtri reference
 -- public_milestone_proof() adds for a linked milestone (WP-3.2). A linked
 -- milestone of a publishing project gets `docSource` with exactly the doc id,
--- node id, node label, doc version and doc URL; an unlinked one gets the
+-- node id, node label, doc version, doc URL and project id (null until the
+-- project is registered on chain); an unlinked one gets the
 -- function's previous answer, unchanged; the doc title is never sent; a
 -- project that does not publish still answers null; and anon, which the
 -- function is for, still reads none of the tables behind it.
@@ -19,7 +20,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(26);
 
 
 -- ----------------------------------------------------------------------------
@@ -33,19 +34,29 @@ values
   ('00000000-0000-0000-0000-000000000000', 'a3200000-0000-4000-8000-000000000002', 'authenticated', 'authenticated',
    'src-stranger@qdit.test', '{"provider":"email","providers":["email"]}', '{"full_name":"Stranger","username":"src_stranger"}', now(), now());
 
--- P1 publishes, P2 does not.
+-- P1 publishes, P2 does not, P3 publishes and is registered on chain.
 insert into public.projects (id, owner_id, name, slug, public_proofs)
 values
   ('b3200000-0000-4000-8000-000000000001', 'a3200000-0000-4000-8000-000000000001', 'Published', 'src-published', true),
   ('b3200000-0000-4000-8000-000000000002', 'a3200000-0000-4000-8000-000000000001', 'Private', 'src-private', false);
 
--- M1 linked, M2 unlinked, M3 linked with no doc version, M4 linked in P2.
+insert into public.projects (id, owner_id, name, slug, public_proofs,
+                             chain_contract_id, chain_network, chain_owner_address, chain_registered_tx,
+                             chain_registered_at)
+values
+  ('b3200000-0000-4000-8000-000000000003', 'a3200000-0000-4000-8000-000000000001', 'On chain', 'src-onchain', true,
+   'CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG', 'testnet',
+   'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7', repeat('a', 64), now());
+
+-- M1 linked, M2 unlinked, M3 linked with no doc version, M4 linked in P2,
+-- M5 linked in P3.
 insert into public.milestones (id, project_id, title, status, order_index)
 values
   ('c3200000-0000-4000-8000-000000000001', 'b3200000-0000-4000-8000-000000000001', 'Escrow contract', 'submitted', 0),
   ('c3200000-0000-4000-8000-000000000002', 'b3200000-0000-4000-8000-000000000001', 'Unlinked work', 'approved', 1),
   ('c3200000-0000-4000-8000-000000000003', 'b3200000-0000-4000-8000-000000000001', 'Payroll UI', 'proposed', 2),
-  ('c3200000-0000-4000-8000-000000000004', 'b3200000-0000-4000-8000-000000000002', 'Private heading', 'proposed', 0);
+  ('c3200000-0000-4000-8000-000000000004', 'b3200000-0000-4000-8000-000000000002', 'Private heading', 'proposed', 0),
+  ('c3200000-0000-4000-8000-000000000005', 'b3200000-0000-4000-8000-000000000003', 'Chain heading', 'proposed', 0);
 
 insert into public.milestone_anchors (milestone_id, project_id, action, proof_hash, version, contract_id, tx_hash, signer_address, created_by)
 values
@@ -68,7 +79,10 @@ values
    'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000001', 'a3200000-0000-4000-8000-000000000001'),
   ('e3200000-0000-4000-8000-000000000002', 'b3200000-0000-4000-8000-000000000002',
    'd3200000-0000-4000-8000-000000000002', 'Secret private plan',
-   'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000002', 'a3200000-0000-4000-8000-000000000001');
+   'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000002', 'a3200000-0000-4000-8000-000000000001'),
+  ('e3200000-0000-4000-8000-000000000003', 'b3200000-0000-4000-8000-000000000003',
+   'd3200000-0000-4000-8000-000000000003', 'Secret chain plan',
+   'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000003', 'a3200000-0000-4000-8000-000000000001');
 
 insert into public.milestone_external_links (id, milestone_id, project_id, doc_id, node_id, node_label, doc_version, created_by)
 values
@@ -80,7 +94,10 @@ values
    'h6', 'Payroll UI', null, 'a3200000-0000-4000-8000-000000000001'),
   ('f3200000-0000-4000-8000-000000000004', 'c3200000-0000-4000-8000-000000000004',
    'b3200000-0000-4000-8000-000000000002', 'd3200000-0000-4000-8000-000000000002',
-   'h1', 'Private heading', 3, 'a3200000-0000-4000-8000-000000000001');
+   'h1', 'Private heading', 3, 'a3200000-0000-4000-8000-000000000001'),
+  ('f3200000-0000-4000-8000-000000000005', 'c3200000-0000-4000-8000-000000000005',
+   'b3200000-0000-4000-8000-000000000003', 'd3200000-0000-4000-8000-000000000003',
+   'h2', 'Chain heading', 2, 'a3200000-0000-4000-8000-000000000001');
 
 
 -- ----------------------------------------------------------------------------
@@ -184,7 +201,11 @@ select 'unlinked',
 union all
 select 'unversioned',
        public.public_milestone_proof('src-published', 'c3200000-0000-4000-8000-000000000003'),
-       pg_temp.previous_proof('src-published', 'c3200000-0000-4000-8000-000000000003');
+       pg_temp.previous_proof('src-published', 'c3200000-0000-4000-8000-000000000003')
+union all
+select 'onchain',
+       public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005'),
+       pg_temp.previous_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005');
 grant select on answers to anon, authenticated;
 
 
@@ -238,15 +259,16 @@ select is(
     'nodeId',     'h4',
     'nodeLabel',  'Escrow contract',
     'docVersion', 7,
-    'docUrl',     'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000001'
+    'docUrl',     'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000001',
+    'projectId',  null
   ),
-  'linked: docSource is the doc id, node id, node label, doc version and doc URL'
+  'linked: docSource is the doc id, node id, node label, doc version and doc URL, and no project id off chain'
 );
 
 select is(
   (select array_agg(key order by key) from answers a, jsonb_object_keys(a.proof -> 'docSource') as key where a.k = 'linked'),
-  array['docId', 'docUrl', 'docVersion', 'nodeId', 'nodeLabel'],
-  'linked: docSource has exactly those five keys'
+  array['docId', 'docUrl', 'docVersion', 'nodeId', 'nodeLabel', 'projectId'],
+  'linked: docSource has exactly those six keys'
 );
 
 select is(
@@ -259,6 +281,26 @@ select is(
   (select position('Secret payroll plan' in proof::text) from answers where k = 'linked'),
   0,
   'linked: the doc title is not sent'
+);
+
+-- The project id is already public on chain once the project is registered:
+-- it keys the milestone_proof records the heading's artifact_ref names.
+select is(
+  (select proof #>> '{docSource,projectId}' from answers where k = 'onchain'),
+  'b3200000-0000-4000-8000-000000000003',
+  'linked, project registered on chain: docSource carries the project id'
+);
+
+select is(
+  (select proof - 'docSource' from answers where k = 'onchain'),
+  (select previous from answers where k = 'onchain'),
+  'linked, project registered on chain: every other field is the previous function''s answer'
+);
+
+select is(
+  (select position('Secret chain plan' in proof::text) from answers where k = 'onchain'),
+  0,
+  'linked, project registered on chain: the doc title is not sent'
 );
 
 select is(
@@ -290,6 +332,12 @@ select is(
   public.public_milestone_proof('src-published', 'c3200000-0000-4000-8000-000000000002'),
   (select proof from answers where k = 'unlinked'),
   'anon: the same answer for an unlinked milestone'
+);
+
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005'),
+  (select proof from answers where k = 'onchain'),
+  'anon: the same answer for a linked milestone of a project on chain'
 );
 
 select is(

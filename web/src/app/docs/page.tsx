@@ -699,15 +699,19 @@ function PublicProofs() {
       <p className="text-sm leading-6 text-muted-foreground">
         A milestone that came from a doqtri heading also carries <C>docSource</C>: the doc
         id, the heading&rsquo;s node id and label (the milestone title), the doc version the
-        link was written against and the doc URL — never the doc&rsquo;s title, which is
-        doqtri&rsquo;s private note title. The page shows it as a &ldquo;Planned in
-        doqtri&rdquo; block and checks the version against doqtri&rsquo;s{" "}
-        <C>DoqtriRegistry</C> on the project&rsquo;s network with a read-only Soroban
-        simulation (<C>DOQTRI_REGISTRY_CONTRACT_ID_TESTNET</C> /{" "}
-        <C>_MAINNET</C>), cached for 30 seconds: matches, plan changed since, does not match,
-        not found, or an explicit &ldquo;could not check&rdquo; when the registry is not
-        configured or does not answer. An unlinked milestone has no <C>docSource</C> key and
-        its page is unchanged.
+        link was written against, the doc URL, and the project id once the project is
+        registered on chain (where it is public already) — never the doc&rsquo;s title, which
+        is doqtri&rsquo;s private note title. The page shows it as a &ldquo;Planned in
+        doqtri&rdquo; block. It checks the version against this deployment&rsquo;s{" "}
+        <C>DoqtriRegistry</C> (<C>DOQTRI_REGISTRY_CONTRACT_ID</C> on{" "}
+        <C>DOQTRI_REGISTRY_NETWORK</C>) with a read-only Soroban simulation, cached for 30
+        seconds: verified when the plan is on chain at or past the linked version (with a
+        &ldquo;plan changed since&rdquo; note when past it), otherwise not verified with its
+        reason, or an explicit &ldquo;could not check&rdquo; when the registry is not
+        configured or does not answer. The heading&rsquo;s own record counts as Verified only
+        when its <C>artifact_ref</C> names this project and milestone and{" "}
+        <C>get_milestone_status</C> shows the milestone Approved at that version. An unlinked
+        milestone has no <C>docSource</C> key and its page is unchanged.
       </p>
     </section>
   );

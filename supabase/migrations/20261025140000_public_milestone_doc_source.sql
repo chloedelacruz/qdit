@@ -21,6 +21,17 @@
 --   docVersion   DoqtriRegistry Document.version the link was last written
 --                against, or null when the doc was not anchored then
 --   docUrl       project_doc_links.doc_url, where "Open in doqtri" goes
+--   projectId    projects.id, but only for a project registered on chain
+--                (chain_contract_id set), else null. Not shown on the page:
+--                the page needs it to check that the heading's on-chain
+--                artifact_ref names this project as well as this milestone
+--                (contract section 12), and to read the milestone's record
+--                with get_milestone_status(project_id, milestone_id). For a
+--                registered project the id is already public on chain: it
+--                keys every milestone_proof record and is in every submit,
+--                approve and reject event and every artifact_ref. A project
+--                that never registered has nothing on chain to check, so its
+--                id stays off the page.
 --
 -- An unlinked milestone gets no `docSource` key at all, not a null one: the
 -- function's answer for it is the same jsonb as before, key for key, so the
@@ -34,9 +45,10 @@
 -- headings only when its owner opts in, and never through qdit. The public
 -- page names the plan by its heading and version, not by its title.
 --
--- Nor who linked it, the link ids, the project id, or whether a doqtri
--- connection still keeps the doc link alive (doc_link_connections). Those are
--- for project members; the WP-2.6 doc card shows them inside the app.
+-- Nor who linked it, the link ids, an unregistered project's id, or whether
+-- a doqtri connection still keeps the doc link alive (doc_link_connections).
+-- Those are for project members; the WP-2.6 doc card shows them inside the
+-- app.
 --
 -- `docUrl` is held to the column's CHECK (a plain https URL). Whether it is
 -- on doqtri's origin (D-45, D-72) is deployment config (DOQTRI_ORIGIN) that
@@ -125,7 +137,8 @@ as $$
         'nodeId',     l.node_id,
         'nodeLabel',  l.node_label,
         'docVersion', l.doc_version,
-        'docUrl',     d.doc_url
+        'docUrl',     d.doc_url,
+        'projectId',  case when p.chain_contract_id is not null then p.id end
       )
     )
     from public.milestone_external_links l
@@ -142,7 +155,7 @@ as $$
 $$;
 
 comment on function public.public_milestone_proof(text, uuid) is
-  'The published view of one milestone, for callers with no account. Returns null unless projects.public_proofs is true. Hand-listed fields only — never row_to_json. A milestone linked to a doqtri heading adds docSource (doc id, node id and label, doc version, doc URL; never the doc title).';
+  'The published view of one milestone, for callers with no account. Returns null unless projects.public_proofs is true. Hand-listed fields only — never row_to_json. A milestone linked to a doqtri heading adds docSource (doc id, node id and label, doc version, doc URL, and the project id once the project is registered on chain; never the doc title).';
 
 -- Unchanged: callable by everybody, including the signed-out.
 grant execute on function public.public_milestone_proof(text, uuid) to anon, authenticated, service_role;

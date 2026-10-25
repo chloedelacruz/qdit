@@ -1,7 +1,7 @@
 import { CircleAlert, CircleCheck, CircleHelp, ExternalLink, History } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
-import type { DocSourceCheck, NodeAttestation } from "@/lib/chain/doqtri-registry";
+import { verifiedOnChain, type DocSourceCheck, type NodeAttestation } from "@/lib/chain/doqtri-registry";
 import { ICON } from "@/lib/icons";
 import type { PublicDocSource } from "@/lib/queries";
 import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
@@ -20,6 +20,13 @@ import { cn } from "@/lib/utils";
  * A reader who trusts neither app can open the registry contract on
  * stellar.expert and read `get_document` themselves.
  *
+ * Two verdicts, kept apart because contract section 12 keeps them apart: the
+ * plan version (fact 1, DoqtriRegistry's document against the stored
+ * version) and the heading's own record (fact 4, a node signed Verified,
+ * which counts only when this milestone is Approved on chain at the version
+ * the node names). A node signed Verified for a milestone the chain does not
+ * show Approved at that version is said to be exactly that, never verified.
+ *
  * Public, so it shows only what the function published: the heading (which
  * is the milestone title, D-12), its node id, the version and the link. Never
  * the doc's title. The page renders this only for a linked milestone; an
@@ -34,6 +41,12 @@ export function PlannedInDoqtri({
 }) {
   const verdict = VERDICT[check.state](source, check);
   const VerdictIcon = verdict.icon;
+  const node = check.node ? nodeLine(check.node) : null;
+  const changedSince =
+    check.state === "verified" &&
+    source.docVersion !== null &&
+    check.chainVersion !== null &&
+    check.chainVersion > source.docVersion;
 
   return (
     <section
@@ -47,8 +60,8 @@ export function PlannedInDoqtri({
           <h2 className="text-sm font-medium">Planned in doqtri</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             This milestone came from a heading in a doqtri plan. doqtri keeps the plan;
-            its version is anchored on {NETWORK_LABELS[check.network]} in the DoqtriRegistry
-            contract, which this page reads.
+            its version is anchored{check.network ? ` on ${NETWORK_LABELS[check.network]}` : ""} in
+            the DoqtriRegistry contract, which this page reads.
           </p>
         </div>
       </div>
@@ -70,12 +83,20 @@ export function PlannedInDoqtri({
             {verdict.label}
           </p>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{verdict.detail}</p>
+          {changedSince ? (
+            <p className="mt-0.5 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+              <History aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+              Plan changed since v{source.docVersion} (now v{check.chainVersion}).
+            </p>
+          ) : null}
         </dd>
 
-        {check.node ? (
+        {check.node && node ? (
           <>
             <dt className="text-muted-foreground">Heading on chain</dt>
-            <dd className="text-xs leading-5 text-muted-foreground">{nodeText(check.node)}</dd>
+            <dd data-node-state={check.node.state} className={cn("text-xs leading-5", TONE_CLASS[node.tone])}>
+              {node.text}
+            </dd>
           </>
         ) : null}
       </dl>
@@ -94,7 +115,7 @@ export function PlannedInDoqtri({
           </a>
         ) : null}
 
-        {check.registryId ? (
+        {check.registryId && check.network ? (
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">DoqtriRegistry</span>
             <HashLink value={check.registryId} kind="contract" network={check.network} />
@@ -120,33 +141,32 @@ type Verdict = {
   detail: string;
 };
 
-const net = (network: StellarNetwork) => NETWORK_LABELS[network];
+const net = (network: StellarNetwork | null) => (network ? NETWORK_LABELS[network] : "chain");
 
 /**
- * One sentence per state. "Could not check" is said in words wherever the
- * ledger was not read, so a failed read never looks like a pass.
+ * One sentence per state of the plan version (contract section 12). Every
+ * state but `verified` names why it is not, and "Could not check" is said in
+ * words wherever the ledger was not read, so a failed read never looks like
+ * a pass.
  */
 const VERDICT: Record<DocSourceCheck["state"], (source: PublicDocSource, check: DocSourceCheck) => Verdict> = {
   verified: (source, check) => ({
     tone: "success",
     icon: CircleCheck,
-    label: `Matches DoqtriRegistry at v${check.chainVersion}`,
-    detail: `The plan's current version on ${net(check.network)} is the v${source.docVersion} this milestone was linked against.`,
-  }),
-  newer: (source, check) => ({
-    tone: "warning",
-    icon: History,
-    label: "Plan changed since",
+    label: `Verified on DoqtriRegistry at v${check.chainVersion}`,
     detail:
-      source.docVersion === null
-        ? `The plan was not anchored when this milestone was linked; DoqtriRegistry now has it at v${check.chainVersion}.`
-        : `DoqtriRegistry has the plan at v${check.chainVersion}; this milestone was linked against v${source.docVersion}.`,
+      check.chainVersion === source.docVersion
+        ? `The plan's current version on ${net(check.network)} is the v${source.docVersion} this milestone was linked against.`
+        : `The plan is on ${net(check.network)} at v${check.chainVersion}, past the v${source.docVersion} this milestone was linked against; versions only go up.`,
   }),
-  mismatch: (source, check) => ({
-    tone: "warning",
-    icon: CircleAlert,
-    label: "Does not match DoqtriRegistry",
-    detail: `DoqtriRegistry has the plan at v${check.chainVersion}, behind the v${source.docVersion} recorded here. Versions only go up on chain, so a correct link is never ahead of it.`,
+  "not-anchored": (_, check) => ({
+    tone: "muted",
+    icon: CircleHelp,
+    label: "Not verified",
+    detail:
+      check.chainVersion === null
+        ? `The plan was not anchored when this milestone was linked, and has no version on ${net(check.network)} yet.`
+        : `The plan was not anchored when this milestone was linked, so there is no linked version to check. DoqtriRegistry has it at v${check.chainVersion} now.`,
   }),
   "not-found": (source, check) => ({
     tone: "warning",
@@ -154,11 +174,11 @@ const VERDICT: Record<DocSourceCheck["state"], (source: PublicDocSource, check: 
     label: "Not found on DoqtriRegistry",
     detail: `No plan with this id is anchored on ${net(check.network)}, though this milestone records v${source.docVersion}.`,
   }),
-  "not-anchored": (_, check) => ({
-    tone: "muted",
-    icon: CircleHelp,
-    label: "Not anchored",
-    detail: `The plan has no version on ${net(check.network)} yet, so there is nothing on the ledger to check it against.`,
+  mismatch: (source, check) => ({
+    tone: "warning",
+    icon: CircleAlert,
+    label: "Does not match DoqtriRegistry",
+    detail: `DoqtriRegistry has the plan at v${check.chainVersion}, behind the v${source.docVersion} recorded here. Versions only go up on chain, so a correct link is never ahead of it.`,
   }),
   unreachable: (_, check) => ({
     tone: "muted",
@@ -166,24 +186,79 @@ const VERDICT: Record<DocSourceCheck["state"], (source: PublicDocSource, check: 
     label: "Could not check",
     detail: `DoqtriRegistry on ${net(check.network)} did not answer just now. This is not a pass: reload the page to try again.`,
   }),
-  unconfigured: (_, check) => ({
+  unconfigured: () => ({
     tone: "muted",
     icon: CircleHelp,
     label: "Could not check",
-    detail: `This qdit deployment does not read DoqtriRegistry on ${net(check.network)}, so the version above is unchecked.`,
+    detail: "This qdit deployment does not read a DoqtriRegistry, so the version above is unchecked.",
   }),
 };
 
-/** The heading's own record, as contract section 10 says it is signed. */
-function nodeText(node: NodeAttestation): string {
+type Inconsistent = Extract<NodeAttestation, { state: "inconsistent" }>;
+
+/** The end of "Signed … for this milestone at vV, but …", per reason. */
+const INCONSISTENT: Record<Inconsistent["reason"], (node: Inconsistent) => string> = {
+  "no-chain": () => "this project is not registered on chain, so no milestone record backs it",
+  network: () => "its record names another network than this project's",
+  contract: () => "its record names another contract than this project's",
+  "not-found": () => "the milestone has no record on chain",
+  older: (node) => `the milestone's record on chain is at v${node.chainVersion}, older than v${node.signedVersion}`,
+};
+
+/**
+ * The heading's own record (contract sections 10 and 12). "Verified" in the
+ * success tone only for fact 4: signed Verified, and the milestone Approved
+ * on chain at the version the signature names.
+ */
+function nodeLine(node: NodeAttestation): { tone: Tone; text: string } {
+  const signed = (status: string) => (status === "Verified" ? "Signed as Verified" : `Signed ${status}`);
   switch (node.state) {
-    case "attests":
-      return `Signed ${node.status} for this milestone, at its on-chain version ${node.milestoneVersion}.`;
-    case "elsewhere":
-      return `Signed ${node.status}, but its record points at a different qdit milestone or contract.`;
-    case "other":
-      return `Signed ${node.status} with tool "${node.tool}", not as this milestone.`;
     case "none":
-      return "Not signed on chain yet.";
+      return { tone: "muted", text: "Not signed in doqtri for this milestone yet." };
+    case "other":
+      return {
+        tone: "muted",
+        text: `Not signed in doqtri for this milestone yet. The heading's current record is signed with tool "${node.tool}".`,
+      };
+    case "elsewhere":
+      return {
+        tone: "muted",
+        text: "Not signed in doqtri for this milestone yet. The heading's current record names another qdit milestone.",
+      };
+    case "inconsistent":
+      return {
+        tone: "warning",
+        text: `${signed(node.status)} for this milestone at v${node.signedVersion}, but ${INCONSISTENT[node.reason](node)}. Not verified.`,
+      };
+    case "unchecked":
+      return {
+        tone: "muted",
+        text: `${signed(node.status)} for this milestone at v${node.signedVersion}. Its record on chain could not be read just now, so this is unchecked.`,
+      };
+    case "current":
+      if (verifiedOnChain(node)) {
+        return {
+          tone: "success",
+          text: `Verified in doqtri at v${node.signedVersion}, and the milestone is Approved on chain at v${node.signedVersion}.`,
+        };
+      }
+      if (node.status === "Verified") {
+        return {
+          tone: "warning",
+          text: `Signed as Verified; the chain now says ${node.milestoneStatus} (at v${node.signedVersion}).`,
+        };
+      }
+      return {
+        tone: "muted",
+        text: `Signed ${node.status} at v${node.signedVersion}; the milestone is ${node.milestoneStatus} on chain at v${node.signedVersion}.`,
+      };
+    case "resubmitted":
+      return {
+        tone: node.status === "Verified" ? "warning" : "muted",
+        text:
+          node.status === "Verified"
+            ? `Signed as Verified; the chain now says ${node.milestoneStatus} at v${node.chainVersion}. The milestone was resubmitted after the heading was signed, so the signature refers to v${node.signedVersion}.`
+            : `Signed ${node.status} at v${node.signedVersion}. The milestone was resubmitted since and is ${node.milestoneStatus} at v${node.chainVersion}; the signature refers to v${node.signedVersion}.`,
+      };
   }
 }

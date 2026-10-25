@@ -1643,6 +1643,12 @@ export type PublicDocSource = {
   docVersion: number | null;
   /** `doc_url` when it is on doqtri's origin (D-45, D-72), else null. */
   docUrl: string | null;
+  /**
+   * The project's id, sent only once the project is registered on chain
+   * (where it is public already). Not shown: the page checks the heading's
+   * `artifact_ref` against it and reads the milestone's record with it.
+   */
+  projectId: string | null;
 };
 
 /**
