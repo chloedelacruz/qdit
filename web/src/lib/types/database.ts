@@ -664,7 +664,12 @@ export type Database = {
           created_at?: string
           updated_at?: string
         }
-        /** Admins in a qdit session only; apps refresh through `link_project_doc`. */
+        /**
+         * No client updates (or inserts) a doc link directly: both are revoked
+         * from `authenticated` (D-48). The title and URL are refreshed only by
+         * `link_project_doc`, which an app calls through the API (D-60). Kept
+         * for the trigger's shape: these are the only columns that ever move.
+         */
         Update: {
           doc_title?: string
           doc_url?: string
@@ -773,6 +778,41 @@ export type Database = {
             referencedColumns: ['id']
           },
         ]
+      }
+
+      /**
+       * When each user last revoked each OAuth client
+       * (20261025130000_oauth_revocations.sql, D-59). No client role can read
+       * or write it; `record_oauth_client_revocation` and
+       * `mark_doc_link_connections_revoked` write it, `oauth_token_revoked`
+       * reads it.
+       */
+      oauth_client_revocations: {
+        Row: {
+          user_id: string
+          client_id: string
+          revoked_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * One row of per-environment integration config, written by an operator
+       * in the SQL editor (20261025130000_oauth_revocations.sql). No client
+       * role can read it.
+       */
+      integration_settings: {
+        Row: {
+          id: true
+          /** doqtri's OAuth client id here (D-61); null until set. */
+          doqtri_oauth_client_id: string | null
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
       }
 
       /**
@@ -910,9 +950,10 @@ export type Database = {
         Returns: Json
       }
       /**
-       * POST /api/v1/projects/{id}/docs. Admin and above. Raises P0002 for a
-       * project the caller is not in, 42501 below admin, and QD409 with
-       * message `doc_linked_elsewhere`. `created` is false on a refresh.
+       * POST /api/v1/projects/{id}/docs. OAuth clients only (D-60: 42501 for
+       * a qdit session), admin and above. Raises P0002 for a project the
+       * caller is not in, 42501 below admin, and QD409 with message
+       * `doc_linked_elsewhere`. `created` is false on a refresh.
        */
       link_project_doc: {
         Args: {
@@ -933,21 +974,41 @@ export type Database = {
         }[]
       }
       /**
-       * DELETE /api/v1/projects/{id}/docs/{doc_id}. Admin and above. Returns
-       * the removed milestone link ids (D-22); P0002 when the doc is not linked.
+       * DELETE /api/v1/projects/{id}/docs/{doc_id}. OAuth clients only (D-60),
+       * admin and above. Returns the removed milestone link ids (D-22); P0002
+       * when the doc is not linked. A qdit session unlinks by deleting the
+       * `project_doc_links` row instead.
        */
       unlink_project_doc: {
         Args: { p_project_id: string; p_doc_id: string }
         Returns: string[]
       }
       /**
-       * After the user revokes an app in Settings: marks the caller's own doc
-       * link connections through that client lost. First-party sessions only;
-       * returns how many rows it marked.
+       * After the user revokes an app in Settings: records the revoke (D-59)
+       * and marks the caller's own doc link connections through that client
+       * lost. First-party sessions only; returns how many rows it marked.
        */
       mark_doc_link_connections_revoked: {
         Args: { p_client_id: string }
         Returns: number
+      }
+      /**
+       * Before the user revokes an app in Settings: records that the caller
+       * revoked `p_client_id` now, so /api/v1 refuses that app's tokens issued
+       * until now (D-59). First-party sessions only; returns the revoke time.
+       */
+      record_oauth_client_revocation: {
+        Args: { p_client_id: string }
+        Returns: string
+      }
+      /**
+       * Whether the caller's own OAuth token was issued at or before that
+       * user's latest revoke of its client (D-59). Reads sub, client_id and
+       * iat from the request JWT; called once per /api/v1 request.
+       */
+      oauth_token_revoked: {
+        Args: Record<string, never>
+        Returns: boolean
       }
       /**
        * POST /api/v1/milestones. Member and above. Returns the new milestone
