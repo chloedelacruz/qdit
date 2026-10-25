@@ -144,7 +144,8 @@ export default async function PublicProofPage({
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           Published by its project. The content stays in qdit — only the hash is
           on the ledger, which is what lets you check this page without being
-          asked to trust it. Every hash below opens on stellar.expert.
+          asked to trust it. Every transaction and contract below opens on
+          stellar.expert.
         </p>
 
         {/* The one number a reader is most likely to want to compare against
