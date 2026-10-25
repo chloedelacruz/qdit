@@ -1622,6 +1622,27 @@ export type PublicProof = {
     reason: string | null;
     createdAt: string;
   }[];
+  /**
+   * The doqtri heading the milestone came from (WP-3.2). Absent, not null,
+   * for a milestone with no doqtri link: the function sends no key for it.
+   */
+  docSource?: PublicDocSource;
+};
+
+/**
+ * A linked milestone's doqtri reference, as the public page may show it. No
+ * doc title: that is doqtri's private note title, and the function never
+ * sends it.
+ */
+export type PublicDocSource = {
+  docId: string;
+  nodeId: string;
+  /** The heading text, which is the milestone title (D-12). */
+  nodeLabel: string;
+  /** DoqtriRegistry `Document.version` the link was last written against. */
+  docVersion: number | null;
+  /** `doc_url` when it is on doqtri's origin (D-45, D-72), else null. */
+  docUrl: string | null;
 };
 
 /**
@@ -1649,7 +1670,17 @@ export async function getPublicProof(
 
   if (error || !data) return null;
 
-  return data as unknown as PublicProof;
+  const proof = data as unknown as PublicProof;
+  if (!proof.docSource) return proof;
+
+  // The function sends `doc_url` as stored; only a URL on doqtri's origin is
+  // a link here (D-45, D-72), the same rule as the Plan docs list.
+  const origin = readDoqtriOrigin();
+  const url = proof.docSource.docUrl;
+  return {
+    ...proof,
+    docSource: { ...proof.docSource, docUrl: origin && url && isDoqtriDocUrl(url, origin) ? url : null },
+  };
 }
 
 // ---------------------------------------------------------------------------
