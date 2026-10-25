@@ -209,14 +209,37 @@ describe("PlannedInDoqtri, the doc anchor alone is never a verdict", () => {
   it("doc verified with an inconsistent node: not verified, naming the mismatch", () => {
     const html = block({
       ...VERIFIED,
-      node: { state: "inconsistent", status: "Verified", signedVersion: 2, reason: "contract", chainVersion: null },
+      node: { state: "inconsistent", status: "Verified", signedVersion: 2, reason: "older", chainVersion: 1 },
     });
 
     expect(html).toContain('data-verdict="inconsistent"');
     expect(verdictOf(html).text).toBe("Not verified");
     expect(verdictOf(html).className).toContain("text-warning");
-    expect(words(html)).toContain("its record names another contract than this project's");
+    expect(words(html)).toContain("the milestone's record on chain is at v1, older than v2");
   });
+
+  it.each(["network", "contract"] as const)(
+    "a reference to another %s than the project's chain: inconsistent, with no node fields (D-74)",
+    (reason) => {
+      const html = block({
+        ...VERIFIED,
+        node: { state: "inconsistent", status: "Verified", signedVersion: 2, reason, chainVersion: null },
+      });
+      const text = words(html);
+
+      expect(html).toContain('data-verdict="inconsistent"');
+      expect(verdictOf(html).text).toBe("Not verified");
+      expect(verdictOf(html).className).toContain("text-warning");
+      expect(text).toContain(`on another ${reason} than this project's registration`);
+      expect(text).toContain("A heading of it is signed for this milestone, but not on this project's chain.");
+      // No node id, no status, no version, no node row.
+      expect(html).not.toContain("data-node-state");
+      expect(text).not.toContain("h4");
+      expect(text).not.toContain("v2");
+      expect(text).not.toContain("Signed as Verified");
+      expect(html).not.toContain("text-success");
+    },
+  );
 
   it("doc verified with the milestone record unread: could not check, never verified", () => {
     const html = block({ ...VERIFIED, node: { state: "unchecked", status: "Verified", signedVersion: 2 } });
@@ -326,8 +349,6 @@ describe("PlannedInDoqtri, the node's record (fact 4), on evidence", () => {
     const cases = [
       [{ reason: "older", chainVersion: 1 }, "the milestone's record on chain is at v1, older than v2"],
       [{ reason: "not-found", chainVersion: null }, "the milestone has no record on chain"],
-      [{ reason: "network", chainVersion: null }, "its record names another network than this project's"],
-      [{ reason: "contract", chainVersion: null }, "its record names another contract than this project's"],
     ] as const;
     for (const [fields, phrase] of cases) {
       const row = nodeRow({ state: "inconsistent", status: "Verified", signedVersion: 2, ...fields });
@@ -342,5 +363,83 @@ describe("PlannedInDoqtri, the node's record (fact 4), on evidence", () => {
     const row = nodeRow({ state: "unchecked", status: "Verified", signedVersion: 2 });
     expect(row.text).toContain("could not be read just now, so this is unchecked");
     expect(row.className).not.toContain("text-success");
+  });
+});
+
+describe("PlannedInDoqtri, the headline when the node's signature and the chain disagree (WP-2.12)", () => {
+  it.each(["Rejected", "Submitted"] as const)(
+    "signed Verified while the chain says %s at that version: no 'Verified' and no success tone",
+    (milestoneStatus) => {
+      const html = block({
+        ...VERIFIED,
+        node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus },
+      });
+      const verdict = verdictOf(html);
+
+      // The plan still checks out, so the verdict is unchanged ...
+      expect(html).toContain('data-verdict="verified"');
+      // ... but the headline does not read as a verified milestone.
+      expect(verdict.text).toBe("Planned in node h4, plan at v3 (checked on chain)");
+      expect(verdict.text).not.toContain("Verified");
+      expect(verdict.className).toContain("text-warning");
+      expect(html).not.toContain("text-success");
+      expect(words(html)).toContain(`the chain now says ${milestoneStatus} (at v2)`);
+    },
+  );
+
+  it("signed Verified for a version the milestone was resubmitted past: no 'Verified' either", () => {
+    const html = block({
+      ...VERIFIED,
+      node: { state: "resubmitted", status: "Verified", signedVersion: 1, chainVersion: 2, milestoneStatus: "Approved" },
+    });
+
+    expect(verdictOf(html).text).toBe("Planned in node h4, plan at v3 (checked on chain)");
+    expect(verdictOf(html).className).toContain("text-warning");
+  });
+
+  it("keeps the success headline for fact 4, and for a node not signed Verified", () => {
+    expect(verdictOf(block(VERIFIED)).text).toBe("Verified: planned in node h4, plan at v3");
+    const built = block({
+      ...VERIFIED,
+      node: { state: "current", status: "Built", signedVersion: 2, milestoneStatus: "Submitted" },
+    });
+    expect(verdictOf(built).text).toBe("Verified: planned in node h4, plan at v3");
+    expect(verdictOf(built).className).toContain("text-success");
+  });
+});
+
+describe("PlannedInDoqtri, the registry link (contract section 12, transaction links)", () => {
+  it("says the facts are read from current state, next to the registry link", () => {
+    const html = block(VERIFIED);
+    const note = /<p data-slot="registry-note"[^>]*>([\s\S]*?)<\/p>/.exec(html);
+
+    expect(words(note?.[1] ?? "").trim()).toBe(
+      "Read from current state; see the contract's history on Stellar Expert for the transaction.",
+    );
+    expect(html.indexOf(`/contract/${REGISTRY}`)).toBeLessThan(html.indexOf('data-slot="registry-note"'));
+  });
+
+  it("has no note without a registry to link", () => {
+    const html = block({ ...VERIFIED, state: "unconfigured", network: null, registryId: null, chainVersion: null, node: null });
+    expect(html).not.toContain('data-slot="registry-note"');
+  });
+});
+
+describe("PlannedInDoqtri, the node id could not be looked up (D-77)", () => {
+  it("could not check, with no node fields and the registry still linked", () => {
+    const html = block(
+      { ...VERIFIED, state: "unavailable", chainVersion: null, docUpdatedAt: null, node: null, nodeUpdatedAt: null },
+      { ...SOURCE, nodeId: null },
+    );
+    const text = words(html);
+
+    expect(html).toContain('data-verdict="unavailable"');
+    expect(verdictOf(html).text).toBe("Could not check");
+    expect(text).toContain("This is not a pass");
+    expect(text).toContain("Whether doqtri signed it for this milestone could not be checked.");
+    expect(html).not.toContain("data-node-state");
+    expect(html).not.toContain("data-anchor-state");
+    expect(html).not.toContain("text-success");
+    expect(html).toContain(`/contract/${REGISTRY}`);
   });
 });

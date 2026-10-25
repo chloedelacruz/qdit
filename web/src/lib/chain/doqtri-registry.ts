@@ -399,7 +399,8 @@ export async function readMilestone(
 /** The doqtri reference qdit stored for a linked milestone. */
 export type StoredDocSource = {
   docId: string;
-  nodeId: string;
+  /** Null when the page's server could not look it up (D-77); nothing is read then. */
+  nodeId: string | null;
   /** DoqtriRegistry `Document.version` the link was last written against. */
   docVersion: number | null;
 };
@@ -426,6 +427,8 @@ export type DocSourceContext = {
  *   mismatch      the registry is behind the stored version, which a correct
  *                 link cannot produce
  *   unreachable   the read failed (RPC down, timed out, undecodable reply)
+ *   unavailable   qdit could not look up which heading the link names (its
+ *                 server-side lookup failed, D-77), so nothing was read
  *   unconfigured  this deployment has no registry configured
  */
 export type DocSourceState =
@@ -434,6 +437,7 @@ export type DocSourceState =
   | "not-found"
   | "mismatch"
   | "unreachable"
+  | "unavailable"
   | "unconfigured";
 
 /** Why a heading signed for this milestone does not line up with the chain. */
@@ -500,17 +504,26 @@ export function verifiedOnChain(node: NodeAttestation | null): boolean {
   return node?.state === "current" && node.status === "Verified" && node.milestoneStatus === "Approved";
 }
 
-/** A node record that names this project and milestone (see `namesThisMilestone`). */
-export type NodeEvidence = Extract<NodeAttestation, { state: "current" | "resubmitted" | "unchecked" | "inconsistent" }>;
+/** A node record that names this project and milestone on its chain (see `namesThisMilestone`). */
+export type NodeEvidence =
+  | Extract<NodeAttestation, { state: "current" | "resubmitted" | "unchecked" }>
+  | (Extract<NodeAttestation, { state: "inconsistent" }> & { reason: "not-found" | "older" });
 
 /**
  * Contract section 12's node evidence: the heading's record has `tool =
- * "qdit"` and an `artifact_ref` naming this project and milestone. Only then
- * may the page show the node id, the record's status and `@vV`. Not for
- * `inconsistent` with `no-chain`: without a registration the project id was
- * never compared, so the record is known to name the milestone only.
- * `none`, `other` and `elsewhere` are not signed for this milestone, and a
- * null node (the registry was not read) is no evidence either.
+ * "qdit"` and an `artifact_ref` naming this project and milestone on the
+ * project's own chain, its network and `milestone_proof` contract (D-73,
+ * D-74). Only then may the page show the node id, the record's status and
+ * `@vV`.
+ *
+ * Not for `inconsistent` with `no-chain`: without a registration the project
+ * id was never compared, so the record is known to name the milestone only.
+ * Not for `inconsistent` with `network` or `contract` either (D-74): such a
+ * reference does not point at this project's records, whatever ids it
+ * carries, so the page shows the explicit inconsistent state without the
+ * node's fields. `none`, `other` and `elsewhere` are not signed for this
+ * milestone, and a null node (the registry was not read) is no evidence
+ * either.
  */
 export function namesThisMilestone(node: NodeAttestation | null): node is NodeEvidence {
   switch (node?.state) {
@@ -519,7 +532,7 @@ export function namesThisMilestone(node: NodeAttestation | null): node is NodeEv
     case "unchecked":
       return true;
     case "inconsistent":
-      return node.reason !== "no-chain";
+      return node.reason === "not-found" || node.reason === "older";
     default:
       return false;
   }
@@ -536,13 +549,15 @@ export function namesThisMilestone(node: NodeAttestation | null): node is NodeEv
  *   no-chain      a record names the milestone, but the project is not on
  *                 chain, so it cannot be checked against the project
  *   inconsistent  a record names this project and milestone, but on another
- *                 network or contract, or the milestone's record is missing
- *                 or older than the version it names
+ *                 network or contract (no node evidence then, D-74), or the
+ *                 milestone's record is missing or older than the version it
+ *                 names
  *   doc           the node evidence holds; the doc anchor does not
  *   unchecked     the node evidence holds, but the milestone's record could
  *                 not be read, so whether it lines up is unknown: a read
  *                 failure, never a pass
  *   unreachable   the registry could not be read
+ *   unavailable   qdit could not look up which heading to read
  *   unconfigured  this deployment has no registry
  *
  * The node and doc checks are separate lines on the page; this is only
@@ -556,15 +571,17 @@ export type PlannedVerdict =
   | "doc"
   | "unchecked"
   | "unreachable"
+  | "unavailable"
   | "unconfigured";
 
 /** `PlannedVerdict` for a check. Pure. */
 export function plannedVerdict(check: DocSourceCheck): PlannedVerdict {
-  if (check.state === "unconfigured" || check.state === "unreachable") return check.state;
+  if (check.state === "unconfigured" || check.state === "unreachable" || check.state === "unavailable") {
+    return check.state;
+  }
   const node = check.node;
-  if (node?.state === "inconsistent" && node.reason === "no-chain") return "no-chain";
+  if (node?.state === "inconsistent") return node.reason === "no-chain" ? "no-chain" : "inconsistent";
   if (!namesThisMilestone(node)) return "unsigned";
-  if (node.state === "inconsistent") return "inconsistent";
   if (check.state !== "verified") return "doc";
   return node.state === "unchecked" ? "unchecked" : "verified";
 }
@@ -822,11 +839,26 @@ export async function checkDocSource(
     };
   }
 
+  // Without the node id there is no record to read (D-77). The registry is
+  // still named, so a reader can check it on stellar.expert.
+  const nodeId = stored.nodeId;
+  if (nodeId === null) {
+    return {
+      state: "unavailable",
+      network: config.network,
+      registryId: config.contractId,
+      chainVersion: null,
+      docUpdatedAt: null,
+      node: null,
+      nodeUpdatedAt: null,
+    };
+  }
+
   const now = (options.now ?? Date.now)();
   const read = await cached(
-    ["registry", config.network, config.contractId, config.rpcUrl, stored.docId, stored.nodeId].join("|"),
+    ["registry", config.network, config.contractId, config.rpcUrl, stored.docId, nodeId].join("|"),
     now,
-    () => readRegistry(config, stored.docId, stored.nodeId),
+    () => readRegistry(config, stored.docId, nodeId),
   );
 
   const wanted = read.ok ? milestoneToRead(read.node, context) : null;
