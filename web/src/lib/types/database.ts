@@ -910,9 +910,10 @@ export type Database = {
         Returns: Json
       }
       /**
-       * POST /api/v1/projects/{id}/docs. Admin and above. Raises P0002 for a
-       * project the caller is not in, 42501 below admin, and QD409 with
-       * message `doc_linked_elsewhere`. `created` is false on a refresh.
+       * POST /api/v1/projects/{id}/docs. OAuth clients only (D-60: 42501 for
+       * a qdit session), admin and above. Raises P0002 for a project the
+       * caller is not in, 42501 below admin, and QD409 with message
+       * `doc_linked_elsewhere`. `created` is false on a refresh.
        */
       link_project_doc: {
         Args: {
@@ -933,8 +934,10 @@ export type Database = {
         }[]
       }
       /**
-       * DELETE /api/v1/projects/{id}/docs/{doc_id}. Admin and above. Returns
-       * the removed milestone link ids (D-22); P0002 when the doc is not linked.
+       * DELETE /api/v1/projects/{id}/docs/{doc_id}. OAuth clients only (D-60),
+       * admin and above. Returns the removed milestone link ids (D-22); P0002
+       * when the doc is not linked. A qdit session unlinks by deleting the
+       * `project_doc_links` row instead.
        */
       unlink_project_doc: {
         Args: { p_project_id: string; p_doc_id: string }
