@@ -32,7 +32,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(55);
+select plan(56);
 
 
 -- ----------------------------------------------------------------------------
@@ -259,13 +259,28 @@ select is(
   'a rename through the app refreshes the member''s row rather than adding one'
 );
 
--- A client id that is not a UUID is not recorded, and does not break the write.
+-- A client id that is not a UUID counts as revoked (D-96, 20261026120100),
+-- so an app's write with one is refused before the trigger runs.
 select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', 'not-a-uuid');
-select lives_ok(
+select throws_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan, renamed',
        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002') $$,
-  'a write with a malformed client_id still succeeds'
+  '42501', 'This app''s access to qdit was revoked.',
+  'a write with a malformed client_id is refused (D-96)'
+);
+-- The trigger still neither records nor fails on one: a write that reaches
+-- it with such claims (here as postgres, which no guard stops) goes through.
+select pg_temp.as_postgres();
+select set_config('request.jwt.claims', json_build_object(
+  'sub', 'a2000000-0000-4000-8000-000000000002',
+  'role', 'authenticated',
+  'client_id', 'not-a-uuid'
+)::text, true);
+select lives_ok(
+  $$ update public.project_doc_links set doc_title = 'Hand-linked plan, renamed'
+      where doc_id = 'd2000000-0000-4000-8000-000000000002' $$,
+  'the connection trigger does not fail a write with a malformed client_id'
 );
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],

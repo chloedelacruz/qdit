@@ -6,7 +6,9 @@
 -- user revoked is refused on every PostgREST write the D-03 guards open to
 -- apps, and by the three /api/v1 RPCs, while a token from the re-consent, the
 -- same user's own session and another app of the same user keep writing, and
--- reads keep their window.
+-- reads keep their window. And 20261026120100_oauth_token_revoked_fail_closed.sql
+-- (D-96): a token whose client_id is not a UUID counts as revoked on those
+-- same writes, while a first-party session still does not.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
@@ -20,7 +22,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(36);
 
 
 -- ----------------------------------------------------------------------------
@@ -325,6 +327,67 @@ select throws_ok(
                                           'd4000000-0000-4000-8000-000000000001', 'h3', 3) $$,
   'P0002', null,
   'session: assert_project_role() still answers not found for another project'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 6. A client_id that is not a UUID: revoked, fail closed (D-96)
+--
+-- No revoke can ever name it (the table keys on a uuid), so it is refused on
+-- every write the guards open to apps, whatever its iat. The token below is
+-- from after the user's revoke, so only the shape refuses it.
+-- ----------------------------------------------------------------------------
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+select is(public.oauth_token_revoked(), true, 'non-UUID client_id: counts as revoked');
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+select throws_ok(
+  $$ insert into public.milestones (project_id, title, status)
+     values ('b4000000-0000-4000-8000-000000000001', 'From a non-UUID client', 'proposed') $$,
+  '42501', null,
+  'non-UUID client_id: cannot create a proposed milestone over PostgREST'
+);
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+update public.milestones set title = 'Renamed by a non-UUID client'
+ where id = 'c4000000-0000-4000-8000-000000000001';
+select pg_temp.as_postgres();
+select is((select title from public.milestones where id = 'c4000000-0000-4000-8000-000000000001'),
+  'Escrow contract v2', 'non-UUID client_id: the linked milestone''s title did not change');
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+select throws_ok(
+  $$ insert into public.milestone_external_links (milestone_id, project_id, doc_id, node_id, node_label, created_by)
+     values ('c4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000001',
+             'd4000000-0000-4000-8000-000000000001', 'h9', 'Other app', 'a4000000-0000-4000-8000-000000000001') $$,
+  '42501', null,
+  'non-UUID client_id: cannot link a milestone'
+);
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+select throws_ok(
+  $$ select * from public.link_project_doc('b4000000-0000-4000-8000-000000000001',
+                                           'd4000000-0000-4000-8000-000000000004', 'Non-UUID plan',
+                                           'https://www.doqtri.xyz/d/d4000000-0000-4000-8000-000000000004') $$,
+  '42501', 'This app''s access to qdit was revoked.',
+  'non-UUID client_id: link_project_doc() refuses it'
+);
+
+select pg_temp.as_oauth_client(60, 'doqtri-app');
+select throws_ok(
+  $$ select public.create_linked_milestone('b4000000-0000-4000-8000-000000000001', 'Non-UUID milestone', null, null,
+                                          'd4000000-0000-4000-8000-000000000001', 'h8', 3) $$,
+  '42501', 'This app''s access to qdit was revoked.',
+  'non-UUID client_id: create_linked_milestone() refuses it'
+);
+
+-- A first-party session has no client_id at all, so D-96 never touches it.
+select pg_temp.as_session();
+select lives_ok(
+  $$ insert into public.milestones (id, project_id, title, status)
+     values ('c4000000-0000-4000-8000-000000000005', 'b4000000-0000-4000-8000-000000000001', 'Session after D-96', 'proposed') $$,
+  'session: still creates a milestone after D-96'
 );
 
 
