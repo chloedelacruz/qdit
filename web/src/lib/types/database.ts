@@ -808,7 +808,7 @@ export type Database = {
           id: true
           /** doqtri's OAuth client id here (D-61); null until set. */
           doqtri_oauth_client_id: string | null
-          /** doqtri's origin here (D-77): https, lower case, no path; null until set. */
+          /** doqtri's origin here (D-77, D-95): https, lower case, no path; null until set. */
           doqtri_origin: string | null
           updated_at: string
         }
@@ -963,8 +963,10 @@ export type Database = {
       /**
        * POST /api/v1/projects/{id}/docs. OAuth clients only (D-60: 42501 for
        * a qdit session), admin and above. Raises P0002 for a project the
-       * caller is not in, 42501 below admin, and QD409 with message
-       * `doc_linked_elsewhere`. `created` is false on a refresh.
+       * caller is not in, 42501 below admin, 22023 with hint `doc_url` for a
+       * URL off `integration_settings.doqtri_origin` once that is set (D-95),
+       * and QD409 with message `doc_linked_elsewhere`. `created` is false on
+       * a refresh.
        */
       link_project_doc: {
         Args: {
@@ -1076,6 +1078,15 @@ export type Database = {
           p_next_attempt_at: string | null
         }
         Returns: 'delivered' | 'retry' | 'dead' | 'stale'
+      }
+      /**
+       * `integration_settings.doqtri_origin`, or null while unset
+       * (service_role only, D-95): compared with `DOQTRI_ORIGIN` by
+       * `lib/doqtri-origin-health.ts`.
+       */
+      doqtri_origin_setting: {
+        Args: Record<string, never>
+        Returns: string | null
       }
       /**
        * Whether the pg_cron delivery job can run (service_role only, D-57).
