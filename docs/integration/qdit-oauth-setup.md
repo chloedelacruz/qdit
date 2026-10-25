@@ -102,9 +102,16 @@ select doqtri_oauth_client_id, doqtri_origin, updated_at
   write logs a WARNING naming the setting.
 - `doqtri_origin` is the same value as `DOQTRI_ORIGIN` (step 5): `https`,
   lower case, host and optional port, no path and no trailing slash. A value
-  of any other shape fails the update. While it is empty, the public
-  function returns no doc URL; the public page is unaffected, since it
-  builds its doqtri link from `DOQTRI_ORIGIN` and the doc id.
+  of any other shape fails the update. Once it is set, `link_project_doc()`
+  refuses a `doc_url` that does not start with it followed by `/`, the same
+  rule the API applies with `DOQTRI_ORIGIN` (D-95), so an app calling the
+  function over PostgREST cannot store a URL elsewhere either. While it is
+  empty the database does not check, only the API does, and applying the
+  migrations logs a WARNING saying so. The webhook cron route logs a
+  warning on every run while it is empty or differs from `DOQTRI_ORIGIN`
+  (`data.doqtriOrigin` in its answer); while they differ, every doc link
+  doqtri posts is refused `400` on `doc_url`. The public page never uses
+  it: it builds its doqtri link from `DOQTRI_ORIGIN` and the doc id.
 
 ### If doqtri is re-registered with a new client id
 
@@ -198,3 +205,6 @@ does the same for a rotation (see the script's header).
   an hour (contract section 5).
 - `select public.webhook_scheduler_health();` answers `configured`, and
   `integration_events.delivered_at` is set after a milestone status change.
+- `select public.doqtri_origin_setting();` (as service_role) answers the
+  same origin as `DOQTRI_ORIGIN`, and the webhook cron run's answer has
+  `data.doqtriOrigin.status` `match` (D-95).

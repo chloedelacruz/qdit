@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { DoqtriOriginHealth } from "@/lib/doqtri-origin-health";
 import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
 import type { SchedulerHealth } from "@/lib/webhooks/scheduler-health";
 
@@ -19,6 +20,13 @@ const readSchedulerHealth = vi.fn<(secretKey: string) => Promise<SchedulerHealth
 vi.mock("@/lib/webhooks/scheduler-health", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/webhooks/scheduler-health")>()),
   readSchedulerHealth,
+}));
+
+const MATCH: DoqtriOriginHealth = { status: "match", database: "https://www.doqtri.xyz", env: "https://www.doqtri.xyz" };
+const readDoqtriOriginHealth = vi.fn<(secretKey: string) => Promise<DoqtriOriginHealth>>(async () => MATCH);
+vi.mock("@/lib/doqtri-origin-health", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/doqtri-origin-health")>()),
+  readDoqtriOriginHealth,
 }));
 
 const { GET } = await import("./route");
@@ -54,12 +62,39 @@ describe("GET /api/cron/deliver-webhooks", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({
-      data: { claimed: 0, delivered: 0, retrying: 0, dead: 0, stale: 0, scheduler: CONFIGURED },
+      data: { claimed: 0, delivered: 0, retrying: 0, dead: 0, stale: 0, scheduler: CONFIGURED, doqtriOrigin: MATCH },
     });
     expect(supabaseOutbox).toHaveBeenCalledWith("sb_secret_test");
     expect(claim).toHaveBeenCalledTimes(1);
     expect(readSchedulerHealth).toHaveBeenCalledWith("sb_secret_test");
+    expect(readDoqtriOriginHealth).toHaveBeenCalledWith("sb_secret_test");
     expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("reports and logs a DOQTRI_ORIGIN that differs from the database's doqtri_origin (D-95)", async () => {
+    const differs: DoqtriOriginHealth = {
+      status: "differs",
+      database: "https://doqtri.xyz",
+      env: "https://www.doqtri.xyz",
+    };
+    readDoqtriOriginHealth.mockResolvedValueOnce(differs);
+
+    const response = await call(`Bearer ${CRON_SECRET}`);
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.doqtriOrigin).toEqual(differs);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(
+      /DOQTRI_ORIGIN is https:\/\/www\.doqtri\.xyz but integration_settings\.doqtri_origin is https:\/\/doqtri\.xyz/,
+    );
+  });
+
+  it("warns while the database's doqtri_origin is unset (D-95)", async () => {
+    readDoqtriOriginHealth.mockResolvedValueOnce({ status: "unset", database: null, env: "https://www.doqtri.xyz" });
+
+    await call(`Bearer ${CRON_SECRET}`);
+
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(/doqtri_origin is not set/);
   });
 
   it("reports and logs a pg_cron job whose Vault secrets are missing (D-57)", async () => {
