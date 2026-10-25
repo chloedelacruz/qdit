@@ -306,9 +306,11 @@ describe("APP_ACCESS matches the guard migration", () => {
       deployments: "deployments",
       doc_link_connections: "which connections keep a plan linked",
       integration_events: "webhook settings and queue",
+      integration_settings: "integration settings",
       integration_webhooks: "webhook settings",
       milestone_reviews: "review notes",
       notifications: "notifications",
+      oauth_client_revocations: "which apps you disconnected",
       stellar_proofs: "proofs of work",
       tasks: "tasks",
     };

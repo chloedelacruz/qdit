@@ -47,14 +47,10 @@
 --
 -- Known limits: a grant that ends outside qdit's revoke action (the OAuth
 -- client deleted by an operator, a refresh token that lapsed) is not seen
--- here; neither is a role dropping to viewer without leaving. A revoke by a
--- user with no live rows for that client marks nothing, so it leaves no time
--- to compare against, and a pre-revoke
--- token's writes in its remaining lifetime (up to about 1h) record live rows.
--- Every OAuth client counts, not only doqtri: qdit does not pin doqtri's
--- client id (CONTRACT.md names none), so if a second client is ever
--- registered, its writes to these link tables would keep a doc card loaded
--- after doqtri's own grants are gone.
+-- here; neither is a role dropping to viewer without leaving. Two limits this
+-- file had are closed by 20261025130000_oauth_revocations.sql: a revoke by a
+-- user with no live rows is now remembered there (D-59), and only doqtri's
+-- pinned client id counts (D-61).
 --
 -- ---------------------------------------------------------------------------
 -- WHO MAY DO WHAT

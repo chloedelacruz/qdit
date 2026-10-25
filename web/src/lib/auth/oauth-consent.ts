@@ -78,7 +78,7 @@ export const APP_ACCESS = {
     "Approve or reject milestones, or delete projects or milestones",
     "Change anything about a milestone except a linked milestone's title",
     "Change members, roles or project settings",
-    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, or its record of which connections keep a plan linked",
+    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, or its record of which apps you disconnected",
     "See your teammates' profiles or who else is in your projects",
   ],
 } as const;
@@ -111,9 +111,15 @@ export const APP_READ_SCOPE = {
     // The webhook outbox and endpoints (20261024130000_integration_webhooks.sql):
     // qdit's own delivery state, closed to every client role, not user data.
     "integration_events",
+    // The per-environment integration config, doqtri's client id among it
+    // (20261025130000_oauth_revocations.sql): set by an operator, not user data.
+    "integration_settings",
     "integration_webhooks",
     "milestone_reviews",
     "notifications",
+    // When the user disconnected each app (20261025130000_oauth_revocations.sql):
+    // what /api/v1 checks a token against, never something an app reads.
+    "oauth_client_revocations",
     "stellar_proofs",
     "tasks",
   ],
