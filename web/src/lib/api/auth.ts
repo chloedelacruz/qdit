@@ -52,7 +52,20 @@ import { signingKey } from "./jwks";
  *     browser session cannot drive the API, and so that the D-03 RESTRICTIVE
  *     policies (WP-2.2), which key on `client_id`, always have one to key on.
  *
- * Every failure is the same `401 unauthorized` — see `unauthorized()`.
+ * And one thing only the database knows (D-59):
+ *
+ *   - the token was not issued at or before its user's latest revoke of its
+ *     client. Revoking an app in qdit's Settings records the time
+ *     (`oauth_client_revocations`); Auth cannot recall a signed JWT, so this
+ *     is what makes a disconnect take effect at once rather than at `exp`.
+ *     One RPC, `oauth_token_revoked()`, run with the caller's own token: it
+ *     reads `sub`, `client_id` and `iat` from that token, so it answers for
+ *     the caller and nobody else. Once per request, never cached across
+ *     requests, since a revoke must bite on the very next one. When the
+ *     lookup fails the answer is `503 unavailable`, not a pass: a revoked
+ *     app must not get in because the database was slow.
+ *
+ * Every token failure is the same `401 unauthorized` — see `unauthorized()`.
  *
  * ---------------------------------------------------------------------------
  * THE CLIENT THIS RETURNS
@@ -195,12 +208,38 @@ export async function authenticate(request: Request): Promise<ApiAuth> {
     { accessToken: async () => token },
   );
 
+  if (await revoked(supabase)) throw unauthorized();
+
   return {
     supabase,
     claims,
     userId: claims.sub,
     clientId: claims.client_id,
   };
+}
+
+/**
+ * Whether the user revoked this app after the token was issued (D-59; see the
+ * header). Fails closed: anything but a plain `true` or `false` from the
+ * database is a 503, never a pass.
+ */
+async function revoked(supabase: SupabaseClient<Database>): Promise<boolean> {
+  let data: unknown = null;
+  let error: unknown = null;
+  try {
+    ({ data, error } = await supabase.rpc("oauth_token_revoked"));
+  } catch (thrown) {
+    error = thrown;
+  }
+
+  if (!error && typeof data === "boolean") return data;
+
+  console.error("api auth: could not check the token against revocations", error ?? data);
+  throw new ApiError(
+    "unavailable",
+    "qdit could not verify the token right now. Try again shortly.",
+    { headers: { "Retry-After": "5" } },
+  );
 }
 
 /**

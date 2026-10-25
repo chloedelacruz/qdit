@@ -25,7 +25,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(107);
+select plan(109);
 
 
 -- ----------------------------------------------------------------------------
@@ -389,13 +389,23 @@ select is(
   'link_project_doc: linked_by is always the caller, never another user'
 );
 
+-- D-60: not from a qdit session, even an admin's; doc links come from doqtri.
 select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
+select throws_ok(
+  $$ select * from public.link_project_doc(
+       'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001',
+       'Payroll v1.1 plan', 'https://www.doqtri.xyz/d/d1000000-0000-4000-8000-000000000001') $$,
+  '42501', null,
+  'session admin: cannot call link_project_doc (D-60)'
+);
+
+select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000002');
 select is(
   (select doc_title from public.link_project_doc(
      'b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001',
      'Payroll v1.1 plan', 'https://www.doqtri.xyz/d/d1000000-0000-4000-8000-000000000001')),
   'Payroll v1.1 plan',
-  'session admin: refreshes a doc link through link_project_doc'
+  'oauth admin: refreshes a doc link through link_project_doc'
 );
 select throws_ok(
   $$ select * from public.link_project_doc(
@@ -794,6 +804,13 @@ select throws_ok(
 -- 8. unlink_project_doc() and the D-22 cascade
 -- ----------------------------------------------------------------------------
 
+select pg_temp.as_session('a1000000-0000-4000-8000-000000000002');
+select throws_ok(
+  $$ select public.unlink_project_doc('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001') $$,
+  '42501', null,
+  'session admin: cannot call unlink_project_doc (D-60); a direct delete stays'
+);
+
 select pg_temp.as_oauth_client('a1000000-0000-4000-8000-000000000003');
 select throws_ok(
   $$ select public.unlink_project_doc('b1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001') $$,
@@ -884,8 +901,9 @@ select ok(
   and not has_function_privilege('authenticated', 'public.check_project_doc_link()', 'execute')
   and not has_function_privilege('authenticated', 'public.sync_link_node_label()', 'execute')
   and not has_function_privilege('authenticated', 'public.sync_link_doc_title()', 'execute')
-  and not has_function_privilege('authenticated', 'public.assert_project_role(uuid, text)', 'execute'),
-  'trigger functions and assert_project_role are not callable by clients'
+  and not has_function_privilege('authenticated', 'public.assert_project_role(uuid, text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.assert_oauth_client_session()', 'execute'),
+  'trigger functions, assert_project_role and assert_oauth_client_session are not callable by clients'
 );
 select ok(
   has_function_privilege('authenticated', 'public.link_project_doc(uuid, uuid, text, text)', 'execute')

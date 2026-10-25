@@ -1030,14 +1030,25 @@ export async function setProjectPublicProofs(
 /**
  * Disconnects an app the user authorized through qdit's OAuth server.
  *
- * Supabase Auth marks the consent revoked, ends that client's sessions for
- * this user and invalidates its refresh tokens, so the app's next call gets
- * 401 and its refresh fails — which is how doqtri learns to show "reconnect"
- * (integration contract, section 5). The access token it already holds stays
- * valid until it expires; Auth cannot recall a signed JWT.
+ * Three steps, in this order:
  *
- * Only ever the caller's own grant: revokeGrant() acts for the session's user,
- * and the client id is parsed as a UUID before it goes into the request.
+ *   1. Record the revoke (`record_oauth_client_revocation`, D-59). From then
+ *      on /api/v1 refuses every token the app holds for this user, including
+ *      the access token Auth cannot recall, so the app's next call gets 401.
+ *      This comes first so that a disconnect reported as done has always cut
+ *      that token off; if it fails, nothing has changed and the user retries.
+ *   2. Revoke the grant in Supabase Auth: it marks the consent revoked, ends
+ *      that client's sessions for this user and invalidates its refresh
+ *      tokens, so the app's refresh after that 401 fails too — which is how
+ *      doqtri learns to show "reconnect" (integration contract, section 5).
+ *      If Auth refuses, the app's current tokens stay refused but its refresh
+ *      still works, so it carries on with a fresh token; the user is told the
+ *      disconnect failed and can try again.
+ *   3. Mark the plan docs this user's connection kept linked as lost.
+ *
+ * Only ever the caller's own grant: both RPCs and revokeGrant() act for the
+ * session's user, and the client id is parsed as a UUID before it goes
+ * anywhere.
  */
 export async function revokeAuthorizedApp(clientId: string): Promise<ActionState> {
   const user = await getUser();
@@ -1047,6 +1058,13 @@ export async function revokeAuthorizedApp(clientId: string): Promise<ActionState
   if (!id) return { error: "That is not a connected app." };
 
   const supabase = await createClient();
+
+  const recorded = await supabase.rpc("record_oauth_client_revocation", { p_client_id: id });
+  if (recorded.error) {
+    console.error("record_oauth_client_revocation failed", recorded.error);
+    return { error: "Could not disconnect that app. Try again." };
+  }
+
   const { error } = await supabase.auth.oauth.revokeGrant({ clientId: id });
 
   if (error) {
@@ -1059,7 +1077,8 @@ export async function revokeAuthorizedApp(clientId: string): Promise<ActionState
   // (20261025120600_doc_link_connections.sql). Only after Auth accepted the
   // revoke: marking first would show a live connection as lost if the revoke
   // then failed. A failure here leaves the card optimistic until the next
-  // write, which is worth a log line, not a failed disconnect.
+  // write, which is worth a log line, not a failed disconnect: the revoke
+  // itself is already on record from step 1.
   const marked = await supabase.rpc("mark_doc_link_connections_revoked", { p_client_id: id });
   if (marked.error) console.error("mark_doc_link_connections_revoked failed", marked.error);
 

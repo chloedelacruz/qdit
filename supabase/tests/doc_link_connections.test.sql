@@ -11,6 +11,11 @@
 -- viewers, only the card's columns, never apps) and that nobody writes them
 -- directly.
 --
+-- And 20261025130000_oauth_revocations.sql: only doqtri's client, as pinned
+-- in integration_settings, records anything (D-61); a revoke by a user with no
+-- rows is still remembered, so their pre-revoke token's writes record revoked
+-- rows (D-59); and doc links are written only through an app (D-60).
+--
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
 -- simulated as in integration_links.test.sql: the JWT's role and claims.
@@ -20,7 +25,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(38);
+select plan(48);
 
 
 -- ----------------------------------------------------------------------------
@@ -49,6 +54,14 @@ values
   ('b2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000002', 'admin'),
   ('b2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000003', 'member'),
   ('b2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000004', 'viewer');
+
+-- A milestone for the first-party milestone link in section 2.
+insert into public.milestones (id, project_id, title, status, order_index)
+values ('c2000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000001', 'Hand-linked', 'proposed', 0);
+
+-- doqtri's OAuth client in this environment (D-61): the client the
+-- as_oauth_client() helper below uses by default.
+update public.integration_settings set doqtri_oauth_client_id = '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d';
 
 
 -- ----------------------------------------------------------------------------
@@ -165,20 +178,36 @@ select lives_ok(
   'oauth admin links D1'
 );
 
--- D2: linked by the owner from their own qdit session, not through doqtri.
+-- D2: the owner's own qdit session cannot link a doc (D-60), so an operator
+-- writes it, and the owner links a milestone to one of its headings from
+-- their session.
 select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
-select lives_ok(
+select throws_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan',
        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002') $$,
-  'session owner links D2'
+  '42501', null,
+  'session owner cannot link D2 through link_project_doc (D-60)'
+);
+
+select pg_temp.as_postgres();
+insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
+values ('b2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan',
+        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001');
+
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
+select lives_ok(
+  $$ insert into public.milestone_external_links (milestone_id, project_id, doc_id, node_id, node_label, created_by)
+     values ('c2000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000001',
+             'd2000000-0000-4000-8000-000000000002', 'h0', 'Hand-linked', 'a2000000-0000-4000-8000-000000000001') $$,
+  'session owner links a milestone to a heading of D2'
 );
 
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:live'],
   'an app''s doc link records the linker''s connection');
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],
-  'a first-party doc link records no connection');
+  'first-party link writes record no connection');
 
 select is(
   (select c.client_id::text from public.doc_link_connections c
@@ -226,6 +255,33 @@ select lives_ok(
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],
   '... and records nothing');
+
+-- D-61: another OAuth client, a well-formed id that is not doqtri's.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', '22222222-2222-4222-8222-222222222222');
+select lives_ok(
+  $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+       'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan, by another app',
+       'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002') $$,
+  'a write by a second OAuth client succeeds'
+);
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],
+  '... but does not count as a doqtri connection (D-61)');
+
+-- D-61: with doqtri's client id unset, not even doqtri's writes count (and a
+-- WARNING says so, which pgTAP cannot see).
+update public.integration_settings set doqtri_oauth_client_id = null;
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
+select lives_ok(
+  $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+       'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan',
+       'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002') $$,
+  'a write by doqtri''s client while the setting is unset succeeds'
+);
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],
+  '... and records nothing while doqtri_oauth_client_id is unset');
+update public.integration_settings set doqtri_oauth_client_id = '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d';
 
 
 -- ----------------------------------------------------------------------------
@@ -345,6 +401,49 @@ select lives_ok(
 );
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:live'],
   'a deleted account''s connections are gone');
+
+
+-- ----------------------------------------------------------------------------
+-- 4b. A revoke by a user with no rows (D-59)
+--
+-- The owner has written nothing through doqtri, so revoking marks no row. The
+-- revoke is still on record (oauth_client_revocations), and that is what a
+-- pre-revoke token's first write is compared with.
+-- ----------------------------------------------------------------------------
+
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
+select is(public.mark_doc_link_connections_revoked('9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d'), 0,
+  'a user with no connection rows revokes doqtri: nothing to mark');
+
+select pg_temp.as_postgres();
+select is(
+  (select r.revoked_at from public.oauth_client_revocations r
+    where r.user_id = 'a2000000-0000-4000-8000-000000000001'
+      and r.client_id = '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d'),
+  now(),
+  '... but the revoke is on record'
+);
+
+-- doqtri still holds the owner's token from before the revoke.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000001');
+select lives_ok(
+  $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+       'd2000000-0000-4000-8000-000000000005', 'Owner plan',
+       'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000005') $$,
+  'a pre-revoke token of a user with no rows still writes'
+);
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:revoked'],
+  '... and the write is recorded as revoked, not live');
+
+-- The owner connects doqtri again: the new grant's token is issued later.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000001', p_iat_offset => 60);
+select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+  'd2000000-0000-4000-8000-000000000005', 'Owner plan',
+  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000005');
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:live'],
+  'a token from the re-consent makes it live');
 
 
 -- ----------------------------------------------------------------------------
