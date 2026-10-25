@@ -4,10 +4,11 @@ import { fakeDatabase } from "@/test/fake-supabase";
 
 /**
  * `getPublicProof` passes the doqtri reference of a linked milestone through
- * (WP-3.2), but its `docUrl` only when the URL is on doqtri's origin (D-45,
- * D-72): the function sends `doc_url` as stored, and the table holds it only
- * to https. An unlinked milestone's answer is returned as the function sent
- * it, with no `docSource` added.
+ * (WP-3.2), hand-listed, with the doqtri link built from `DOQTRI_ORIGIN` and
+ * the doc id (contract section 12), never a stored `doc_url`: the function no
+ * longer sends one, and one sent anyway (an older function) is dropped. An
+ * unlinked milestone's answer is returned as the function sent it, with no
+ * `docSource` added.
  */
 const createClient = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
@@ -37,9 +38,10 @@ const SOURCE = {
   nodeId: "h4",
   nodeLabel: "Escrow contract",
   docVersion: 7,
-  docUrl: "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
   projectId: null,
 };
+
+const LINK = "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f";
 
 function answer(data: unknown) {
   const db = fakeDatabase({ rpc: { public_milestone_proof: [{ data, error: null }] } });
@@ -64,43 +66,59 @@ describe("getPublicProof", () => {
     expect(db.requests[0].args).toEqual({ p_slug: "soroban-payroll", p_milestone_id: BASE.milestoneId });
   });
 
-  it("keeps the doc reference and a doc URL on doqtri's origin", async () => {
+  it("keeps the doc reference and builds the doqtri link from DOQTRI_ORIGIN and the doc id", async () => {
+    process.env.DOQTRI_ORIGIN = "https://www.doqtri.xyz";
     answer({ ...BASE, docSource: SOURCE });
 
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toEqual({
       ...BASE,
-      docSource: SOURCE,
+      docSource: { ...SOURCE, docLink: LINK },
     });
   });
 
-  it.each([
-    ["another host", "https://www.doqtri.xyz.evil.example/d/1"],
-    ["user info", "https://www.doqtri.xyz@evil.example/d/1"],
-    ["the bare origin", "https://www.doqtri.xyz"],
-    ["a query straight after the origin", "https://www.doqtri.xyz?d=1"],
-    ["a fragment straight after the origin", "https://www.doqtri.xyz#d"],
-  ])("drops a doc URL on %s, keeping the rest", async (_, docUrl) => {
-    answer({ ...BASE, docSource: { ...SOURCE, docUrl } });
+  it("never passes on a stored doc_url, even one naming another doqtri page", async () => {
+    process.env.DOQTRI_ORIGIN = "https://www.doqtri.xyz";
+    answer({ ...BASE, docSource: { ...SOURCE, docUrl: "https://www.doqtri.xyz/d/another-doc?x=1", docTitle: "Secret" } });
+
+    const proof = await getPublicProof("soroban-payroll", BASE.milestoneId);
+
+    expect(proof?.docSource).toEqual({ ...SOURCE, docLink: LINK });
+    expect(JSON.stringify(proof)).not.toContain("another-doc");
+    expect(JSON.stringify(proof)).not.toContain("Secret");
+  });
+
+  it("encodes the doc id into the path", async () => {
+    process.env.DOQTRI_ORIGIN = "https://www.doqtri.xyz";
+    answer({ ...BASE, docSource: { ...SOURCE, docId: "a/../b?c" } });
+
+    await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toMatchObject({
+      docSource: { docLink: "https://www.doqtri.xyz/d/a%2F..%2Fb%3Fc" },
+    });
+  });
+
+  it("has no doqtri link with DOQTRI_ORIGIN unset", async () => {
+    answer({ ...BASE, docSource: SOURCE });
 
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toEqual({
       ...BASE,
-      docSource: { ...SOURCE, docUrl: null },
+      docSource: { ...SOURCE, docLink: null },
     });
   });
 
-  it("follows DOQTRI_ORIGIN, and drops the URL when it is misconfigured", async () => {
+  it("follows DOQTRI_ORIGIN, and has no link when it is misconfigured", async () => {
     process.env.DOQTRI_ORIGIN = "https://preview.doqtri.example";
-    answer({ ...BASE, docSource: { ...SOURCE, docUrl: "https://preview.doqtri.example/d/1" } });
+    answer({ ...BASE, docSource: SOURCE });
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toMatchObject({
-      docSource: { docUrl: "https://preview.doqtri.example/d/1" },
+      docSource: { docLink: `https://preview.doqtri.example/d/${SOURCE.docId}` },
     });
 
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     process.env.DOQTRI_ORIGIN = "https://preview.doqtri.example/path";
     answer({ ...BASE, docSource: SOURCE });
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toMatchObject({
-      docSource: { docId: SOURCE.docId, docUrl: null },
+      docSource: { docId: SOURCE.docId, docLink: null },
     });
+    expect(error).toHaveBeenCalled();
   });
 
   it("is null when the function answers null", async () => {

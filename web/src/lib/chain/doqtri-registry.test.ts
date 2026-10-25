@@ -12,14 +12,18 @@ import {
   decodeNode,
   docVerdict,
   milestoneToRead,
+  namesThisMilestone,
   nodeAttestation,
   parseQditArtifactRef,
+  plannedVerdict,
   readMilestone,
   readRegistry,
   registryConfig,
   verifiedOnChain,
+  type DocSourceCheck,
   type DocSourceContext,
   type MilestoneRead,
+  type NodeAttestation,
   type RegistryNode,
   type RegistryRead,
 } from "@/lib/chain/doqtri-registry";
@@ -461,6 +465,84 @@ describe("nodeAttestation (contract section 12, fact 4)", () => {
     expect(milestoneToRead(node(), { ...CONTEXT, project: null })).toBeNull();
     expect(milestoneToRead(node({ tool: "rollup" }), CONTEXT)).toBeNull();
     expect(milestoneToRead(null, CONTEXT)).toBeNull();
+  });
+});
+
+describe("namesThisMilestone and plannedVerdict (contract section 12, both checks)", () => {
+  const CHECK: DocSourceCheck = {
+    state: "verified",
+    network: "testnet",
+    registryId: REGISTRY,
+    chainVersion: 3,
+    node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+  };
+  const inconsistent = (reason: "no-chain" | "network" | "contract" | "not-found" | "older"): NodeAttestation => ({
+    state: "inconsistent",
+    status: "Verified",
+    signedVersion: 2,
+    reason,
+    chainVersion: null,
+  });
+
+  it("node evidence: a record naming this project and milestone, and only that", () => {
+    const evidence: NodeAttestation[] = [
+      CHECK.node!,
+      { state: "resubmitted", status: "Built", signedVersion: 2, chainVersion: 3, milestoneStatus: "Submitted" },
+      { state: "unchecked", status: "Built", signedVersion: 2 },
+      inconsistent("network"),
+      inconsistent("contract"),
+      inconsistent("not-found"),
+      inconsistent("older"),
+    ];
+    for (const node of evidence) expect(namesThisMilestone(node)).toBe(true);
+
+    const none: (NodeAttestation | null)[] = [
+      null,
+      { state: "none" },
+      { state: "other", status: "Built", tool: "rollup" },
+      { state: "elsewhere", status: "Verified" },
+      // The project id was never compared.
+      inconsistent("no-chain"),
+    ];
+    for (const node of none) expect(namesThisMilestone(node)).toBe(false);
+  });
+
+  it("verified only when the node evidence holds, lines up, and the doc is anchored", () => {
+    expect(plannedVerdict(CHECK)).toBe("verified");
+    expect(
+      plannedVerdict({
+        ...CHECK,
+        node: { state: "resubmitted", status: "Built", signedVersion: 2, chainVersion: 3, milestoneStatus: "Submitted" },
+      }),
+    ).toBe("verified");
+    // Fact 4 is its own line: a node not yet Verified is still planned there.
+    expect(plannedVerdict({ ...CHECK, node: { state: "current", status: "Planned", signedVersion: 2, milestoneStatus: "Submitted" } })).toBe(
+      "verified",
+    );
+  });
+
+  it("the doc anchor alone is never verified", () => {
+    expect(plannedVerdict({ ...CHECK, node: { state: "none" } })).toBe("unsigned");
+    expect(plannedVerdict({ ...CHECK, node: { state: "other", status: "Built", tool: "rollup" } })).toBe("unsigned");
+    expect(plannedVerdict({ ...CHECK, node: { state: "elsewhere", status: "Verified" } })).toBe("unsigned");
+    expect(plannedVerdict({ ...CHECK, node: inconsistent("no-chain") })).toBe("no-chain");
+    expect(plannedVerdict({ ...CHECK, node: inconsistent("contract") })).toBe("inconsistent");
+    expect(plannedVerdict({ ...CHECK, node: { state: "unchecked", status: "Verified", signedVersion: 2 } })).toBe("unchecked");
+  });
+
+  it("node evidence with a failing doc anchor is not verified", () => {
+    for (const state of ["not-anchored", "not-found", "mismatch"] as const) {
+      expect(plannedVerdict({ ...CHECK, state })).toBe("doc");
+    }
+    // An unread milestone record does not hide a failing doc anchor.
+    expect(plannedVerdict({ ...CHECK, state: "mismatch", node: { state: "unchecked", status: "Built", signedVersion: 2 } })).toBe(
+      "doc",
+    );
+  });
+
+  it("a registry that was not read is could-not-check", () => {
+    expect(plannedVerdict({ ...CHECK, state: "unreachable", node: null })).toBe("unreachable");
+    expect(plannedVerdict({ ...CHECK, state: "unconfigured", node: null })).toBe("unconfigured");
   });
 });
 
