@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin, isDoqtriDocUrl } from "./doqtri-origin";
+import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin, isDoqtriDocUrl, publicDocLink } from "./doqtri-origin";
 
 describe("doqtriOrigin", () => {
   it("defaults to https://www.doqtri.xyz when unset or empty", () => {
@@ -71,5 +71,25 @@ describe("isDoqtriDocUrl", () => {
   it("follows the origin it is given", () => {
     expect(isDoqtriDocUrl("https://staging.doqtri.xyz/d/1", "https://staging.doqtri.xyz")).toBe(true);
     expect(isDoqtriDocUrl("https://www.doqtri.xyz/d/1", "https://staging.doqtri.xyz")).toBe(false);
+  });
+});
+
+describe("publicDocLink", () => {
+  it("is DOQTRI_ORIGIN + /d/ + the encoded doc id", () => {
+    expect(publicDocLink("c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f", "https://www.doqtri.xyz/")).toBe(
+      "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
+    );
+    expect(publicDocLink("a/b?c#d", "https://preview.doqtri.example")).toBe(
+      "https://preview.doqtri.example/d/a%2Fb%3Fc%23d",
+    );
+  });
+
+  it("is null with the origin unset or empty, not the default", () => {
+    expect(publicDocLink("d1", undefined)).toBeNull();
+    expect(publicDocLink("d1", "  ")).toBeNull();
+  });
+
+  it("throws on a misconfigured origin, as doqtriOrigin does", () => {
+    expect(() => publicDocLink("d1", "https://www.doqtri.xyz/path")).toThrow(/DOQTRI_ORIGIN/);
   });
 });
