@@ -123,7 +123,9 @@ describe("public milestone page, linked to a doqtri heading", () => {
     network: "testnet",
     registryId: "CCCIDUCFQMTMAGESMPTB3MFW4TURS62ORSZNICFOE6MNQZO3MI7F6QRJ",
     chainVersion: 3,
+    docUpdatedAt: 1792843200,
     node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+    nodeUpdatedAt: 1792843200,
   };
 
   it("checks the heading's record against the project's own registration", async () => {

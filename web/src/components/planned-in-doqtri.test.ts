@@ -29,7 +29,9 @@ const VERIFIED: DocSourceCheck = {
   network: "testnet",
   registryId: REGISTRY,
   chainVersion: 3,
+  docUpdatedAt: 1792843200,
   node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+  nodeUpdatedAt: 1792843200,
 };
 
 const block = (check: DocSourceCheck, source: PublicDocSource = SOURCE) =>
@@ -244,7 +246,15 @@ describe("PlannedInDoqtri, the registry was not read", () => {
   });
 
   it("unconfigured: could not check, and no registry link to a contract it does not know", () => {
-    const html = block({ state: "unconfigured", network: null, registryId: null, chainVersion: null, node: null });
+    const html = block({
+      state: "unconfigured",
+      network: null,
+      registryId: null,
+      chainVersion: null,
+      docUpdatedAt: null,
+      node: null,
+      nodeUpdatedAt: null,
+    });
     const text = words(html);
 
     expect(verdictOf(html).text).toBe("Could not check");
