@@ -26,7 +26,9 @@ vi.mock("@/lib/queries", () => ({
   getPublicProof: async () => stub.proof,
 }));
 
-vi.mock("@/lib/chain/doqtri-registry", () => ({
+// Only the chain read is stubbed; the pure helpers the block uses stay real.
+vi.mock("@/lib/chain/doqtri-registry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chain/doqtri-registry")>()),
   checkDocSource: stub.check,
 }));
 
@@ -112,6 +114,7 @@ describe("public milestone page, linked to a doqtri heading", () => {
       nodeLabel: "Escrow contract",
       docVersion: 3,
       docUrl: "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
+      projectId: "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34",
     },
   };
 
@@ -120,19 +123,18 @@ describe("public milestone page, linked to a doqtri heading", () => {
     network: "testnet",
     registryId: "CCCIDUCFQMTMAGESMPTB3MFW4TURS62ORSZNICFOE6MNQZO3MI7F6QRJ",
     chainVersion: 3,
-    node: { state: "attests", status: "Verified", milestoneVersion: 2 },
+    node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
   };
 
-  it("checks the reference on the page's network, against the project's contract", async () => {
+  it("checks the heading's record against the project's own registration", async () => {
     stub.check.mockResolvedValue(VERIFIED);
 
     await render(LINKED);
 
     expect(stub.check).toHaveBeenCalledTimes(1);
     expect(stub.check).toHaveBeenCalledWith(LINKED.docSource, {
-      network: "testnet",
       milestoneId: LINKED.milestoneId,
-      contractId: LINKED.contractId,
+      project: { id: LINKED.docSource?.projectId, network: "testnet", contractId: LINKED.contractId },
     });
   });
 
@@ -143,19 +145,19 @@ describe("public milestone page, linked to a doqtri heading", () => {
     const block = /<section data-slot="planned-in-doqtri"[\s\S]*?<\/section>/.exec(html);
 
     expect(block?.[0]).toContain("Planned in doqtri");
-    expect(block?.[0]).toContain("Matches DoqtriRegistry at v3");
+    expect(block?.[0]).toContain("Verified on DoqtriRegistry at v3");
     expect(html.replace(block?.[0] ?? "", "")).toBe(readFileSync(GOLDEN, "utf8"));
   });
 
-  it("checks a project that never registered on the network the page names", async () => {
+  it("checks a project that never registered with no registration to hold the node to", async () => {
     stub.check.mockResolvedValue({ ...VERIFIED, state: "unreachable", chainVersion: null, node: null });
+    const unregistered = { ...LINKED.docSource!, projectId: null };
 
-    const html = await render({ ...LINKED, network: null, contractId: null });
+    const html = await render({ ...LINKED, network: null, contractId: null, docSource: unregistered });
 
-    expect(stub.check).toHaveBeenCalledWith(LINKED.docSource, {
-      network: "testnet",
+    expect(stub.check).toHaveBeenCalledWith(unregistered, {
       milestoneId: LINKED.milestoneId,
-      contractId: null,
+      project: null,
     });
     expect(html).toContain('data-state="unreachable"');
     expect(html).toContain("Could not check");

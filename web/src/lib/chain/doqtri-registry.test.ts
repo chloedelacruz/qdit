@@ -1,4 +1,4 @@
-import { SorobanDataBuilder, xdr } from "@stellar/stellar-sdk";
+import { Address, SorobanDataBuilder, xdr } from "@stellar/stellar-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,11 +8,19 @@ import {
   clearRegistryCache,
   compareDocSource,
   decodeDocument,
+  decodeMilestone,
   decodeNode,
+  docVerdict,
+  milestoneToRead,
+  nodeAttestation,
   parseQditArtifactRef,
+  readMilestone,
   readRegistry,
   registryConfig,
+  verifiedOnChain,
   type DocSourceContext,
+  type MilestoneRead,
+  type RegistryNode,
   type RegistryRead,
 } from "@/lib/chain/doqtri-registry";
 
@@ -28,10 +36,19 @@ import {
  * then get_document and get_node, with each return value encoded as ScVal
  * XDR. The same host showed the two "no such record" reads failing with
  * Error(Contract, #2) (get_document) and Error(Contract, #3) (get_node).
+ *
+ * The MilestoneRecord XDR is real too: qdit's milestone_proof (this branch's
+ * contracts/milestone_proof, as an rlib) in a soroban-sdk 27 test host, one
+ * fresh contract per life of milestone b81e4f07-… of project 3f6c2a1e-…
+ * (submit; submit, reject, submit; … approve; … reject; … submit), each
+ * get_milestone_status return value encoded as ScVal XDR. Its "no record"
+ * is Error(Contract, #3), MilestoneNotFound (the G2 milestone host).
  */
 
 const DOC_ID = "c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f";
+const PROJECT = "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34";
 const MILESTONE = "b81e4f07-6a2c-4d93-8e5f-0c7a9b3d2e61";
+const OTHER_UUID = "00000000-0000-4000-8000-000000000000";
 const PROOF_CONTRACT = "CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG";
 const REGISTRY = "CCCIDUCFQMTMAGESMPTB3MFW4TURS62ORSZNICFOE6MNQZO3MI7F6QRJ";
 
@@ -50,15 +67,25 @@ const XDR = {
   nodeIdArg: "AAAADgAAAAJoNAAA",
 };
 
+/** milestone_proof `MilestoneRecord`s for MILESTONE of PROJECT, by status and version. */
+const RECORD = {
+  submitted_v1: "AAAAEQAAAAEAAAAHAAAADwAAAAxtaWxlc3RvbmVfaWQAAAAOAAAAJGI4MWU0ZjA3LTZhMmMtNGQ5My04ZTVmLTBjN2E5YjNkMmU2MQAAAA8AAAAKcHJvamVjdF9pZAAAAAAADgAAACQzZjZjMmExZS04YjRkLTRjN2UtOWExMC0yZDViN2U5ZjFjMzQAAAAPAAAACnByb29mX2hhc2gAAAAAAA0AAAAgAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAPAAAABnN0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAlTdWJtaXR0ZWQAAAAAAAAPAAAACXN1Ym1pdHRlcgAAAAAAABIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAPAAAACXRpbWVzdGFtcAAAAAAAAAUAAAAAAAAAAAAAAA8AAAAHdmVyc2lvbgAAAAADAAAAAQ==",
+  submitted_v2: "AAAAEQAAAAEAAAAHAAAADwAAAAxtaWxlc3RvbmVfaWQAAAAOAAAAJGI4MWU0ZjA3LTZhMmMtNGQ5My04ZTVmLTBjN2E5YjNkMmU2MQAAAA8AAAAKcHJvamVjdF9pZAAAAAAADgAAACQzZjZjMmExZS04YjRkLTRjN2UtOWExMC0yZDViN2U5ZjFjMzQAAAAPAAAACnByb29mX2hhc2gAAAAAAA0AAAAgAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAPAAAABnN0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAlTdWJtaXR0ZWQAAAAAAAAPAAAACXN1Ym1pdHRlcgAAAAAAABIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAPAAAACXRpbWVzdGFtcAAAAAAAAAUAAAAAAAAAAAAAAA8AAAAHdmVyc2lvbgAAAAADAAAAAg==",
+  approved_v2: "AAAAEQAAAAEAAAAHAAAADwAAAAxtaWxlc3RvbmVfaWQAAAAOAAAAJGI4MWU0ZjA3LTZhMmMtNGQ5My04ZTVmLTBjN2E5YjNkMmU2MQAAAA8AAAAKcHJvamVjdF9pZAAAAAAADgAAACQzZjZjMmExZS04YjRkLTRjN2UtOWExMC0yZDViN2U5ZjFjMzQAAAAPAAAACnByb29mX2hhc2gAAAAAAA0AAAAgAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAPAAAABnN0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAhBcHByb3ZlZAAAAA8AAAAJc3VibWl0dGVyAAAAAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAA8AAAAJdGltZXN0YW1wAAAAAAAABQAAAAAAAAAAAAAADwAAAAd2ZXJzaW9uAAAAAAMAAAAC",
+  rejected_v2: "AAAAEQAAAAEAAAAHAAAADwAAAAxtaWxlc3RvbmVfaWQAAAAOAAAAJGI4MWU0ZjA3LTZhMmMtNGQ5My04ZTVmLTBjN2E5YjNkMmU2MQAAAA8AAAAKcHJvamVjdF9pZAAAAAAADgAAACQzZjZjMmExZS04YjRkLTRjN2UtOWExMC0yZDViN2U5ZjFjMzQAAAAPAAAACnByb29mX2hhc2gAAAAAAA0AAAAgAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAPAAAABnN0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAhSZWplY3RlZAAAAA8AAAAJc3VibWl0dGVyAAAAAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAA8AAAAJdGltZXN0YW1wAAAAAAAABQAAAAAAAAAAAAAADwAAAAd2ZXJzaW9uAAAAAAMAAAAC",
+  submitted_v3: "AAAAEQAAAAEAAAAHAAAADwAAAAxtaWxlc3RvbmVfaWQAAAAOAAAAJGI4MWU0ZjA3LTZhMmMtNGQ5My04ZTVmLTBjN2E5YjNkMmU2MQAAAA8AAAAKcHJvamVjdF9pZAAAAAAADgAAACQzZjZjMmExZS04YjRkLTRjN2UtOWExMC0yZDViN2U5ZjFjMzQAAAAPAAAACnByb29mX2hhc2gAAAAAAA0AAAAgBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAAAPAAAABnN0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAlTdWJtaXR0ZWQAAAAAAAAPAAAACXN1Ym1pdHRlcgAAAAAAABIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAPAAAACXRpbWVzdGFtcAAAAAAAAAUAAAAAAAAAAAAAAA8AAAAHdmVyc2lvbgAAAAADAAAAAw=="
+};
+
+
 /** What Soroban RPC sends for a failed simulation, with the host's error first. */
-const notFound = (code: 2 | 3) =>
+const notFound = (code: 2 | 3 | 6) =>
   `HostError: Error(Contract, #${code})\n\nEvent log (newest first):\n   0: [Diagnostic Event] topics:[error, Error(Contract, #${code})]`;
 
 type Reply = { retval: string } | { error: string } | { status: number } | "throw" | "hang";
 
 /** One JSON-RPC simulateTransaction answer per contract method. */
-function rpcReplies(replies: { get_document: Reply; get_node: Reply }) {
-  const calls: { url: string; method: string; args: string[] }[] = [];
+function rpcReplies(replies: { get_document: Reply; get_node: Reply; get_milestone_status?: Reply }) {
+  const calls: { url: string; method: string; contract: string; args: string[] }[] = [];
 
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -69,9 +96,15 @@ function rpcReplies(replies: { get_document: Reply; get_node: Reply }) {
     const op = envelope.v1().tx().operations()[0].body().invokeHostFunctionOp();
     const call = op.hostFunction().invokeContract();
     const method = call.functionName().toString();
-    calls.push({ url, method, args: call.args().map((a) => a.toXDR("base64")) });
+    calls.push({
+      url,
+      method,
+      contract: Address.fromScAddress(call.contractAddress()).toString(),
+      args: call.args().map((a) => a.toXDR("base64")),
+    });
 
     const reply = replies[method as keyof typeof replies];
+    if (!reply) throw new Error(`unexpected ${method}`);
     if (reply === "throw") throw new TypeError("fetch failed");
     if (reply === "hang") return new Promise<Response>(() => {});
     if ("status" in reply) return new Response("bad gateway", { status: reply.status });
@@ -98,8 +131,16 @@ function rpcReplies(replies: { get_document: Reply; get_node: Reply }) {
 }
 
 const CONFIG = { network: "testnet" as const, contractId: REGISTRY, rpcUrl: "https://rpc.example.test" };
-const CONTEXT: DocSourceContext = { network: "testnet", milestoneId: MILESTONE, contractId: PROOF_CONTRACT };
-const ENV = { DOQTRI_REGISTRY_CONTRACT_ID_TESTNET: REGISTRY, DOQTRI_REGISTRY_RPC_URL_TESTNET: "https://rpc.example.test" };
+const CONTEXT: DocSourceContext = {
+  milestoneId: MILESTONE,
+  project: { id: PROJECT, network: "testnet", contractId: PROOF_CONTRACT },
+};
+const ENV = {
+  DOQTRI_REGISTRY_CONTRACT_ID: REGISTRY,
+  DOQTRI_REGISTRY_NETWORK: "testnet",
+  DOQTRI_REGISTRY_RPC_URL: "https://rpc.example.test",
+};
+const REF_V2 = `qdit:testnet:${PROOF_CONTRACT}:${PROJECT}/${MILESTONE}@v2`;
 
 beforeEach(() => {
   clearRegistryCache();
@@ -193,28 +234,77 @@ describe("readRegistry", () => {
   });
 });
 
+describe("decoding milestone_proof's XDR", () => {
+  it("decodes a MilestoneRecord's status and version", () => {
+    const decode = (b64: string) => decodeMilestone(xdr.ScVal.fromXDR(b64, "base64"));
+    expect(decode(RECORD.submitted_v1)).toEqual({ status: "Submitted", version: 1 });
+    expect(decode(RECORD.approved_v2)).toEqual({ status: "Approved", version: 2 });
+    expect(decode(RECORD.rejected_v2)).toEqual({ status: "Rejected", version: 2 });
+    expect(decode(RECORD.submitted_v3)).toEqual({ status: "Submitted", version: 3 });
+  });
+
+  it("refuses a registry record in its place", () => {
+    expect(() => decodeMilestone(xdr.ScVal.fromXDR(XDR.nodeQdit, "base64"))).toThrow(/get_milestone_status/);
+    expect(() => decodeMilestone(xdr.ScVal.fromXDR(XDR.document, "base64"))).toThrow(/get_milestone_status/);
+  });
+});
+
+describe("readMilestone", () => {
+  const TARGET = { network: "testnet" as const, contractId: PROOF_CONTRACT, rpcUrl: "https://rpc.example.test" };
+
+  it("simulates get_milestone_status(project_id, milestone_id) on the project's contract", async () => {
+    const { calls } = rpcReplies({ get_document: "throw", get_node: "throw", get_milestone_status: { retval: RECORD.approved_v2 } });
+
+    await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({
+      ok: true,
+      record: { status: "Approved", version: 2 },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].contract).toBe(PROOF_CONTRACT);
+    expect(calls[0].args).toEqual([
+      xdr.ScVal.scvString(PROJECT).toXDR("base64"),
+      xdr.ScVal.scvString(MILESTONE).toXDR("base64"),
+    ]);
+  });
+
+  it("reads MilestoneNotFound (#3) as no record, and any other failure as a failure", async () => {
+    rpcReplies({ get_document: "throw", get_node: "throw", get_milestone_status: { error: notFound(3) } });
+    await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({ ok: true, record: null });
+
+    rpcReplies({ get_document: "throw", get_node: "throw", get_milestone_status: { error: notFound(6) } });
+    await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({ ok: false, reason: "rpc" });
+
+    rpcReplies({ get_document: "throw", get_node: "throw", get_milestone_status: "throw" });
+    await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({ ok: false, reason: "rpc" });
+
+    rpcReplies({ get_document: "throw", get_node: "throw", get_milestone_status: { retval: XDR.nodeQdit } });
+    await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({ ok: false, reason: "decode" });
+  });
+});
+
 describe("registryConfig", () => {
-  it("reads the per-network contract id and RPC override", () => {
-    expect(registryConfig("testnet", ENV)).toEqual(CONFIG);
-    expect(registryConfig("testnet", { DOQTRI_REGISTRY_CONTRACT_ID_TESTNET: REGISTRY })).toEqual({
+  it("reads the pair's one registry, its network and the RPC override (contract section 1)", () => {
+    expect(registryConfig(ENV)).toEqual(CONFIG);
+    expect(registryConfig({ DOQTRI_REGISTRY_CONTRACT_ID: REGISTRY, DOQTRI_REGISTRY_NETWORK: "testnet" })).toEqual({
       ...CONFIG,
       rpcUrl: "https://soroban-testnet.stellar.org",
     });
-    expect(registryConfig("mainnet", { DOQTRI_REGISTRY_CONTRACT_ID_MAINNET: REGISTRY })).toEqual({
+    expect(registryConfig({ DOQTRI_REGISTRY_CONTRACT_ID: REGISTRY, DOQTRI_REGISTRY_NETWORK: "mainnet" })).toEqual({
       network: "mainnet",
       contractId: REGISTRY,
       rpcUrl: "https://mainnet.sorobanrpc.com",
     });
   });
 
-  it("is null when unset, and when a value is malformed", () => {
-    expect(registryConfig("testnet", {})).toBeNull();
-    // The testnet id does not configure mainnet.
-    expect(registryConfig("mainnet", ENV)).toBeNull();
-    expect(registryConfig("testnet", { DOQTRI_REGISTRY_CONTRACT_ID_TESTNET: "not-a-contract" })).toBeNull();
-    expect(
-      registryConfig("testnet", { ...ENV, DOQTRI_REGISTRY_RPC_URL_TESTNET: "http://rpc.example.test" }),
-    ).toBeNull();
+  it("is null when unset, and when a value is malformed or the network is missing", () => {
+    expect(registryConfig({})).toBeNull();
+    expect(registryConfig({ DOQTRI_REGISTRY_NETWORK: "testnet" })).toBeNull();
+    expect(registryConfig({ DOQTRI_REGISTRY_CONTRACT_ID: REGISTRY })).toBeNull();
+    expect(registryConfig({ ...ENV, DOQTRI_REGISTRY_NETWORK: "public" })).toBeNull();
+    expect(registryConfig({ ...ENV, DOQTRI_REGISTRY_CONTRACT_ID: "not-a-contract" })).toBeNull();
+    expect(registryConfig({ ...ENV, DOQTRI_REGISTRY_RPC_URL: "http://rpc.example.test" })).toBeNull();
+    // The per-network names this WP first used are not read.
+    expect(registryConfig({ DOQTRI_REGISTRY_CONTRACT_ID_TESTNET: REGISTRY })).toBeNull();
   });
 });
 
@@ -242,54 +332,155 @@ describe("parseQditArtifactRef", () => {
   });
 });
 
-describe("compareDocSource", () => {
-  const read = (version: number | null, node: Partial<{ tool: string; artifactRef: string }> | null = {}) =>
-    ({
-      ok: true,
-      document:
-        version === null
-          ? null
-          : { owner: "G", contentHash: "00", version, nodeCount: 1, updatedAt: 0 },
-      node:
-        node === null
-          ? null
-          : {
-              status: "Verified",
-              tool: "qdit",
-              artifactRef: `qdit:testnet:${PROOF_CONTRACT}:3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34/${MILESTONE}@v2`,
-              updatedAt: 0,
-              ...node,
-            },
-    }) as RegistryRead;
-  const check = (docVersion: number | null, r: RegistryRead, context = CONTEXT) =>
-    compareDocSource({ docId: DOC_ID, nodeId: "h4", docVersion }, r, context, REGISTRY);
+describe("docVerdict (contract section 12, fact 1)", () => {
+  const verdict = (docVersion: number | null, chain: number | null) =>
+    docVerdict({ docId: DOC_ID, nodeId: "h4", docVersion }, chain);
 
-  it("verified when the registry is at the stored version", () => {
-    expect(check(3, read(3))).toEqual({
+  it("verified when the document is on chain at or past the stored version", () => {
+    expect(verdict(3, 3)).toBe("verified");
+    expect(verdict(2, 3)).toBe("verified");
+  });
+
+  it("not-anchored for a link with no version, whatever the chain holds", () => {
+    expect(verdict(null, null)).toBe("not-anchored");
+    expect(verdict(null, 3)).toBe("not-anchored");
+  });
+
+  it("not-found without a document, mismatch when the chain is behind", () => {
+    expect(verdict(3, null)).toBe("not-found");
+    expect(verdict(4, 3)).toBe("mismatch");
+  });
+});
+
+describe("nodeAttestation (contract section 12, fact 4)", () => {
+  const node = (fields: Partial<RegistryNode> = {}): RegistryNode => ({
+    status: "Verified",
+    tool: "qdit",
+    artifactRef: REF_V2,
+    updatedAt: 0,
+    ...fields,
+  });
+  const record = (b64: keyof typeof RECORD): MilestoneRead => ({
+    ok: true,
+    record: decodeMilestone(xdr.ScVal.fromXDR(RECORD[b64], "base64")),
+  });
+
+  it("Verified at v2 with the milestone Approved at v2: fact 4", () => {
+    const attestation = nodeAttestation(node(), CONTEXT, record("approved_v2"));
+    expect(attestation).toEqual({ state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" });
+    expect(verifiedOnChain(attestation)).toBe(true);
+  });
+
+  it("Verified at v2 while the milestone is Rejected or only Submitted at v2: not verified", () => {
+    for (const r of ["rejected_v2", "submitted_v2"] as const) {
+      const attestation = nodeAttestation(node(), CONTEXT, record(r));
+      expect(attestation).toMatchObject({ state: "current", status: "Verified", signedVersion: 2 });
+      expect(verifiedOnChain(attestation)).toBe(false);
+    }
+  });
+
+  it("resubmitted: the record is past the version the node names", () => {
+    const attestation = nodeAttestation(node(), CONTEXT, record("submitted_v3"));
+    expect(attestation).toEqual({
+      state: "resubmitted",
+      status: "Verified",
+      signedVersion: 2,
+      chainVersion: 3,
+      milestoneStatus: "Submitted",
+    });
+    expect(verifiedOnChain(attestation)).toBe(false);
+  });
+
+  it("inconsistent: the record is older than the node's version, or missing", () => {
+    expect(nodeAttestation(node(), CONTEXT, record("submitted_v1"))).toEqual({
+      state: "inconsistent",
+      status: "Verified",
+      signedVersion: 2,
+      reason: "older",
+      chainVersion: 1,
+    });
+    expect(nodeAttestation(node(), CONTEXT, { ok: true, record: null })).toMatchObject({
+      state: "inconsistent",
+      reason: "not-found",
+    });
+  });
+
+  it("inconsistent: the reference names this project and milestone on another network or contract", () => {
+    const mainnet = REF_V2.replace("qdit:testnet:", "qdit:mainnet:");
+    expect(nodeAttestation(node({ artifactRef: mainnet }), CONTEXT, null)).toMatchObject({
+      state: "inconsistent",
+      reason: "network",
+    });
+    const otherContract = REF_V2.replace(PROOF_CONTRACT, REGISTRY);
+    expect(nodeAttestation(node({ artifactRef: otherContract }), CONTEXT, null)).toMatchObject({
+      state: "inconsistent",
+      reason: "contract",
+    });
+    // A project with no registration has no record that could back a signature.
+    expect(nodeAttestation(node(), { ...CONTEXT, project: null }, null)).toMatchObject({
+      state: "inconsistent",
+      reason: "no-chain",
+    });
+  });
+
+  it("unchecked when the milestone's record could not be read: never verified", () => {
+    const attestation = nodeAttestation(node(), CONTEXT, { ok: false, reason: "timeout" });
+    expect(attestation).toEqual({ state: "unchecked", status: "Verified", signedVersion: 2 });
+    expect(verifiedOnChain(attestation)).toBe(false);
+  });
+
+  it("elsewhere when the reference names another project or milestone, or does not parse", () => {
+    const otherProject = REF_V2.replace(`${PROJECT}/`, `${OTHER_UUID}/`);
+    expect(nodeAttestation(node({ artifactRef: otherProject }), CONTEXT, null)).toEqual({
+      state: "elsewhere",
+      status: "Verified",
+    });
+    const otherMilestone = REF_V2.replace(`/${MILESTONE}`, `/${OTHER_UUID}`);
+    expect(nodeAttestation(node({ artifactRef: otherMilestone }), CONTEXT, null)).toMatchObject({ state: "elsewhere" });
+    expect(nodeAttestation(node({ artifactRef: "garbage" }), CONTEXT, null)).toMatchObject({ state: "elsewhere" });
+  });
+
+  it("other for another tool, none for no record", () => {
+    expect(nodeAttestation(node({ tool: "rollup", artifactRef: "children:h3" }), CONTEXT, null)).toEqual({
+      state: "other",
+      status: "Verified",
+      tool: "rollup",
+    });
+    expect(nodeAttestation(null, CONTEXT, null)).toEqual({ state: "none" });
+  });
+
+  it("asks for a milestone read only for a reference that could be this project's record", () => {
+    expect(milestoneToRead(node(), CONTEXT)).toEqual({
+      network: "testnet",
+      contractId: PROOF_CONTRACT,
+      projectId: PROJECT,
+      milestoneId: MILESTONE,
+    });
+    expect(milestoneToRead(node({ artifactRef: REF_V2.replace(`${PROJECT}/`, `${OTHER_UUID}/`) }), CONTEXT)).toBeNull();
+    expect(milestoneToRead(node({ artifactRef: REF_V2.replace(PROOF_CONTRACT, REGISTRY) }), CONTEXT)).toBeNull();
+    expect(milestoneToRead(node(), { ...CONTEXT, project: null })).toBeNull();
+    expect(milestoneToRead(node({ tool: "rollup" }), CONTEXT)).toBeNull();
+    expect(milestoneToRead(null, CONTEXT)).toBeNull();
+  });
+});
+
+describe("compareDocSource", () => {
+  const stored = (docVersion: number | null) => ({ docId: DOC_ID, nodeId: "h4", docVersion });
+  const doc = (version: number) => ({ owner: "G", contentHash: "00", version, nodeCount: 1, updatedAt: 0 });
+
+  it("reports the registry it read, the chain version and the node", () => {
+    const read: RegistryRead = { ok: true, document: doc(3), node: null };
+    expect(compareDocSource(stored(3), read, CONTEXT, CONFIG)).toEqual({
       state: "verified",
       network: "testnet",
       registryId: REGISTRY,
       chainVersion: 3,
-      node: { state: "attests", status: "Verified", milestoneVersion: 2 },
+      node: { state: "none" },
     });
   });
 
-  it("newer when the registry is past it, or anchored since an unversioned link", () => {
-    expect(check(2, read(3))).toMatchObject({ state: "newer", chainVersion: 3 });
-    expect(check(null, read(3))).toMatchObject({ state: "newer", chainVersion: 3 });
-  });
-
-  it("mismatch when the registry is behind the stored version", () => {
-    expect(check(4, read(3))).toMatchObject({ state: "mismatch", chainVersion: 3 });
-  });
-
-  it("not-found for a stored version the registry has no document for; not-anchored when neither has one", () => {
-    expect(check(3, read(null))).toMatchObject({ state: "not-found", chainVersion: null });
-    expect(check(null, read(null, null))).toMatchObject({ state: "not-anchored", node: { state: "none" } });
-  });
-
   it("unreachable when the read failed, whatever was stored", () => {
-    expect(check(3, { ok: false, reason: "rpc" })).toEqual({
+    expect(compareDocSource(stored(3), { ok: false, reason: "rpc" }, CONTEXT, CONFIG)).toEqual({
       state: "unreachable",
       network: "testnet",
       registryId: REGISTRY,
@@ -297,32 +488,18 @@ describe("compareDocSource", () => {
       node: null,
     });
   });
-
-  it("names a heading record that is for another milestone, network or contract, or another tool", () => {
-    const other = `qdit:testnet:${PROOF_CONTRACT}:3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34/00000000-0000-4000-8000-000000000000@v2`;
-    expect(check(3, read(3, { artifactRef: other })).node).toEqual({ state: "elsewhere", status: "Verified" });
-    expect(check(3, read(3), { ...CONTEXT, network: "mainnet" }).node).toMatchObject({ state: "elsewhere" });
-    expect(check(3, read(3), { ...CONTEXT, contractId: REGISTRY }).node).toMatchObject({ state: "elsewhere" });
-    expect(check(3, read(3, { artifactRef: "garbage" })).node).toMatchObject({ state: "elsewhere" });
-    expect(check(3, read(3, { tool: "rollup", artifactRef: "children:h3" })).node).toEqual({
-      state: "other",
-      status: "Verified",
-      tool: "rollup",
-    });
-    // A project not registered on milestone_proof yet: the contract is not compared.
-    expect(check(3, read(3), { ...CONTEXT, contractId: null }).node).toMatchObject({ state: "attests" });
-  });
 });
 
 describe("checkDocSource", () => {
   const STORED = { docId: DOC_ID, nodeId: "h4", docVersion: 3 };
+  const ALL = { get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } };
 
-  it("is unconfigured, and reads nothing, without a registry for the network", async () => {
-    const { fetchMock } = rpcReplies({ get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } });
+  it("is unconfigured, and reads nothing, without a registry", async () => {
+    const { fetchMock } = rpcReplies(ALL);
 
     await expect(checkDocSource(STORED, CONTEXT, { env: {} })).resolves.toEqual({
       state: "unconfigured",
-      network: "testnet",
+      network: null,
       registryId: null,
       chainVersion: null,
       node: null,
@@ -330,34 +507,71 @@ describe("checkDocSource", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("checks against the chain end to end", async () => {
-    rpcReplies({ get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } });
+  it("checks the plan on the registry and the node against the project's milestone_proof", async () => {
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+
+    await expect(checkDocSource(STORED, CONTEXT, { env: ENV })).resolves.toEqual({
+      state: "verified",
+      network: "testnet",
+      registryId: REGISTRY,
+      chainVersion: 3,
+      node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+    });
+    expect(calls.map((c) => [c.method, c.contract])).toEqual(
+      expect.arrayContaining([
+        ["get_document", REGISTRY],
+        ["get_node", REGISTRY],
+        ["get_milestone_status", PROOF_CONTRACT],
+      ]),
+    );
+    // The milestone read goes to the project's network, not the override for the registry.
+    expect(calls.find((c) => c.method === "get_milestone_status")?.url).toBe("https://soroban-testnet.stellar.org/");
+  });
+
+  it("reads the registry on its own network, whatever the project's", async () => {
+    // A mainnet project planned in a doc doqtri anchors on testnet.
+    const mainnetProject: DocSourceContext = {
+      milestoneId: MILESTONE,
+      project: { id: PROJECT, network: "mainnet", contractId: PROOF_CONTRACT },
+    };
+    const { calls } = rpcReplies(ALL);
+
+    await expect(checkDocSource(STORED, mainnetProject, { env: ENV })).resolves.toMatchObject({
+      state: "verified",
+      network: "testnet",
+      // The node's testnet reference cannot be this mainnet project's record.
+      node: { state: "inconsistent", reason: "network" },
+    });
+    expect(calls.map((c) => c.method).sort()).toEqual(["get_document", "get_node"]);
+  });
+
+  it("never verifies a node whose milestone record could not be read", async () => {
+    rpcReplies({ ...ALL, get_milestone_status: "throw" });
 
     await expect(checkDocSource(STORED, CONTEXT, { env: ENV })).resolves.toMatchObject({
       state: "verified",
-      chainVersion: 3,
-      node: { state: "attests", status: "Verified", milestoneVersion: 2 },
+      node: { state: "unchecked", status: "Verified" },
     });
   });
 
   it("reuses an answer for 30 seconds, then reads again", async () => {
-    const { fetchMock } = rpcReplies({ get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } });
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
     let now = 1_000_000;
     const options = { env: ENV, now: () => now };
 
     await checkDocSource(STORED, CONTEXT, options);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     // Cached reads are compared afresh: another stored version, another state.
     now += CACHE_TTL_MS - 1;
-    await expect(checkDocSource({ ...STORED, docVersion: 2 }, CONTEXT, options)).resolves.toMatchObject({
-      state: "newer",
+    await expect(checkDocSource({ ...STORED, docVersion: 4 }, CONTEXT, options)).resolves.toMatchObject({
+      state: "mismatch",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     now += 1;
     await checkDocSource(STORED, CONTEXT, options);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   it("keeps a failure for 5 seconds only, and never as verified", async () => {
@@ -367,7 +581,7 @@ describe("checkDocSource", () => {
 
     await expect(checkDocSource(STORED, CONTEXT, options)).resolves.toMatchObject({ state: "unreachable" });
 
-    const { fetchMock } = rpcReplies({ get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } });
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
     now += FAILURE_TTL_MS - 1;
     await expect(checkDocSource(STORED, CONTEXT, options)).resolves.toMatchObject({ state: "unreachable" });
     expect(fetchMock).not.toHaveBeenCalled();

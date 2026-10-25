@@ -45,8 +45,9 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * PLANNED IN DOQTRI (WP-3.2)
  * ---------------------------------------------------------------------------
  * A milestone that came from a doqtri heading also gets a "Planned in doqtri"
- * block: the heading, the doc version qdit stored for the link, and whether
- * DoqtriRegistry agrees, read from the chain when the page loads. The
+ * block: the heading, the doc version qdit stored for the link, whether
+ * DoqtriRegistry agrees, and what the heading's own record says about this
+ * milestone, all read from the chain when the page loads. The
  * function sends the reference only for a linked milestone, and the registry
  * is read only then, so an unlinked milestone's page is exactly what it was.
  */
@@ -86,14 +87,17 @@ export default async function PublicProofPage({
   const submissions = proof.anchors.filter((anchor) => anchor.action === "submit");
   const currentHash = submissions.at(-1)?.proofHash ?? null;
 
-  // Checked on the network the page names, against the project's own
-  // milestone_proof contract for the heading's record (contract section 10).
+  // The plan version is checked on doqtri's registry (its own network), the
+  // heading's record against this project's milestone_proof registration
+  // (contract section 12). The project id comes only with a registration.
   const docSource = proof.docSource ?? null;
   const docCheck = docSource
     ? await checkDocSource(docSource, {
-        network,
         milestoneId: proof.milestoneId,
-        contractId: proof.contractId,
+        project:
+          proof.network && proof.contractId && docSource.projectId
+            ? { id: docSource.projectId, network: proof.network, contractId: proof.contractId }
+            : null,
       })
     : null;
 
