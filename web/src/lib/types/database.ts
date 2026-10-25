@@ -808,6 +808,8 @@ export type Database = {
           id: true
           /** doqtri's OAuth client id here (D-61); null until set. */
           doqtri_oauth_client_id: string | null
+          /** doqtri's origin here (D-77): https, lower case, no path; null until set. */
+          doqtri_origin: string | null
           updated_at: string
         }
         Insert: Record<string, never>
@@ -948,6 +950,15 @@ export type Database = {
       public_milestone_proof: {
         Args: { p_slug: string; p_milestone_id: string }
         Returns: Json
+      }
+      /**
+       * The node id of a published, linked milestone's doqtri heading, or
+       * null (D-77). service_role only: the public page's server reads it to
+       * know which DoqtriRegistry record to check (`lib/public-node.ts`).
+       */
+      public_milestone_node_id: {
+        Args: { p_slug: string; p_milestone_id: string }
+        Returns: string | null
       }
       /**
        * POST /api/v1/projects/{id}/docs. OAuth clients only (D-60: 42501 for
