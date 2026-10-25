@@ -16,10 +16,12 @@
 -- rows is still remembered, so their pre-revoke token's writes record revoked
 -- rows (D-59); and doc links are written only through an app (D-60).
 --
--- And 20261026100000 (WP-2.12): a pre-revoke token's
+-- And 20261026100000 and 20261026100100 (WP-2.12): a pre-revoke token's
 -- writes are now refused outright (D-75), so the trigger's revoked branch is
 -- driven here by a write that skips the guards (as the table owner, with that
--- token's claims), standing in for any path a guard might miss.
+-- token's claims), standing in for any path a guard might miss; recording a
+-- revoke marks the rows lost at once, and heals if doqtri writes again with a
+-- later token; and members read only the current doqtri client's rows.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
@@ -30,7 +32,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(49);
+select plan(55);
 
 
 -- ----------------------------------------------------------------------------
@@ -477,6 +479,60 @@ select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:live'],
   'a token from the re-consent makes it live');
 
+
+-- ----------------------------------------------------------------------------
+-- 4c. Recording the revoke marks the rows at once (WP-2.12)
+--
+-- revokeAuthorizedApp() step 1. If Auth then refuses the revoke, doqtri's
+-- refresh still works and its next write carries a later iat, which makes the
+-- connection live again: the mark heals itself.
+-- ----------------------------------------------------------------------------
+
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
+select is(public.record_oauth_client_revocation('9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d'), now(),
+  'the owner records a revoke of doqtri');
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:revoked'],
+  '... which marks their live connection lost straight away, before Auth is asked');
+
+-- Auth refused the revoke; doqtri refreshed and saves the doc again.
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000001', p_iat_offset => 120);
+select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+  'd2000000-0000-4000-8000-000000000005', 'Owner plan',
+  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000005');
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:live'],
+  '... and a write with a later token makes it live again');
+
+
+-- ----------------------------------------------------------------------------
+-- 4d. Only the current doqtri client's rows count for the card (WP-2.12)
+-- ----------------------------------------------------------------------------
+
+-- The operator re-registers doqtri under a new client id.
+update public.integration_settings set doqtri_oauth_client_id = '33333333-3333-4333-8333-333333333333';
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000004');
+select is(
+  (select count(*)::int from public.doc_link_connections c
+     join public.project_doc_links d on d.id = c.doc_link_id
+    where d.doc_id = 'd2000000-0000-4000-8000-000000000005'),
+  0,
+  'after doqtri is re-registered, a viewer reads no row recorded for the old client (the card says lost)'
+);
+select pg_temp.as_postgres();
+select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:live'],
+  '... and the row itself is kept, not deleted');
+
+update public.integration_settings set doqtri_oauth_client_id = '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d';
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000004');
+select is(
+  (select count(*)::int from public.doc_link_connections c
+     join public.project_doc_links d on d.id = c.doc_link_id
+    where d.doc_id = 'd2000000-0000-4000-8000-000000000005' and c.lost_at is null),
+  1,
+  'with the id put back, the row counts again'
+);
+select pg_temp.as_postgres();
 
 
 -- ----------------------------------------------------------------------------
