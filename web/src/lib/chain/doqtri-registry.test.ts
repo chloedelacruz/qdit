@@ -5,6 +5,7 @@ import {
   CACHE_TTL_MS,
   FAILURE_TTL_MS,
   checkDocSource,
+  checkMilestoneRecord,
   clearRegistryCache,
   compareDocSource,
   decodeDocument,
@@ -55,6 +56,8 @@ const MILESTONE = "b81e4f07-6a2c-4d93-8e5f-0c7a9b3d2e61";
 const OTHER_UUID = "00000000-0000-4000-8000-000000000000";
 const PROOF_CONTRACT = "CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG";
 const REGISTRY = "CCCIDUCFQMTMAGESMPTB3MFW4TURS62ORSZNICFOE6MNQZO3MI7F6QRJ";
+/** The submitter the milestone_proof test host signed every RECORD with. */
+const SUBMITTER = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M";
 
 const XDR = {
   /** Document { version: 3, node_count: 2, content_hash: [3; 32], updated_at: 1792843200, owner: GAAZ…CWN7 } */
@@ -239,12 +242,14 @@ describe("readRegistry", () => {
 });
 
 describe("decoding milestone_proof's XDR", () => {
-  it("decodes a MilestoneRecord's status and version", () => {
+  it("decodes a MilestoneRecord's status, version, proof hash, submitter and time", () => {
     const decode = (b64: string) => decodeMilestone(xdr.ScVal.fromXDR(b64, "base64"));
-    expect(decode(RECORD.submitted_v1)).toEqual({ status: "Submitted", version: 1 });
-    expect(decode(RECORD.approved_v2)).toEqual({ status: "Approved", version: 2 });
-    expect(decode(RECORD.rejected_v2)).toEqual({ status: "Rejected", version: 2 });
-    expect(decode(RECORD.submitted_v3)).toEqual({ status: "Submitted", version: 3 });
+    // The test host's ledger clock starts at 0 and its submitter is a contract address.
+    const fields = (fill: string) => ({ proofHash: fill.repeat(32), submitter: SUBMITTER, timestamp: 0 });
+    expect(decode(RECORD.submitted_v1)).toEqual({ status: "Submitted", version: 1, ...fields("01") });
+    expect(decode(RECORD.approved_v2)).toEqual({ status: "Approved", version: 2, ...fields("03") });
+    expect(decode(RECORD.rejected_v2)).toEqual({ status: "Rejected", version: 2, ...fields("03") });
+    expect(decode(RECORD.submitted_v3)).toEqual({ status: "Submitted", version: 3, ...fields("05") });
   });
 
   it("refuses a registry record in its place", () => {
@@ -261,7 +266,7 @@ describe("readMilestone", () => {
 
     await expect(readMilestone(TARGET, PROJECT, MILESTONE)).resolves.toEqual({
       ok: true,
-      record: { status: "Approved", version: 2 },
+      record: { status: "Approved", version: 2, proofHash: "03".repeat(32), submitter: SUBMITTER, timestamp: 0 },
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].contract).toBe(PROOF_CONTRACT);
@@ -474,7 +479,9 @@ describe("namesThisMilestone and plannedVerdict (contract section 12, both check
     network: "testnet",
     registryId: REGISTRY,
     chainVersion: 3,
+    docUpdatedAt: 1792843200,
     node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+    nodeUpdatedAt: 1792843200,
   };
   const inconsistent = (reason: "no-chain" | "network" | "contract" | "not-found" | "older"): NodeAttestation => ({
     state: "inconsistent",
@@ -557,7 +564,9 @@ describe("compareDocSource", () => {
       network: "testnet",
       registryId: REGISTRY,
       chainVersion: 3,
+      docUpdatedAt: 0,
       node: { state: "none" },
+      nodeUpdatedAt: null,
     });
   });
 
@@ -567,7 +576,9 @@ describe("compareDocSource", () => {
       network: "testnet",
       registryId: REGISTRY,
       chainVersion: null,
+      docUpdatedAt: null,
       node: null,
+      nodeUpdatedAt: null,
     });
   });
 });
@@ -584,7 +595,9 @@ describe("checkDocSource", () => {
       network: null,
       registryId: null,
       chainVersion: null,
+      docUpdatedAt: null,
       node: null,
+      nodeUpdatedAt: null,
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -597,7 +610,9 @@ describe("checkDocSource", () => {
       network: "testnet",
       registryId: REGISTRY,
       chainVersion: 3,
+      docUpdatedAt: 1792843200,
       node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+      nodeUpdatedAt: 1792843200,
     });
     expect(calls.map((c) => [c.method, c.contract])).toEqual(
       expect.arrayContaining([
@@ -670,5 +685,58 @@ describe("checkDocSource", () => {
 
     now += 1;
     await expect(checkDocSource(STORED, CONTEXT, options)).resolves.toMatchObject({ state: "verified" });
+  });
+});
+
+describe("checkMilestoneRecord (WP-3.3, facts 2 and 3)", () => {
+  const STORED = { docId: DOC_ID, nodeId: "h4", docVersion: 3 };
+  const ALL = { get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } };
+  const PROJECT_TARGET = { id: PROJECT, network: "testnet" as const, contractId: PROOF_CONTRACT };
+
+  it("reads the milestone's current record on the project's own contract and network", async () => {
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE)).resolves.toMatchObject({
+      ok: true,
+      record: { status: "Approved", version: 2 },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: "get_milestone_status",
+      contract: PROOF_CONTRACT,
+      url: "https://soroban-testnet.stellar.org/",
+    });
+  });
+
+  it("shares one request with the heading check when the page asks for both at once", async () => {
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+
+    const [record, check] = await Promise.all([
+      checkMilestoneRecord(PROJECT_TARGET, MILESTONE),
+      checkDocSource(STORED, CONTEXT, { env: ENV }),
+    ]);
+
+    expect(record).toMatchObject({ ok: true, record: { status: "Approved" } });
+    expect(check.node).toMatchObject({ state: "current", milestoneStatus: "Approved" });
+    expect(calls.filter((c) => c.method === "get_milestone_status")).toHaveLength(1);
+  });
+
+  it("caches an answer for 30 seconds and a failure for 5, and never throws", async () => {
+    rpcReplies({ ...ALL, get_milestone_status: "throw" });
+    let now = 1_000_000;
+    const options = { now: () => now };
+
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE, options)).resolves.toEqual({ ok: false, reason: "rpc" });
+
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.submitted_v1 } });
+    now += FAILURE_TTL_MS - 1;
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE, options)).resolves.toMatchObject({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    now += 1;
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE, options)).resolves.toMatchObject({ ok: true });
+    now += CACHE_TTL_MS - 1;
+    await checkMilestoneRecord(PROJECT_TARGET, MILESTONE, options);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

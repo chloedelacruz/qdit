@@ -56,6 +56,9 @@ import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL, isContractId, type StellarNetwork 
  *
  * on the project's own contract and network, read by hand like the other two
  * so the three share one simulation path and one notion of "could not read".
+ * The proof chain (WP-3.3) reads the same record for facts 2 and 3 on every
+ * linked milestone of a registered project, through `checkMilestoneRecord`
+ * and the same cache entry.
  *
  * What the comparison can and cannot say. The registry keeps only a
  * document's current version, and versions only go up, so a chain at or past
@@ -161,11 +164,17 @@ export type RegistryRead =
 export const MILESTONE_STATUSES = ["Proposed", "Submitted", "Approved", "Rejected"] as const;
 export type ChainMilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 
-/** The fields of a `MilestoneRecord` the comparison needs. */
+/** A `MilestoneRecord`, less the ids it was read by. */
 export type ChainMilestone = {
   status: ChainMilestoneStatus;
   /** Submissions so far, from 1; approve and reject keep it. */
   version: number;
+  /** Lowercase hex of the current submission's proof hash. */
+  proofHash: string;
+  /** The address that made the current submission. */
+  submitter: string;
+  /** Ledger time of the current submission, in Unix seconds; approve and reject keep it. */
+  timestamp: number;
 };
 
 /** One `get_milestone_status` read; `record` is null for MilestoneNotFound. */
@@ -302,20 +311,27 @@ export function decodeNode(value: xdr.ScVal): RegistryNode {
   };
 }
 
-/** `MilestoneRecord`, keeping its status and version. */
+/** `MilestoneRecord`, less its ids. */
 export function decodeMilestone(value: xdr.ScVal): ChainMilestone {
   const fields = record(scValToNative(value), "get_milestone_status");
   const tag = Array.isArray(fields.status) ? fields.status[0] : undefined;
   if (!MILESTONE_STATUSES.includes(tag as ChainMilestoneStatus)) {
     throw new RegistryReadError("decode", "get_milestone_status: status is not a MilestoneStatus");
   }
-  // The other fields are checked too, so a value of another shape that
-  // happens to carry a status and a version is not taken for a record.
+  const hash = fields.proof_hash;
+  if (!(hash instanceof Uint8Array) || hash.length !== 32) {
+    throw new RegistryReadError("decode", "get_milestone_status: proof_hash is not 32 bytes");
+  }
+  // The ids are checked too, so a value of another shape that happens to
+  // carry a status and a version is not taken for a record.
   text(fields.project_id, "get_milestone_status", "project_id");
   text(fields.milestone_id, "get_milestone_status", "milestone_id");
   return {
     status: tag as ChainMilestoneStatus,
     version: u32(fields.version, "get_milestone_status", "version"),
+    proofHash: Buffer.from(hash).toString("hex"),
+    submitter: text(fields.submitter, "get_milestone_status", "submitter"),
+    timestamp: u64(fields.timestamp, "get_milestone_status", "timestamp"),
   };
 }
 
@@ -561,8 +577,12 @@ export type DocSourceCheck = {
   registryId: string | null;
   /** The registry's current `Document.version`, when it was read and exists. */
   chainVersion: number | null;
+  /** The document's `updated_at` (ledger time, Unix seconds), when it was read and exists. */
+  docUpdatedAt: number | null;
   /** Null when the registry was not read. */
   node: NodeAttestation | null;
+  /** The heading's record's `updated_at` (ledger time, Unix seconds), when it was read and exists. */
+  nodeUpdatedAt: number | null;
 };
 
 /** Contract section 10's `artifact-ref`, split into its parts. */
@@ -679,14 +699,18 @@ export function compareDocSource(
   milestone: MilestoneRead | null = null,
 ): DocSourceCheck {
   const base = { network: config.network, registryId: config.contractId };
-  if (!read.ok) return { ...base, state: "unreachable", chainVersion: null, node: null };
+  if (!read.ok) {
+    return { ...base, state: "unreachable", chainVersion: null, docUpdatedAt: null, node: null, nodeUpdatedAt: null };
+  }
 
   const chainVersion = read.document?.version ?? null;
   return {
     ...base,
     state: docVerdict(stored, chainVersion),
     chainVersion,
+    docUpdatedAt: read.document?.updatedAt ?? null,
     node: nodeAttestation(read.node, context, milestone),
+    nodeUpdatedAt: read.node?.updatedAt ?? null,
   };
 }
 
@@ -702,10 +726,13 @@ const CACHE_LIMIT = 500;
 
 type Cached = { at: number; read: RegistryRead | MilestoneRead };
 const cache = new Map<string, Cached>();
+/** Reads still on the wire, so two callers asking for one record send one request. */
+const inflight = new Map<string, Promise<RegistryRead | MilestoneRead>>();
 
 /** Empties the read cache. For tests. */
 export function clearRegistryCache(): void {
   cache.clear();
+  inflight.clear();
 }
 
 /** A read through the cache: CACHE_TTL_MS for an answer, FAILURE_TTL_MS for a failure. */
@@ -717,12 +744,52 @@ async function cached<T extends RegistryRead | MilestoneRead>(
   const hit = cache.get(key);
   if (hit && now - hit.at < (hit.read.ok ? CACHE_TTL_MS : FAILURE_TTL_MS)) return hit.read as T;
 
-  const fresh = await read();
-  cache.delete(key);
-  cache.set(key, { at: now, read: fresh });
-  // Oldest first, by insertion order.
-  while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-  return fresh;
+  const pending = inflight.get(key);
+  if (pending) return pending as Promise<T>;
+
+  const request = read().then((fresh) => {
+    inflight.delete(key);
+    cache.delete(key);
+    cache.set(key, { at: now, read: fresh });
+    // Oldest first, by insertion order.
+    while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+    return fresh;
+  });
+  inflight.set(key, request);
+  return request;
+}
+
+/** A project's `get_milestone_status(project_id, milestone_id)`, through the cache. */
+function cachedMilestone(
+  project: { id: string; network: StellarNetwork; contractId: string },
+  milestoneId: string,
+  now: number,
+): Promise<MilestoneRead> {
+  return cached(
+    ["milestone", project.network, project.contractId, project.id, milestoneId].join("|"),
+    now,
+    () =>
+      readMilestone(
+        { network: project.network, contractId: project.contractId, rpcUrl: SOROBAN_RPC_URL[project.network] },
+        project.id,
+        milestoneId,
+      ),
+  );
+}
+
+/**
+ * The milestone's current record on its project's `milestone_proof`, for the
+ * public page's proof chain (WP-3.3, facts 2 and 3). Cached like the
+ * registry reads, under the same key as the one `checkDocSource` makes for a
+ * heading signed for this milestone, so a page that asks for both sends one
+ * request. Never throws.
+ */
+export function checkMilestoneRecord(
+  project: { id: string; network: StellarNetwork; contractId: string },
+  milestoneId: string,
+  options: { now?: () => number } = {},
+): Promise<MilestoneRead> {
+  return cachedMilestone(project, milestoneId, (options.now ?? Date.now)());
 }
 
 /**
@@ -740,7 +807,15 @@ export async function checkDocSource(
 ): Promise<DocSourceCheck> {
   const config = registryConfig(options.env);
   if (!config) {
-    return { state: "unconfigured", network: null, registryId: null, chainVersion: null, node: null };
+    return {
+      state: "unconfigured",
+      network: null,
+      registryId: null,
+      chainVersion: null,
+      docUpdatedAt: null,
+      node: null,
+      nodeUpdatedAt: null,
+    };
   }
 
   const now = (options.now ?? Date.now)();
@@ -752,15 +827,10 @@ export async function checkDocSource(
 
   const wanted = read.ok ? milestoneToRead(read.node, context) : null;
   const milestone = wanted
-    ? await cached(
-        ["milestone", wanted.network, wanted.contractId, wanted.projectId, wanted.milestoneId].join("|"),
+    ? await cachedMilestone(
+        { id: wanted.projectId, network: wanted.network, contractId: wanted.contractId },
+        wanted.milestoneId,
         now,
-        () =>
-          readMilestone(
-            { network: wanted.network, contractId: wanted.contractId, rpcUrl: SOROBAN_RPC_URL[wanted.network] },
-            wanted.projectId,
-            wanted.milestoneId,
-          ),
       )
     : null;
 
