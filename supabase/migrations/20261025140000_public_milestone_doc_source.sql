@@ -2,7 +2,7 @@
 -- qdit — Stellar Builder Task Hub
 -- 20261025140000_public_milestone_doc_source.sql
 --
--- The doqtri plan a published milestone came from, on its public page
+-- The doqtri plan a published milestone is linked to, on its public page
 -- (WP-3.2), on top of 20260815051120_public_proofs.sql and
 -- 20261024120000_integration_links.sql.
 --
@@ -20,7 +20,6 @@
 --                publishes, so it says nothing new
 --   docVersion   DoqtriRegistry Document.version the link was last written
 --                against, or null when the doc was not anchored then
---   docUrl       project_doc_links.doc_url, where "Open in doqtri" goes
 --   projectId    projects.id, but only for a project registered on chain
 --                (chain_contract_id set), else null. Not shown on the page:
 --                the page needs it to check that the heading's on-chain
@@ -31,7 +30,10 @@
 --                keys every milestone_proof record and is in every submit,
 --                approve and reject event and every artifact_ref. A project
 --                that never registered has nothing on chain to check, so its
---                id stays off the page.
+--                id stays off the page. Contract v1.1.0 section 12 names
+--                doc_id, node_id and doc_version as what WP-3.2 adds; this
+--                key is for the page's check only and is raised with the
+--                contract owner for a v1.1.x line.
 --
 -- An unlinked milestone gets no `docSource` key at all, not a null one: the
 -- function's answer for it is the same jsonb as before, key for key, so the
@@ -43,20 +45,25 @@
 -- The doc's title. project_doc_links.doc_title (and the copy of it on the
 -- link row) is doqtri's private note title: doqtri publishes a doc's
 -- headings only when its owner opts in, and never through qdit. The public
--- page names the plan by its heading and version, not by its title.
+-- page names the plan by its doc id, not by its title.
+--
+-- Nor the stored doc_url (contract section 12). It passed only the D-72
+-- prefix check, and whoever may write the link (an OAuth client with the
+-- role, or a project admin through link_project_doc(), section 2) may point
+-- it at any doqtri page. The public page builds its doqtri link itself, from
+-- DOQTRI_ORIGIN and docId (publicDocLink() in web/src/lib/doqtri-origin.ts),
+-- so the URL has no reason to leave the database.
 --
 -- Nor who linked it, the link ids, an unregistered project's id, or whether
 -- a doqtri connection still keeps the doc link alive (doc_link_connections).
 -- Those are for project members; the WP-2.6 doc card shows them inside the
 -- app.
 --
--- `docUrl` is held to the column's CHECK (a plain https URL). Whether it is
--- on doqtri's origin (D-45, D-72) is deployment config (DOQTRI_ORIGIN) that
--- the database does not have, so the public page drops a URL that is not
--- (getPublicProof() in web/src/lib/queries.ts) and shows no link for it. The
--- URL is written only through link_project_doc(), by a project admin (D-48),
--- and published only once an owner or admin turned public_proofs on, so the
--- function sends no more than the project chose to publish.
+-- Everything sent is the link row's, and a link row is not evidence of what
+-- doqtri planned (contract sections 1 and 12): a project member's own
+-- session may write it. The page uses it only to know which DoqtriRegistry
+-- records to read, and shows the node id only when the node's on-chain
+-- record names this project and milestone.
 --
 -- Same rules as the original: SECURITY DEFINER with an empty search_path,
 -- hand-listed fields, null for every "nothing to show". OAuth clients need no
@@ -127,9 +134,8 @@ as $$
       where r.milestone_id = m.id
     ), '[]'::jsonb)
   )
-  -- WP-3.2: the doqtri heading this milestone came from. No row, no key.
-  -- The doc link always exists for a link row (its composite foreign key);
-  -- the inner join only reads its URL. Never its title (see the header).
+  -- WP-3.2: the doqtri heading this milestone is linked to. No row, no key.
+  -- Never the doc's title or URL (see the header).
   || coalesce((
     select jsonb_build_object(
       'docSource', jsonb_build_object(
@@ -137,14 +143,10 @@ as $$
         'nodeId',     l.node_id,
         'nodeLabel',  l.node_label,
         'docVersion', l.doc_version,
-        'docUrl',     d.doc_url,
         'projectId',  case when p.chain_contract_id is not null then p.id end
       )
     )
     from public.milestone_external_links l
-    join public.project_doc_links d
-      on d.project_id = l.project_id
-     and d.doc_id = l.doc_id
     where l.milestone_id = m.id
   ), '{}'::jsonb)
   from public.milestones m
@@ -155,7 +157,7 @@ as $$
 $$;
 
 comment on function public.public_milestone_proof(text, uuid) is
-  'The published view of one milestone, for callers with no account. Returns null unless projects.public_proofs is true. Hand-listed fields only — never row_to_json. A milestone linked to a doqtri heading adds docSource (doc id, node id and label, doc version, doc URL, and the project id once the project is registered on chain; never the doc title).';
+  'The published view of one milestone, for callers with no account. Returns null unless projects.public_proofs is true. Hand-listed fields only — never row_to_json. A milestone linked to a doqtri heading adds docSource (doc id, node id and label, doc version, and the project id once the project is registered on chain; never the doc title or the stored doc URL).';
 
 -- Unchanged: callable by everybody, including the signed-out.
 grant execute on function public.public_milestone_proof(text, uuid) to anon, authenticated, service_role;
