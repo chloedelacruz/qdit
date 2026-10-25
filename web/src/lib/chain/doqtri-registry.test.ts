@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CACHE_TTL_MS,
   FAILURE_TTL_MS,
+  FRESH_REUSE_MS,
   checkDocSource,
   checkMilestoneRecord,
   clearRegistryCache,
@@ -28,6 +29,8 @@ import {
   type RegistryNode,
   type RegistryRead,
 } from "@/lib/chain/doqtri-registry";
+import { readPublicChain } from "@/lib/public-proof-chain";
+import type { PublicProof } from "@/lib/queries";
 
 /**
  * The DoqtriRegistry reader behind the public page's "Planned in doqtri"
@@ -781,5 +784,140 @@ describe("checkMilestoneRecord (WP-3.3, facts 2 and 3)", () => {
     now += CACHE_TTL_MS - 1;
     await checkMilestoneRecord(PROJECT_TARGET, MILESTONE, options);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checkMilestoneRecord with fresh (D-97)", () => {
+  const PROJECT_TARGET = { id: PROJECT, network: "testnet" as const, contractId: PROOF_CONTRACT };
+  const ALL = { get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } };
+
+  it("never reuses an ordinary cached read, and reuses a fresh one for FRESH_REUSE_MS", async () => {
+    let now = 1_000_000;
+    rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.submitted_v2 } });
+    await checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now });
+
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+    now += 1_000;
+    // Ordinary: the cached Submitted.
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now })).resolves.toMatchObject({
+      record: { status: "Submitted" },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Fresh: read again, and the answer replaces the cached one.
+    await expect(
+      checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now, fresh: true }),
+    ).resolves.toMatchObject({ record: { status: "Approved" } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now })).resolves.toMatchObject({
+      record: { status: "Approved" },
+    });
+
+    now += FRESH_REUSE_MS - 1;
+    await checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now, fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    now += 1;
+    await checkMilestoneRecord(PROJECT_TARGET, MILESTONE, { now: () => now, fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("readPublicChain: no contradiction from a cached record (D-97)", () => {
+  const ALL = { get_document: { retval: XDR.document }, get_node: { retval: XDR.nodeQdit } };
+  const ANCHOR = {
+    proofHash: null,
+    version: 2,
+    network: "testnet" as const,
+    signerAddress: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+    ledger: null,
+  };
+  const SUBMIT = { ...ANCHOR, action: "submit" as const, txHash: "a".repeat(64), createdAt: "2026-10-25T10:00:00.000Z" };
+  const APPROVE = { ...ANCHOR, action: "approve" as const, txHash: "b".repeat(64), createdAt: "2026-10-25T10:00:20.000Z" };
+  const PROOF: PublicProof = {
+    projectName: "Soroban payroll",
+    projectSlug: "soroban-payroll",
+    milestoneId: MILESTONE,
+    title: "Escrow contract",
+    status: "submitted",
+    dueDate: null,
+    network: "testnet",
+    contractId: PROOF_CONTRACT,
+    registeredTx: null,
+    ownerAddress: null,
+    anchors: [SUBMIT],
+    reviews: [],
+    docSource: {
+      docId: DOC_ID,
+      nodeId: "h4",
+      nodeLabel: "Escrow contract",
+      docVersion: 3,
+      docLink: null,
+      projectId: PROJECT,
+    },
+  };
+  const states = (chain: Awaited<ReturnType<typeof readPublicChain>>) => chain?.steps.map((s) => s.state);
+
+  it("shows Done after a fresh read when the cached record is Submitted and qdit has a newer approve anchor", async () => {
+    let now = 1_000_000;
+    const options = { env: ENV, now: () => now };
+
+    // A reader loads the page while v2 awaits a decision: that record is cached.
+    rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.submitted_v2 } });
+    await expect(readPublicChain(PROOF, options).then(states)).resolves.toEqual([
+      "done",
+      "done",
+      "pending",
+      "mismatch",
+    ]);
+
+    // The owner approves; qdit records the anchor. The reader reloads well
+    // within the cache's 30 s.
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+    now += 10_000;
+    const chain = await readPublicChain({ ...PROOF, status: "approved", anchors: [SUBMIT, APPROVE] }, options);
+
+    expect(states(chain)).toEqual(["done", "done", "done", "done"]);
+    expect(chain?.steps[2].summary).toBe("v2 approved on Testnet by the project's registered owner.");
+    expect(chain?.check.node).toMatchObject({ state: "current", milestoneStatus: "Approved" });
+    // One fresh milestone read, shared by both checks; the registry stays cached.
+    expect(calls.map((c) => c.method)).toEqual(["get_milestone_status"]);
+  });
+
+  it("still shows Does not match when a fresh read agrees, and does not bypass the cache on every reload", async () => {
+    let now = 1_000_000;
+    const options = { env: ENV, now: () => now };
+    const contradicted = { ...PROOF, anchors: [SUBMIT, APPROVE] };
+
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.submitted_v2 } });
+    const chain = await readPublicChain(contradicted, options);
+
+    expect(chain?.steps[2]).toMatchObject({
+      state: "mismatch",
+      summary: "qdit recorded an approval of v2, but milestone_proof on Testnet says v2 awaits a decision.",
+    });
+    const milestoneReads = () => calls.filter((c) => c.method === "get_milestone_status").length;
+    expect(milestoneReads()).toBe(2);
+
+    now += FRESH_REUSE_MS - 1;
+    await readPublicChain(contradicted, options);
+    expect(milestoneReads()).toBe(2);
+
+    now += 1;
+    expect(states(await readPublicChain(contradicted, options))?.[2]).toBe("mismatch");
+    expect(milestoneReads()).toBe(3);
+  });
+
+  it("reads nothing twice when nothing contradicts", async () => {
+    const { calls } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+
+    const chain = await readPublicChain({ ...PROOF, anchors: [SUBMIT, APPROVE] }, { env: ENV, now: () => 1_000_000 });
+
+    expect(states(chain)).toEqual(["done", "done", "done", "done"]);
+    expect(calls.map((c) => c.method).sort()).toEqual(["get_document", "get_milestone_status", "get_node"]);
+  });
+
+  it("is null for an unlinked milestone, and reads nothing", async () => {
+    const { fetchMock } = rpcReplies(ALL);
+    await expect(readPublicChain({ ...PROOF, docSource: undefined }, { env: ENV })).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

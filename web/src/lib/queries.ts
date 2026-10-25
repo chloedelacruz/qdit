@@ -1637,9 +1637,8 @@ export type PublicProof = {
  * (contract section 12): the page reads DoqtriRegistry for the doc and node
  * it names, and shows the node id only on that evidence. No doc title (it is
  * doqtri's private note title): the function never sends it. No stored
- * `doc_url` either: the function sends it only when it is on doqtri's origin
- * (D-77), and even then it is not passed on, because the page builds its
- * doqtri link from the doc id (section 12).
+ * `doc_url` either: the function no longer sends one (D-95), because the
+ * page builds its doqtri link from the doc id (section 12).
  */
 export type PublicDocSource = {
   docId: string;
@@ -1703,8 +1702,8 @@ export async function getPublicProof(
   const node = await readPublicNodeId(slug, milestoneId);
 
   // Hand-listed, like the function's own fields: the doqtri link is built
-  // from the doc id, and nothing else the answer might carry (docUrl among
-  // it) is passed on.
+  // from the doc id, and nothing else the answer might carry (an older
+  // function's docUrl among it, D-95) is passed on.
   return {
     ...proof,
     docSource: {
