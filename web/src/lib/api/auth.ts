@@ -53,8 +53,9 @@ import { signingKey } from "./jwks";
  *     policies (WP-2.2), which key on `client_id`, always have one to key on.
  *   - `client_id` is a UUID, as Supabase issues them (D-77). The revoke table
  *     keys on a uuid, so a revoke could never be recorded for any other
- *     shape, and `oauth_token_revoked()` answers false for one: without this
- *     check D-59 would fail open for such a client.
+ *     shape. `oauth_token_revoked()` now counts such a token as revoked
+ *     itself (D-96), which is what closes PostgREST; here it is refused
+ *     before that lookup, as a malformed token, the same 401.
  *
  * And one thing only the database knows (D-59):
  *
