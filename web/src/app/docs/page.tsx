@@ -720,6 +720,19 @@ function PublicProofs() {
         qdit, and is absent when <C>DOQTRI_ORIGIN</C> is unset. An unlinked milestone has no{" "}
         <C>docSource</C> key and its page is unchanged.
       </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        Above that block, a linked milestone shows its proof chain as an ordered list of four
+        steps: plan version (both checks above holding), submitted and approved (the
+        milestone&rsquo;s current record from <C>get_milestone_status</C> on the project&rsquo;s
+        own contract, read when the page loads and cached the same way), and verified in doqtri
+        (the heading&rsquo;s record, Verified for the version approved on chain). Each step says
+        in words whether it is done, pending, does not match, or could not be checked, with the
+        ledger time or the time qdit recorded it. Submitted and approved link the transaction
+        from the anchor history at the record&rsquo;s version; with none, they link the contract
+        and say that Stellar RPC keeps events for about 7 days, so an older transaction cannot be
+        looked up there. Plan version and verified link the <C>DoqtriRegistry</C> contract,
+        because qdit does not keep doqtri&rsquo;s transactions.
+      </p>
     </section>
   );
 }
