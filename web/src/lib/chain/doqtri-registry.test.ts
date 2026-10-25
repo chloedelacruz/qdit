@@ -686,6 +686,22 @@ describe("checkDocSource", () => {
     now += 1;
     await expect(checkDocSource(STORED, CONTEXT, options)).resolves.toMatchObject({ state: "verified" });
   });
+
+  it("forgets a read that rejected, so the next caller of the key reads again", async () => {
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+    const options = { env: ENV, now: () => 1_000_000 };
+
+    // The readers catch everything, so only a regression makes one reject. A
+    // doc id that is not a string does: nativeToScVal throws before the
+    // read's own try. The cache key is the same as the string's.
+    await expect(checkDocSource({ ...STORED, docId: 123 as unknown as string }, CONTEXT, options)).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(checkDocSource({ ...STORED, docId: "123" }, CONTEXT, options)).resolves.toMatchObject({
+      state: "verified",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("checkMilestoneRecord (WP-3.3, facts 2 and 3)", () => {

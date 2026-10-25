@@ -747,14 +747,18 @@ async function cached<T extends RegistryRead | MilestoneRead>(
   const pending = inflight.get(key);
   if (pending) return pending as Promise<T>;
 
-  const request = read().then((fresh) => {
-    inflight.delete(key);
-    cache.delete(key);
-    cache.set(key, { at: now, read: fresh });
-    // Oldest first, by insertion order.
-    while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-    return fresh;
-  });
+  // The in-flight entry goes whatever happens: a read that rejected (the
+  // readers catch everything, so only a regression could) must not stay
+  // there and hand every later caller of the key the same rejection.
+  const request = read()
+    .then((fresh) => {
+      cache.delete(key);
+      cache.set(key, { at: now, read: fresh });
+      // Oldest first, by insertion order.
+      while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+      return fresh;
+    })
+    .finally(() => inflight.delete(key));
   inflight.set(key, request);
   return request;
 }
