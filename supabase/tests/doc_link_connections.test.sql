@@ -16,6 +16,11 @@
 -- rows is still remembered, so their pre-revoke token's writes record revoked
 -- rows (D-59); and doc links are written only through an app (D-60).
 --
+-- And 20261026100000 (WP-2.12): a pre-revoke token's
+-- writes are now refused outright (D-75), so the trigger's revoked branch is
+-- driven here by a write that skips the guards (as the table owner, with that
+-- token's claims), standing in for any path a guard might miss.
+--
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
 -- simulated as in integration_links.test.sql: the JWT's role and claims.
@@ -25,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(48);
+select plan(49);
 
 
 -- ----------------------------------------------------------------------------
@@ -105,6 +110,14 @@ create function pg_temp.as_postgres() returns void
 language sql as $$
   select set_config('role', 'postgres', true);
   select set_config('request.jwt.claims', '', true);
+$$;
+
+-- The table owner, carrying an OAuth token's claims: a write that RLS, the
+-- D-75 guards and the RPCs' checks never see, so only the trigger decides.
+create function pg_temp.as_owner_with_token(p_user uuid, p_iat_offset integer default -60) returns void
+language sql as $$
+  select pg_temp.as_oauth_client(p_user, p_iat_offset => p_iat_offset);
+  select set_config('role', 'postgres', true);
 $$;
 
 -- "user:reason" per row of a doc link, reason `live` while lost_at is null,
@@ -349,31 +362,44 @@ select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:
   'leaving the project marks the member''s connection lost: D1 has none live');
 
 -- doqtri still holds the admin's access token from before the revoke (it
--- stays valid until it expires) and saves the doc with it.
+-- stays valid until it expires) and saves the doc with it: refused (D-75).
 select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
-select lives_ok(
+select throws_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000001') $$,
-  'a write with a token issued before the revoke still succeeds'
+  '42501', 'This app''s access to qdit was revoked.',
+  'a write with a token issued before the revoke is refused (D-75)'
 );
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => null);
+select throws_ok(
+  $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
+       'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
+       'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000001') $$,
+  '42501', 'This app''s access to qdit was revoked.',
+  '... and so is one with a token with no iat'
+);
+
+-- The same write past every guard: the trigger alone still keeps it revoked.
+select pg_temp.as_owner_with_token('a2000000-0000-4000-8000-000000000002');
+update public.project_doc_links set doc_title = 'Payroll v1 plan (saved)'
+ where doc_id = 'd2000000-0000-4000-8000-000000000001';
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:revoked', '3:left_project'],
-  '... but does not make the revoked connection live again');
+  'a pre-revoke token''s write that skips the guards does not make the revoked connection live again');
 
-select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => null);
-select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
-  'd2000000-0000-4000-8000-000000000001', 'Payroll v1 plan',
-  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000001');
+select pg_temp.as_owner_with_token('a2000000-0000-4000-8000-000000000002', p_iat_offset => null);
+update public.project_doc_links set doc_title = 'Payroll v1 plan'
+ where doc_id = 'd2000000-0000-4000-8000-000000000001';
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:revoked', '3:left_project'],
   'a token with no iat counts as one from before the revoke');
 
 -- The same old token links another doc, which the admin never wrote before.
-select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
-select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
-  'd2000000-0000-4000-8000-000000000004', 'Late plan',
-  'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000004');
+select pg_temp.as_owner_with_token('a2000000-0000-4000-8000-000000000002');
+insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
+values ('b2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000004', 'Late plan',
+        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000002');
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000004'), array['2:revoked'],
   'a pre-revoke token''s first write to another doc records it as already revoked');
@@ -424,14 +450,20 @@ select is(
   '... but the revoke is on record'
 );
 
--- doqtri still holds the owner's token from before the revoke.
+-- doqtri still holds the owner's token from before the revoke. Through the
+-- RPC it is refused (D-75); past the guards, the trigger records it revoked.
 select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000001');
-select lives_ok(
+select throws_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000005', 'Owner plan',
        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000005') $$,
-  'a pre-revoke token of a user with no rows still writes'
+  '42501', 'This app''s access to qdit was revoked.',
+  'a pre-revoke token of a user with no rows is refused (D-75)'
 );
+select pg_temp.as_owner_with_token('a2000000-0000-4000-8000-000000000001');
+insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
+values ('b2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000005', 'Owner plan',
+        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000005', 'a2000000-0000-4000-8000-000000000001');
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:revoked'],
   '... and the write is recorded as revoked, not live');
@@ -446,11 +478,12 @@ select is(pg_temp.connections('d2000000-0000-4000-8000-000000000005'), array['1:
   'a token from the re-consent makes it live');
 
 
+
 -- ----------------------------------------------------------------------------
 -- 5. Cascades
 -- ----------------------------------------------------------------------------
 
-select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => 60);
 select lives_ok(
   $$ select public.unlink_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000001') $$,
@@ -462,7 +495,7 @@ select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), '{}'::tex
 
 -- A project with a connected doc can still be deleted (the membership rows go
 -- in the same cascade as the doc links and their connections).
-select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002');
+select pg_temp.as_oauth_client('a2000000-0000-4000-8000-000000000002', p_iat_offset => 60);
 select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
   'd2000000-0000-4000-8000-000000000003', 'Another plan',
   'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000003');
