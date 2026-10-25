@@ -32,16 +32,21 @@ import { cn } from "@/lib/utils";
  * both hold:
  *
  *   - node evidence: only when the heading's record has `tool = "qdit"` and
- *     an `artifact_ref` naming this project and milestone does the block
- *     show the node id, the record's status and version, or say "planned in
- *     node N". Otherwise it says "linked to doqtri doc D" and that the
- *     milestone is not signed in doqtri yet;
+ *     an `artifact_ref` naming this project and milestone, on this project's
+ *     network and contract (D-74), does the block show the node id, the
+ *     record's status and version, or say "planned in node N". Otherwise it
+ *     says "linked to doqtri doc D" and that the milestone is not signed in
+ *     doqtri yet, or, for a reference to another network or contract, that
+ *     it does not match this project's chain;
  *   - doc anchor: "doc anchored at version >= V", which speaks only for the
  *     doc (V is the link row's), so it is never in the success tone alone.
  *
  * Public, so it shows only what section 12 allows: the doc id, the node id on
  * evidence, the linked version, what the registry said, and a doqtri link
  * built from the doc id (never the stored `doc_url`). Never the doc's title.
+ * The registry link says it is read from current state: qdit keeps none of
+ * doqtri's transactions, so the history is on the contract's own page
+ * (section 12, "Transaction links").
  * The page renders this only for a linked milestone; an unlinked one gets no
  * block at all.
  */
@@ -57,7 +62,9 @@ export function PlannedInDoqtri({
   const VerdictIcon = verdict.icon;
   const evidence = namesThisMilestone(check.node) ? check.node : null;
   const record = evidence ? nodeLine(evidence) : null;
-  const read = check.state !== "unreachable" && check.state !== "unconfigured";
+  const read = check.state !== "unreachable" && check.state !== "unconfigured" && check.state !== "unavailable";
+  // A reference to another network or contract (D-74): said, without the node's fields.
+  const offChain = !evidence && check.node?.state === "inconsistent" && check.node.reason !== "no-chain";
   const anchor = read ? anchorLine(source, check) : null;
   const where = check.network ? ` on ${NETWORK_LABELS[check.network]}` : "";
 
@@ -81,9 +88,11 @@ export function PlannedInDoqtri({
             ) : (
               <>
                 Linked to doqtri doc <span className="font-mono break-all">{source.docId}</span>.{" "}
-                {read
-                  ? "Not signed in doqtri for this milestone yet."
-                  : "Whether doqtri signed it for this milestone could not be checked."}
+                {offChain
+                  ? "A heading of it is signed for this milestone, but not on this project's chain."
+                  : read
+                    ? "Not signed in doqtri for this milestone yet."
+                    : "Whether doqtri signed it for this milestone could not be checked."}
               </>
             )}{" "}
             doqtri keeps the plan; its version is anchored{where} in the DoqtriRegistry contract,
@@ -154,6 +163,11 @@ export function PlannedInDoqtri({
           </span>
         ) : null}
       </div>
+      {check.registryId && check.network ? (
+        <p data-slot="registry-note" className="mt-1.5 text-xs leading-5 text-muted-foreground">
+          {REGISTRY_NOTE}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -176,18 +190,44 @@ type Verdict = {
 const net = (network: StellarNetwork | null) => (network ? NETWORK_LABELS[network] : "chain");
 
 /**
+ * Facts 1 and 4 have no transaction link here (contract section 12): qdit
+ * keeps none of doqtri's transactions and does not look up the registry's
+ * events, so the block says where the history is.
+ */
+export const REGISTRY_NOTE =
+  "Read from current state; see the contract's history on Stellar Expert for the transaction.";
+
+/**
  * The verdict on top, one per `PlannedVerdict`. Only `verified` is in the
  * success tone, and it names the on-chain version, not the link's. "Could
  * not check" is said in words wherever a read failed, so a failed read never
  * looks like a pass. Nothing here names the node unless the evidence holds.
+ *
+ * `verified` says only that the plan checks out. A node signed Verified
+ * whose milestone is not Approved on chain at its version (fact 4 fails)
+ * drops the word "Verified" and the success tone: the headline must not
+ * read as a verified milestone while the node line below says the chain
+ * disagrees.
  */
 const VERDICT: Record<PlannedVerdict, (source: PublicDocSource, check: DocSourceCheck) => Verdict> = {
-  verified: (source, check) => ({
-    tone: "success",
-    icon: CircleCheck,
-    label: `Verified: planned in node ${source.nodeId}, plan at v${check.chainVersion}`,
-    detail: `DoqtriRegistry on ${net(check.network)} holds node ${source.nodeId} signed for this milestone, and the plan at v${check.chainVersion}.`,
-  }),
+  verified: (source, check) => {
+    const detail = `DoqtriRegistry on ${net(check.network)} holds node ${source.nodeId} signed for this milestone, and the plan at v${check.chainVersion}.`;
+    const node = check.node;
+    if (namesThisMilestone(node) && node.status === "Verified" && !verifiedOnChain(node)) {
+      return {
+        tone: "warning",
+        icon: CircleAlert,
+        label: `Planned in node ${source.nodeId}, plan at v${check.chainVersion} (checked on chain)`,
+        detail: `${detail} The node is signed Verified, but the milestone is not approved on chain at that version (below).`,
+      };
+    }
+    return {
+      tone: "success",
+      icon: CircleCheck,
+      label: `Verified: planned in node ${source.nodeId}, plan at v${check.chainVersion}`,
+      detail,
+    };
+  },
   unsigned: () => ({
     tone: "muted",
     icon: CircleHelp,
@@ -202,11 +242,17 @@ const VERDICT: Record<PlannedVerdict, (source: PublicDocSource, check: DocSource
     detail:
       "This project is not registered on chain, so no doqtri signature can be checked against it yet. qdit's link alone is not evidence of what doqtri planned.",
   }),
-  inconsistent: () => ({
+  inconsistent: (_, check) => ({
     tone: "warning",
     icon: CircleAlert,
     label: "Not verified",
-    detail: "The node's record names this milestone, but does not line up with the milestone's record on chain (below).",
+    detail: namesThisMilestone(check.node)
+      ? "The node's record names this milestone, but does not line up with the milestone's record on chain (below)."
+      : `A heading's record names this milestone, but on ${
+          check.node?.state === "inconsistent" && check.node.reason === "network"
+            ? "another network"
+            : "another contract"
+        } than this project's registration, so it says nothing about this project's records.`,
   }),
   doc: () => ({
     tone: "warning",
@@ -225,6 +271,13 @@ const VERDICT: Record<PlannedVerdict, (source: PublicDocSource, check: DocSource
     icon: CircleHelp,
     label: "Could not check",
     detail: `DoqtriRegistry on ${net(check.network)} did not answer just now. This is not a pass: reload the page to try again.`,
+  }),
+  unavailable: () => ({
+    tone: "muted",
+    icon: CircleHelp,
+    label: "Could not check",
+    detail:
+      "qdit could not look up which doqtri heading this milestone is linked to just now, so its record was not read. This is not a pass: reload the page to try again.",
   }),
   unconfigured: () => ({
     tone: "muted",
@@ -281,19 +334,19 @@ function anchorLine(
         changed: false,
       };
     default:
-      // unreachable and unconfigured have no anchor line; the verdict says why.
+      // unreachable, unavailable and unconfigured have no anchor line; the verdict says why.
       return { tone: "muted", label: "", detail: null, changed: false };
   }
 }
 
 type Inconsistent = Extract<NodeEvidence, { state: "inconsistent" }>;
 
-/** The end of "Signed … for this milestone at vV, but …", per reason. */
+/**
+ * The end of "Signed … for this milestone at vV, but …", per reason. Only
+ * these two are node evidence: without a registration, or on another network
+ * or contract (D-74), the verdict says why instead.
+ */
 const INCONSISTENT: Record<Inconsistent["reason"], (node: Inconsistent) => string> = {
-  // Never shown: without a registration there is no node evidence.
-  "no-chain": () => "this project is not registered on chain, so no milestone record backs it",
-  network: () => "its record names another network than this project's",
-  contract: () => "its record names another contract than this project's",
   "not-found": () => "the milestone has no record on chain",
   older: (node) => `the milestone's record on chain is at v${node.chainVersion}, older than v${node.signedVersion}`,
 };

@@ -28,6 +28,7 @@ import { doqtriOrigin, isDoqtriDocUrl, publicDocLink } from "@/lib/doqtri-origin
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
 import { docUrlHost } from "@/lib/plan-docs";
+import { readPublicNodeId } from "@/lib/public-node";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
@@ -1635,12 +1636,21 @@ export type PublicProof = {
  * is the link row's, and a link row is not evidence of what doqtri planned
  * (contract section 12): the page reads DoqtriRegistry for the doc and node
  * it names, and shows the node id only on that evidence. No doc title (it is
- * doqtri's private note title) and no stored `doc_url` (it may name another
- * doqtri page): the function sends neither.
+ * doqtri's private note title): the function never sends it. No stored
+ * `doc_url` either: the function sends it only when it is on doqtri's origin
+ * (D-77), and even then it is not passed on, because the page builds its
+ * doqtri link from the doc id (section 12).
  */
 export type PublicDocSource = {
   docId: string;
-  nodeId: string;
+  /**
+   * The heading's positional id, which the anon function no longer sends
+   * (D-77): read on the server with `readPublicNodeId()`, used to pick the
+   * DoqtriRegistry record to read, and shown only on node evidence. Null
+   * when it could not be looked up; the page then says it could not check
+   * the heading.
+   */
+  nodeId: string | null;
   /** The heading text, which is the milestone title (D-12). */
   nodeLabel: string;
   /** DoqtriRegistry `Document.version` the link was last written against. */
@@ -1688,13 +1698,18 @@ export async function getPublicProof(
   const source = proof.docSource;
   if (!source) return proof;
 
+  // The node id comes from the service-role-only lookup, never from the anon
+  // answer (D-77): an older function that still sends one is not trusted.
+  const node = await readPublicNodeId(slug, milestoneId);
+
   // Hand-listed, like the function's own fields: the doqtri link is built
-  // from the doc id, and nothing else the answer might carry is passed on.
+  // from the doc id, and nothing else the answer might carry (docUrl among
+  // it) is passed on.
   return {
     ...proof,
     docSource: {
       docId: source.docId,
-      nodeId: source.nodeId,
+      nodeId: node.ok ? node.nodeId : null,
       nodeLabel: source.nodeLabel,
       docVersion: source.docVersion,
       docLink: readPublicDocLink(source.docId),
