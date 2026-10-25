@@ -43,7 +43,11 @@ import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
  * page (D-78); when the heading was signed for another version than the one
  * approved, the step says so.
  *
- * Pure: the page passes the reads in.
+ * Pure: the page passes the reads in. Steps 2 and 3 compare that record with
+ * qdit's own anchors, which are read fresh from the database while the
+ * record may be cached for up to 30 s; so before the page shows such a
+ * contradiction it reads the record again, uncached, and builds the chain
+ * from that (D-97, `contradictsQditRecord`, lib/public-proof-chain.ts).
  */
 
 export type ChainStepKey = "plan" | "submitted" | "approved" | "verified";
@@ -116,6 +120,16 @@ const unixIso = (seconds: number) => new Date(seconds * 1000).toISOString();
 /** The four steps, in order. Pure. */
 export function proofChain(input: ProofChainInput): ChainStep[] {
   return [planStep(input), submittedStep(input), approvedStep(input), verifiedStep(input)];
+}
+
+/**
+ * True when step 2 or 3 says qdit's own record contradicts milestone_proof's
+ * (D-97). Both reach "Does not match" only from a record the chain returned,
+ * which may be a cached one older than qdit's newest anchor: the caller reads
+ * the record again, fresh, before it shows them.
+ */
+export function contradictsQditRecord(steps: ChainStep[]): boolean {
+  return steps.some((s) => (s.key === "submitted" || s.key === "approved") && s.state === "mismatch");
 }
 
 /** The first step that is not done: the one a reader is waiting on. */

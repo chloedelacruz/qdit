@@ -8,9 +8,8 @@ import { PlannedInDoqtri } from "@/components/planned-in-doqtri";
 import { ProofChain } from "@/components/proof-chain";
 import { StatusBadge } from "@/components/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { checkDocSource, checkMilestoneRecord } from "@/lib/chain/doqtri-registry";
 import { MILESTONE_STATUS } from "@/lib/constants";
-import { proofChain } from "@/lib/proof-chain";
+import { readPublicChain } from "@/lib/public-proof-chain";
 import { getPublicProof, type PublicProof } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
@@ -63,7 +62,9 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * the transaction from the anchor history; 1 and 4 are the registry reads
  * the block already makes. It is what gate G3's outside reader follows. An
  * unlinked milestone gets no chain: its anchor history already tells steps
- * 2 and 3, and its page stays exactly what it was.
+ * 2 and 3, and its page stays exactly what it was. The reads are
+ * lib/public-proof-chain.ts, which reads the milestone's record again,
+ * uncached, before the chain says qdit's record contradicts it (D-97).
  */
 
 export const dynamic = "force-dynamic";
@@ -101,33 +102,13 @@ export default async function PublicProofPage({
   const submissions = proof.anchors.filter((anchor) => anchor.action === "submit");
   const currentHash = submissions.at(-1)?.proofHash ?? null;
 
-  // The plan version is checked on doqtri's registry (its own network), the
-  // heading's record against this project's milestone_proof registration
-  // (contract section 12). The project id comes only with a registration.
-  // The proof chain (WP-3.3) reads the milestone's own record too, alongside;
-  // both reads share one cache entry, so it is one request.
+  // The registry and milestone_proof reads behind the proof chain and the
+  // Planned in doqtri block (contract section 12), only for a linked
+  // milestone: lib/public-proof-chain.ts.
   const docSource = proof.docSource ?? null;
-  const project =
-    docSource && proof.network && proof.contractId && docSource.projectId
-      ? { id: docSource.projectId, network: proof.network, contractId: proof.contractId }
-      : null;
-  const [docCheck, milestoneRecord] = docSource
-    ? await Promise.all([
-        checkDocSource(docSource, { milestoneId: proof.milestoneId, project }),
-        project ? checkMilestoneRecord(project, proof.milestoneId) : null,
-      ])
-    : [null, null];
-  const chain =
-    docSource && docCheck
-      ? proofChain({
-          network: proof.network,
-          contractId: proof.contractId,
-          anchors: proof.anchors,
-          source: docSource,
-          check: docCheck,
-          milestone: milestoneRecord,
-        })
-      : null;
+  const read = await readPublicChain(proof);
+  const docCheck = read?.check ?? null;
+  const chain = read?.steps ?? null;
 
   return (
     <div className="flex min-h-screen flex-col">
