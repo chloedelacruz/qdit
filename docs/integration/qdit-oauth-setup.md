@@ -13,8 +13,11 @@ brackets>` are per environment.
 ## 0. Before you start
 
 - All qdit migrations are applied, through
-  `20261025130100_doc_links_from_apps_only.sql`. The last two print a
-  WARNING until steps 4 and 6 below are done; that is expected.
+  `20261026100200_public_proof_doc_source_hardening.sql`. Two of them print
+  a WARNING until a step below is done; that is expected:
+  `20261025130000_oauth_revocations.sql` until doqtri's client id is set
+  (step 4), and `20261025090000_integration_hardening.sql` until the Vault
+  secrets are stored (step 6).
 - You know both origins exactly, scheme and host, no path:
   `https://<qdit host>` and `https://<doqtri host>`. `www.` or not matters:
   qdit compares doqtri's origin character for character (step 5).
@@ -76,26 +79,53 @@ environment:
 The client id is the contract's `DOQTRI_OAUTH_CLIENT_ID` for this
 environment. qdit needs it too: step 4.
 
-## 4. Tell qdit which client is doqtri
+## 4. Tell qdit which client is doqtri, and where it lives
 
-qdit keeps doqtri's client id in the one-row `integration_settings` table
-(D-61), not in an environment variable, because the database uses it: only
-writes made with doqtri's tokens keep a plan doc's card connected. In the
-SQL editor:
+qdit keeps doqtri's client id and origin in the one-row
+`integration_settings` table, not only in environment variables, because
+the database uses them: only writes made with doqtri's tokens keep a plan
+doc's card connected (D-61), and the public milestone function returns a
+doc URL only when it is on doqtri's origin (D-77). In the SQL editor:
 
 ```sql
 update public.integration_settings
-   set doqtri_oauth_client_id = '<doqtri client id>';
+   set doqtri_oauth_client_id = '<doqtri client id>',
+       doqtri_origin          = 'https://<doqtri host>';
 
-select doqtri_oauth_client_id, updated_at from public.integration_settings;
+select doqtri_oauth_client_id, doqtri_origin, updated_at
+  from public.integration_settings;
 ```
 
-The column is a `uuid`, so a typo fails the update instead of matching
-nothing. While it is empty, no OAuth write counts as doqtri's: every doc
-card reads "Connection to doqtri lost", and each such write logs a WARNING
-naming the setting. If doqtri is ever re-registered with a new client id,
-run the update again and change `integration_webhooks.client_id` (step 7)
-to match.
+- `doqtri_oauth_client_id` is a `uuid`, so a typo fails the update instead
+  of matching nothing. While it is empty, no OAuth write counts as
+  doqtri's: every doc card reads "Connection to doqtri lost", and each such
+  write logs a WARNING naming the setting.
+- `doqtri_origin` is the same value as `DOQTRI_ORIGIN` (step 5): `https`,
+  lower case, host and optional port, no path and no trailing slash. A value
+  of any other shape fails the update. While it is empty, the public
+  function returns no doc URL; the public page is unaffected, since it
+  builds its doqtri link from `DOQTRI_ORIGIN` and the doc id.
+
+### If doqtri is re-registered with a new client id
+
+1. Run the update above again with the new id. Doc card connections
+   recorded for the old id stop counting at once (the cards read "lost"
+   until doqtri writes again with the new client); they are not deleted, so
+   putting the old id back restores them.
+2. Replace the webhook endpoint row; never `UPDATE` its `client_id`. The
+   signing secret is encrypted with the row's `client_id` as additional
+   data (`20261024130000_integration_webhooks.sql`), so changing the column
+   in place makes the secret undecryptable and every delivery fails. Delete
+   the old row, then run step 7 again with `--client-id <new id>`, which
+   issues a new signing secret for doqtri's `QDIT_WEBHOOK_SECRET`:
+
+   ```sql
+   delete from public.integration_webhooks where client_id = '<old client id>';
+   ```
+
+   Events still queued for the old row are deleted with it
+   (`integration_events` cascades). A webhook is only a signal; the chain
+   stays the truth (D-04), so doqtri's re-check still finds each status.
 
 ## 5. qdit's environment
 
@@ -104,8 +134,9 @@ On the qdit deployment (`web/.env.example` documents each one):
 | Variable | Value |
 | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | `https://<qdit host>` |
-| `DOQTRI_ORIGIN` | `https://<doqtri host>`, exactly doqtri's origin |
-| `SUPABASE_SECRET_KEY` | the project's secret key (audit log and webhook delivery) |
+| `DOQTRI_ORIGIN` | `https://<doqtri host>`, exactly doqtri's origin, the same as `integration_settings.doqtri_origin` (step 4) |
+| `DOQTRI_REGISTRY_CONTRACT_ID`, `DOQTRI_REGISTRY_NETWORK` | the pair's DoqtriRegistry and `testnet` or `mainnet`, the same registry and network doqtri uses (contract section 1, D-84) |
+| `SUPABASE_SECRET_KEY` | the project's secret key (audit log, webhook delivery, and the public page's lookup of a linked heading, D-77) |
 | `CRON_SECRET` | a long random string, e.g. `openssl rand -base64 32` |
 | `INTEGRATION_WEBHOOK_ENCRYPTION_KEY` | `node scripts/integration-webhook-secret.mjs --generate-key` (from `web/`) |
 
@@ -162,6 +193,8 @@ does the same for a rotation (see the script's header).
   (step 5 done).
 - Revoke doqtri in qdit Settings. doqtri's next call is refused straight
   away (D-59), doqtri shows "Reconnect needed", and the doc card says the
-  connection was lost.
+  connection was lost. The same token is refused on PostgREST writes too
+  (D-75); its PostgREST reads keep working until it expires, at most about
+  an hour (contract section 5).
 - `select public.webhook_scheduler_health();` answers `configured`, and
   `integration_events.delivered_at` is set after a milestone status change.
