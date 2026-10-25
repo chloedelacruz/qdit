@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { HashLink } from "@/components/hash-link";
+import { PlannedInDoqtri } from "@/components/planned-in-doqtri";
 import { StatusBadge } from "@/components/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { checkDocSource } from "@/lib/chain/doqtri-registry";
 import { MILESTONE_STATUS } from "@/lib/constants";
 import { getPublicProof, type PublicProof } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
@@ -38,6 +40,17 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * turned publishing on, and which hand-lists the fields it exposes. There is no
  * description here, no task list, no member names — not because they are hidden
  * from the page, but because the function never sends them.
+ *
+ * ---------------------------------------------------------------------------
+ * PLANNED IN DOQTRI (WP-3.2)
+ * ---------------------------------------------------------------------------
+ * A milestone linked to a doqtri heading also gets a "Planned in doqtri"
+ * block. The link row only says which doc and node to read (it is not
+ * evidence, contract section 12); the node, its record and the doc's version
+ * are what DoqtriRegistry says when the page loads, and the doqtri link is
+ * built from the doc id. The function sends the reference only for a linked
+ * milestone, and the registry is read only then, so an unlinked milestone's
+ * page is exactly what it was.
  */
 
 export const dynamic = "force-dynamic";
@@ -74,6 +87,20 @@ export default async function PublicProofPage({
   const network = proof.network ?? "testnet";
   const submissions = proof.anchors.filter((anchor) => anchor.action === "submit");
   const currentHash = submissions.at(-1)?.proofHash ?? null;
+
+  // The plan version is checked on doqtri's registry (its own network), the
+  // heading's record against this project's milestone_proof registration
+  // (contract section 12). The project id comes only with a registration.
+  const docSource = proof.docSource ?? null;
+  const docCheck = docSource
+    ? await checkDocSource(docSource, {
+        milestoneId: proof.milestoneId,
+        project:
+          proof.network && proof.contractId && docSource.projectId
+            ? { id: docSource.projectId, network: proof.network, contractId: proof.contractId }
+            : null,
+      })
+    : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -165,6 +192,8 @@ export default async function PublicProofPage({
             </ul>
           </div>
         </section>
+
+        {docSource && docCheck ? <PlannedInDoqtri source={docSource} check={docCheck} /> : null}
 
         <Timeline proof={proof} />
 
