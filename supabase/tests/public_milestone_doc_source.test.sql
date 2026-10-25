@@ -5,8 +5,8 @@
 -- Covers 20261025140000_public_milestone_doc_source.sql: the doqtri reference
 -- public_milestone_proof() adds for a linked milestone (WP-3.2). A linked
 -- milestone of a publishing project gets `docSource` with exactly the doc id,
--- node id, node label, doc version, doc URL and project id (null until the
--- project is registered on chain); an unlinked one gets the
+-- node id, node label, doc version and project id (null until the project
+-- is registered on chain), never the stored doc URL; an unlinked one gets the
 -- function's previous answer, unchanged; the doc title is never sent; a
 -- project that does not publish still answers null; and anon, which the
 -- function is for, still reads none of the tables behind it.
@@ -20,7 +20,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(28);
 
 
 -- ----------------------------------------------------------------------------
@@ -71,12 +71,14 @@ insert into public.milestone_reviews (milestone_id, project_id, from_status, to_
 values ('c3200000-0000-4000-8000-000000000002', 'b3200000-0000-4000-8000-000000000001',
         'submitted', 'approved', 'Looks right.', 'a3200000-0000-4000-8000-000000000001');
 
--- The doc titles are private doqtri note titles; nothing below may send them.
+-- The doc titles are private doqtri note titles, and the stored doc_url is
+-- not the page's link (P1's names another doqtri page); nothing below may send
+-- either.
 insert into public.project_doc_links (id, project_id, doc_id, doc_title, doc_url, linked_by)
 values
   ('e3200000-0000-4000-8000-000000000001', 'b3200000-0000-4000-8000-000000000001',
    'd3200000-0000-4000-8000-000000000001', 'Secret payroll plan',
-   'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000001', 'a3200000-0000-4000-8000-000000000001'),
+   'https://www.doqtri.xyz/d/another-doc?x=1', 'a3200000-0000-4000-8000-000000000001'),
   ('e3200000-0000-4000-8000-000000000002', 'b3200000-0000-4000-8000-000000000002',
    'd3200000-0000-4000-8000-000000000002', 'Secret private plan',
    'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000002', 'a3200000-0000-4000-8000-000000000001'),
@@ -259,16 +261,29 @@ select is(
     'nodeId',     'h4',
     'nodeLabel',  'Escrow contract',
     'docVersion', 7,
-    'docUrl',     'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000001',
     'projectId',  null
   ),
-  'linked: docSource is the doc id, node id, node label, doc version and doc URL, and no project id off chain'
+  'linked: docSource is the doc id, node id, node label and doc version, and no project id off chain'
 );
 
 select is(
   (select array_agg(key order by key) from answers a, jsonb_object_keys(a.proof -> 'docSource') as key where a.k = 'linked'),
-  array['docId', 'docUrl', 'docVersion', 'nodeId', 'nodeLabel', 'projectId'],
-  'linked: docSource has exactly those six keys'
+  array['docId', 'docVersion', 'nodeId', 'nodeLabel', 'projectId'],
+  'linked: docSource has exactly those five keys'
+);
+
+-- Contract section 12: the page builds its doqtri link from DOQTRI_ORIGIN and
+-- the doc id; the stored doc_url may name another doqtri page and is never
+-- sent. P1's doc_url below names another doc, with a query.
+select ok(
+  not ((select proof -> 'docSource' from answers where k = 'linked') ? 'docUrl'),
+  'linked: no docUrl key'
+);
+
+select is(
+  (select position('another-doc' in proof::text) from answers where k = 'linked'),
+  0,
+  'linked: the stored doc_url is not sent anywhere in the answer'
 );
 
 select is(

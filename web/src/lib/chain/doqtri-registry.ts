@@ -484,6 +484,75 @@ export function verifiedOnChain(node: NodeAttestation | null): boolean {
   return node?.state === "current" && node.status === "Verified" && node.milestoneStatus === "Approved";
 }
 
+/** A node record that names this project and milestone (see `namesThisMilestone`). */
+export type NodeEvidence = Extract<NodeAttestation, { state: "current" | "resubmitted" | "unchecked" | "inconsistent" }>;
+
+/**
+ * Contract section 12's node evidence: the heading's record has `tool =
+ * "qdit"` and an `artifact_ref` naming this project and milestone. Only then
+ * may the page show the node id, the record's status and `@vV`. Not for
+ * `inconsistent` with `no-chain`: without a registration the project id was
+ * never compared, so the record is known to name the milestone only.
+ * `none`, `other` and `elsewhere` are not signed for this milestone, and a
+ * null node (the registry was not read) is no evidence either.
+ */
+export function namesThisMilestone(node: NodeAttestation | null): node is NodeEvidence {
+  switch (node?.state) {
+    case "current":
+    case "resubmitted":
+    case "unchecked":
+      return true;
+    case "inconsistent":
+      return node.reason !== "no-chain";
+    default:
+      return false;
+  }
+}
+
+/**
+ * The block's one verdict on "Planned in doqtri" (contract section 12):
+ *
+ *   verified      the node evidence holds, its record lines up with this
+ *                 milestone's, and the doc is anchored at or past the linked
+ *                 version
+ *   unsigned      no record names this project and milestone (the link row
+ *                 alone, which anyone with the role may write, is no proof)
+ *   no-chain      a record names the milestone, but the project is not on
+ *                 chain, so it cannot be checked against the project
+ *   inconsistent  a record names this project and milestone, but on another
+ *                 network or contract, or the milestone's record is missing
+ *                 or older than the version it names
+ *   doc           the node evidence holds; the doc anchor does not
+ *   unchecked     the node evidence holds, but the milestone's record could
+ *                 not be read, so whether it lines up is unknown: a read
+ *                 failure, never a pass
+ *   unreachable   the registry could not be read
+ *   unconfigured  this deployment has no registry
+ *
+ * The node and doc checks are separate lines on the page; this is only
+ * whether both hold, and the first reason they do not.
+ */
+export type PlannedVerdict =
+  | "verified"
+  | "unsigned"
+  | "no-chain"
+  | "inconsistent"
+  | "doc"
+  | "unchecked"
+  | "unreachable"
+  | "unconfigured";
+
+/** `PlannedVerdict` for a check. Pure. */
+export function plannedVerdict(check: DocSourceCheck): PlannedVerdict {
+  if (check.state === "unconfigured" || check.state === "unreachable") return check.state;
+  const node = check.node;
+  if (node?.state === "inconsistent" && node.reason === "no-chain") return "no-chain";
+  if (!namesThisMilestone(node)) return "unsigned";
+  if (node.state === "inconsistent") return "inconsistent";
+  if (check.state !== "verified") return "doc";
+  return node.state === "unchecked" ? "unchecked" : "verified";
+}
+
 export type DocSourceCheck = {
   state: DocSourceState;
   /** The registry's network; null when none is configured. */

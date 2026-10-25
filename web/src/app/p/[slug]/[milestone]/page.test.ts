@@ -113,7 +113,7 @@ describe("public milestone page, linked to a doqtri heading", () => {
       nodeId: "h4",
       nodeLabel: "Escrow contract",
       docVersion: 3,
-      docUrl: "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
+      docLink: "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
       projectId: "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34",
     },
   };
@@ -145,7 +145,7 @@ describe("public milestone page, linked to a doqtri heading", () => {
     const block = /<section data-slot="planned-in-doqtri"[\s\S]*?<\/section>/.exec(html);
 
     expect(block?.[0]).toContain("Planned in doqtri");
-    expect(block?.[0]).toContain("Verified on DoqtriRegistry at v3");
+    expect(block?.[0]).toContain("Verified: planned in node h4, plan at v3");
     expect(html.replace(block?.[0] ?? "", "")).toBe(readFileSync(GOLDEN, "utf8"));
   });
 

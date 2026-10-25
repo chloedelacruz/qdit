@@ -66,3 +66,20 @@ export function isDoqtriDocUrl(url: string, origin: string): boolean {
     return false;
   }
 }
+
+/**
+ * The doqtri link of the public milestone page's "Planned in doqtri" block
+ * (contract section 12): `DOQTRI_ORIGIN` + `/d/` + the doc id, built here and
+ * never taken from the stored `doc_url`, which passed only the prefix check
+ * above and may name another doqtri page. Unlike `doqtriOrigin()`, unset or
+ * empty is no link rather than the default: the contract says a deployment
+ * that has not set its doqtri origin shows none. Misconfigured throws, as
+ * `doqtriOrigin()` does.
+ */
+export function publicDocLink(
+  docId: string,
+  value: string | undefined = process.env.DOQTRI_ORIGIN,
+): string | null {
+  if ((value ?? "").trim() === "") return null;
+  return `${doqtriOrigin(value)}/d/${encodeURIComponent(docId)}`;
+}

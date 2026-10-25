@@ -44,12 +44,13 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * ---------------------------------------------------------------------------
  * PLANNED IN DOQTRI (WP-3.2)
  * ---------------------------------------------------------------------------
- * A milestone that came from a doqtri heading also gets a "Planned in doqtri"
- * block: the heading, the doc version qdit stored for the link, whether
- * DoqtriRegistry agrees, and what the heading's own record says about this
- * milestone, all read from the chain when the page loads. The
- * function sends the reference only for a linked milestone, and the registry
- * is read only then, so an unlinked milestone's page is exactly what it was.
+ * A milestone linked to a doqtri heading also gets a "Planned in doqtri"
+ * block. The link row only says which doc and node to read (it is not
+ * evidence, contract section 12); the node, its record and the doc's version
+ * are what DoqtriRegistry says when the page loads, and the doqtri link is
+ * built from the doc id. The function sends the reference only for a linked
+ * milestone, and the registry is read only then, so an unlinked milestone's
+ * page is exactly what it was.
  */
 
 export const dynamic = "force-dynamic";
