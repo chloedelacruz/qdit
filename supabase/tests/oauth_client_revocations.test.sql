@@ -223,7 +223,8 @@ select pg_temp.as_oauth_client('a3000000-0000-4000-8000-000000000002');
 select is(public.oauth_token_revoked(), false, 'another user of the same client is not revoked');
 
 select pg_temp.as_oauth_client('a3000000-0000-4000-8000-000000000001', 'not-a-uuid');
-select is(public.oauth_token_revoked(), false, 'a client id that is not a UUID has no row, and does not fail');
+-- D-96 (20261026120100): no revoke can name it, so it fails closed.
+select is(public.oauth_token_revoked(), true, 'a client id that is not a UUID counts as revoked (D-96), and does not fail');
 
 
 select * from finish();

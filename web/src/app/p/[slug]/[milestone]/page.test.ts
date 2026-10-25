@@ -20,7 +20,12 @@ import type { PublicProof } from "@/lib/queries";
  * SHA-256 of the milestone content, not a transaction, so it lost its
  * stellar.expert /tx/ link, which only ever opened "not found", and its copy
  * button says "Copy hash". The golden file was edited for exactly that and
- * nothing else; the test below checks both halves.
+ * nothing else; the test below checks both halves. The same deliberate D-83
+ * edit, finished in WP-2.14: the intro sentence above it said "Every hash
+ * below opens on stellar.expert.", no longer true of the proof hash, and now
+ * says "Every transaction and contract below opens on stellar.expert." (the
+ * history's signers are not links). Those two sentences are the only other
+ * difference from the pre-WP-3.2 markup.
  */
 
 const stub = vi.hoisted(() => ({
@@ -125,6 +130,9 @@ describe("public milestone page, unlinked", () => {
     // The anchoring transactions in the history still link /tx/.
     expect(html).toContain(`/tx/${UNLINKED.anchors[0].txHash}"`);
     expect(html).toContain(`/tx/${UNLINKED.anchors[1].txHash}"`);
+    // The intro no longer says every hash opens on stellar.expert.
+    expect(html).not.toContain("Every hash below opens on stellar.expert.");
+    expect(html).toContain("Every transaction and contract below opens on stellar.expert.");
   });
 });
 
@@ -168,10 +176,14 @@ describe("public milestone page, linked to a doqtri heading", () => {
     await render(LINKED);
 
     expect(stub.check).toHaveBeenCalledTimes(1);
-    expect(stub.check).toHaveBeenCalledWith(LINKED.docSource, {
-      milestoneId: LINKED.milestoneId,
-      project: { id: LINKED.docSource?.projectId, network: "testnet", contractId: LINKED.contractId },
-    });
+    expect(stub.check).toHaveBeenCalledWith(
+      LINKED.docSource,
+      {
+        milestoneId: LINKED.milestoneId,
+        project: { id: LINKED.docSource?.projectId, network: "testnet", contractId: LINKED.contractId },
+      },
+      { freshMilestone: false },
+    );
   });
 
   it("adds the proof chain and the Planned in doqtri block and changes nothing else", async () => {
@@ -200,6 +212,7 @@ describe("public milestone page, linked to a doqtri heading", () => {
     expect(stub.milestone).toHaveBeenCalledWith(
       { id: LINKED.docSource?.projectId, network: "testnet", contractId: LINKED.contractId },
       LINKED.milestoneId,
+      { fresh: false },
     );
     expect([...html.matchAll(/data-step="([a-z]+)" data-step-state="([a-z]+)"/g)].map((m) => [m[1], m[2]])).toEqual([
       ["plan", "done"],
@@ -219,15 +232,64 @@ describe("public milestone page, linked to a doqtri heading", () => {
 
     const html = await render({ ...LINKED, network: null, contractId: null, docSource: unregistered });
 
-    expect(stub.check).toHaveBeenCalledWith(unregistered, {
-      milestoneId: LINKED.milestoneId,
-      project: null,
-    });
+    expect(stub.check).toHaveBeenCalledWith(
+      unregistered,
+      { milestoneId: LINKED.milestoneId, project: null },
+      { freshMilestone: false },
+    );
     expect(html).toContain('data-state="unreachable"');
     expect(html).toContain("Could not check");
     // Nothing to read on milestone_proof: the chain says so rather than asking.
     expect(stub.milestone).not.toHaveBeenCalled();
     expect(html).toContain('data-step="submitted" data-step-state="pending"');
     expect(html).toContain('data-step="verified" data-step-state="unchecked"');
+  });
+
+  // D-97: a cached Submitted record next to qdit's newer approve anchor.
+  const SUBMITTED_V2: MilestoneRead = {
+    ok: true,
+    record: {
+      status: "Submitted",
+      version: 2,
+      proofHash: UNLINKED.anchors[0].proofHash as string,
+      submitter: UNLINKED.ownerAddress as string,
+      timestamp: 1792656700,
+    },
+  };
+  const STALE: DocSourceCheck = {
+    ...VERIFIED,
+    node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Submitted" },
+  };
+
+  it("reads the record again, uncached, before it shows qdit's record contradicting it (D-97)", async () => {
+    stub.check.mockImplementation(async (_s, _c, options?: { freshMilestone?: boolean }) =>
+      options?.freshMilestone ? VERIFIED : STALE,
+    );
+    stub.milestone.mockImplementation(async (_p, _m, options?: { fresh?: boolean }) =>
+      options?.fresh ? APPROVED_V2 : SUBMITTED_V2,
+    );
+
+    const html = await render(LINKED);
+
+    expect(stub.milestone.mock.calls.map((call) => call[2])).toEqual([{ fresh: false }, { fresh: true }]);
+    expect(stub.check.mock.calls.map((call) => call[2])).toEqual([{ freshMilestone: false }, { freshMilestone: true }]);
+    expect([...html.matchAll(/data-step="([a-z]+)" data-step-state="([a-z]+)"/g)].map((m) => m[2])).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+    ]);
+    expect(html).not.toContain("Does not match");
+  });
+
+  it("still says Does not match when the fresh read agrees with the cache", async () => {
+    stub.check.mockResolvedValue(STALE);
+    stub.milestone.mockResolvedValue(SUBMITTED_V2);
+
+    const html = await render(LINKED);
+
+    expect(stub.milestone).toHaveBeenCalledTimes(2);
+    expect(html).toContain('data-step="approved" data-step-state="mismatch"');
+    expect(html).toContain("qdit recorded an approval of v2, but milestone_proof on Testnet says v2 awaits a decision.");
   });
 });
