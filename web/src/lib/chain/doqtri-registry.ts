@@ -739,9 +739,17 @@ export function compareDocSource(
 export const CACHE_TTL_MS = 30_000;
 /** How long a failed read is reused, so a reload storm does not hammer a down RPC. */
 export const FAILURE_TTL_MS = 5_000;
+/**
+ * How long a read made with `fresh` (D-97) is reused by the next `fresh`
+ * request for the same record. A `fresh` request never reuses an ordinary
+ * cached read; this only stops a page whose records really do contradict
+ * each other from bypassing the cache on every reload.
+ */
+export const FRESH_REUSE_MS = 5_000;
 const CACHE_LIMIT = 500;
 
-type Cached = { at: number; read: RegistryRead | MilestoneRead };
+/** `fresh`: the read was asked for with `fresh`, so it is no older than the request that wanted one. */
+type Cached = { at: number; read: RegistryRead | MilestoneRead; fresh: boolean };
 const cache = new Map<string, Cached>();
 /** Reads still on the wire, so two callers asking for one record send one request. */
 const inflight = new Map<string, Promise<RegistryRead | MilestoneRead>>();
@@ -752,14 +760,24 @@ export function clearRegistryCache(): void {
   inflight.clear();
 }
 
-/** A read through the cache: CACHE_TTL_MS for an answer, FAILURE_TTL_MS for a failure. */
+/**
+ * A read through the cache: CACHE_TTL_MS for an answer, FAILURE_TTL_MS for a
+ * failure. With `fresh`, only another `fresh` read of the last FRESH_REUSE_MS
+ * is reused; an ordinary cached one is read again. A read already on the wire
+ * is shared either way: it was sent after the cache missed, so it is no
+ * cached answer.
+ */
 async function cached<T extends RegistryRead | MilestoneRead>(
   key: string,
   now: number,
   read: () => Promise<T>,
+  fresh = false,
 ): Promise<T> {
   const hit = cache.get(key);
-  if (hit && now - hit.at < (hit.read.ok ? CACHE_TTL_MS : FAILURE_TTL_MS)) return hit.read as T;
+  if (hit) {
+    const reuseFor = fresh ? (hit.fresh ? FRESH_REUSE_MS : 0) : hit.read.ok ? CACHE_TTL_MS : FAILURE_TTL_MS;
+    if (now - hit.at < reuseFor) return hit.read as T;
+  }
 
   const pending = inflight.get(key);
   if (pending) return pending as Promise<T>;
@@ -768,12 +786,12 @@ async function cached<T extends RegistryRead | MilestoneRead>(
   // readers catch everything, so only a regression could) must not stay
   // there and hand every later caller of the key the same rejection.
   const request = read()
-    .then((fresh) => {
+    .then((answer) => {
       cache.delete(key);
-      cache.set(key, { at: now, read: fresh });
+      cache.set(key, { at: now, read: answer, fresh });
       // Oldest first, by insertion order.
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-      return fresh;
+      return answer;
     })
     .finally(() => inflight.delete(key));
   inflight.set(key, request);
@@ -785,6 +803,7 @@ function cachedMilestone(
   project: { id: string; network: StellarNetwork; contractId: string },
   milestoneId: string,
   now: number,
+  fresh = false,
 ): Promise<MilestoneRead> {
   return cached(
     ["milestone", project.network, project.contractId, project.id, milestoneId].join("|"),
@@ -795,6 +814,7 @@ function cachedMilestone(
         project.id,
         milestoneId,
       ),
+    fresh,
   );
 }
 
@@ -803,14 +823,15 @@ function cachedMilestone(
  * public page's proof chain (WP-3.3, facts 2 and 3). Cached like the
  * registry reads, under the same key as the one `checkDocSource` makes for a
  * heading signed for this milestone, so a page that asks for both sends one
- * request. Never throws.
+ * request. `fresh` skips an ordinary cached answer (D-97: the page asks for
+ * one before it says qdit's record contradicts the chain). Never throws.
  */
 export function checkMilestoneRecord(
   project: { id: string; network: StellarNetwork; contractId: string },
   milestoneId: string,
-  options: { now?: () => number } = {},
+  options: { now?: () => number; fresh?: boolean } = {},
 ): Promise<MilestoneRead> {
-  return cachedMilestone(project, milestoneId, (options.now ?? Date.now)());
+  return cachedMilestone(project, milestoneId, (options.now ?? Date.now)(), options.fresh ?? false);
 }
 
 /**
@@ -819,12 +840,14 @@ export function checkMilestoneRecord(
  * `milestone_proof` when it names this milestone. Each read is cached per
  * record for CACHE_TTL_MS (FAILURE_TTL_MS for a failed one), server side, in
  * memory: a public page can be reloaded by anyone, and the answer it shows is
- * a few seconds old at most.
+ * a few seconds old at most. `freshMilestone` reads the milestone's record
+ * as `checkMilestoneRecord`'s `fresh` does (D-97); the registry reads stay
+ * cached.
  */
 export async function checkDocSource(
   stored: StoredDocSource,
   context: DocSourceContext,
-  options: { now?: () => number; env?: Record<string, string | undefined> } = {},
+  options: { now?: () => number; env?: Record<string, string | undefined>; freshMilestone?: boolean } = {},
 ): Promise<DocSourceCheck> {
   const config = registryConfig(options.env);
   if (!config) {
@@ -867,6 +890,7 @@ export async function checkDocSource(
         { id: wanted.projectId, network: wanted.network, contractId: wanted.contractId },
         wanted.milestoneId,
         now,
+        options.freshMilestone ?? false,
       )
     : null;
 
