@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { HashLink } from "@/components/hash-link";
+import { PlannedInDoqtri } from "@/components/planned-in-doqtri";
 import { StatusBadge } from "@/components/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { checkDocSource } from "@/lib/chain/doqtri-registry";
 import { MILESTONE_STATUS } from "@/lib/constants";
 import { getPublicProof, type PublicProof } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
@@ -38,6 +40,15 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * turned publishing on, and which hand-lists the fields it exposes. There is no
  * description here, no task list, no member names — not because they are hidden
  * from the page, but because the function never sends them.
+ *
+ * ---------------------------------------------------------------------------
+ * PLANNED IN DOQTRI (WP-3.2)
+ * ---------------------------------------------------------------------------
+ * A milestone that came from a doqtri heading also gets a "Planned in doqtri"
+ * block: the heading, the doc version qdit stored for the link, and whether
+ * DoqtriRegistry agrees, read from the chain when the page loads. The
+ * function sends the reference only for a linked milestone, and the registry
+ * is read only then, so an unlinked milestone's page is exactly what it was.
  */
 
 export const dynamic = "force-dynamic";
@@ -74,6 +85,17 @@ export default async function PublicProofPage({
   const network = proof.network ?? "testnet";
   const submissions = proof.anchors.filter((anchor) => anchor.action === "submit");
   const currentHash = submissions.at(-1)?.proofHash ?? null;
+
+  // Checked on the network the page names, against the project's own
+  // milestone_proof contract for the heading's record (contract section 10).
+  const docSource = proof.docSource ?? null;
+  const docCheck = docSource
+    ? await checkDocSource(docSource, {
+        network,
+        milestoneId: proof.milestoneId,
+        contractId: proof.contractId,
+      })
+    : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -165,6 +187,8 @@ export default async function PublicProofPage({
             </ul>
           </div>
         </section>
+
+        {docSource && docCheck ? <PlannedInDoqtri source={docSource} check={docCheck} /> : null}
 
         <Timeline proof={proof} />
 
