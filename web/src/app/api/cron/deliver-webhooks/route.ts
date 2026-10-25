@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { doqtriOriginWarning, readDoqtriOriginHealth } from "@/lib/doqtri-origin-health";
 import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
 import { deliverDueEvents } from "@/lib/webhooks/deliver";
 import { supabaseOutbox } from "@/lib/webhooks/outbox";
@@ -24,7 +25,10 @@ import { parseEncryptionKey } from "@/lib/webhooks/secret-box";
  * (`data.scheduler`, D-57, lib/webhooks/scheduler-health.ts) and logs a
  * warning when it cannot, so the daily Vercel run says so when it is the only
  * thing delivering. An operator can call the route with the CRON_SECRET to
- * read it.
+ * read it. It reports and warns the same way when `DOQTRI_ORIGIN` and the
+ * database's `integration_settings.doqtri_origin` differ or the latter is
+ * unset (`data.doqtriOrigin`, D-95, lib/doqtri-origin-health.ts): not a
+ * webhook matter, but this is the log an operator reads.
  *
  * Configuration faults answer 503 and are logged by name, never by value.
  */
@@ -66,7 +70,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [summary, scheduler] = await Promise.all([
+    const [summary, scheduler, doqtriOrigin] = await Promise.all([
       deliverDueEvents({
         outbox: supabaseOutbox(secretKey),
         fetch,
@@ -74,10 +78,12 @@ export async function GET(request: Request) {
         deadline: Date.now() + RUN_BUDGET_MS,
       }),
       readSchedulerHealth(secretKey),
+      readDoqtriOriginHealth(secretKey),
     ]);
-    const warning = schedulerWarning(scheduler);
-    if (warning) console.warn(warning);
-    return NextResponse.json({ data: { ...summary, scheduler } }, { headers: NO_STORE });
+    for (const warning of [schedulerWarning(scheduler), doqtriOriginWarning(doqtriOrigin)]) {
+      if (warning) console.warn(warning);
+    }
+    return NextResponse.json({ data: { ...summary, scheduler, doqtriOrigin } }, { headers: NO_STORE });
   } catch (error) {
     console.error("webhooks cron: delivery run failed", error);
     return failure(500, "internal_error", "Webhook delivery run failed.");
