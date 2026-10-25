@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { DocSourceCheck } from "@/lib/chain/doqtri-registry";
+import type { DocSourceCheck, MilestoneRead } from "@/lib/chain/doqtri-registry";
 import type { PublicProof } from "@/lib/queries";
 
 /**
@@ -20,6 +20,7 @@ import type { PublicProof } from "@/lib/queries";
 const stub = vi.hoisted(() => ({
   proof: null as unknown,
   check: vi.fn(),
+  milestone: vi.fn(),
 }));
 
 vi.mock("@/lib/queries", () => ({
@@ -30,6 +31,7 @@ vi.mock("@/lib/queries", () => ({
 vi.mock("@/lib/chain/doqtri-registry", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/chain/doqtri-registry")>()),
   checkDocSource: stub.check,
+  checkMilestoneRecord: stub.milestone,
 }));
 
 const { default: PublicProofPage } = await import("@/app/p/[slug]/[milestone]/page");
@@ -89,6 +91,7 @@ async function render(proof: PublicProof): Promise<string> {
 
 beforeEach(() => {
   stub.check.mockReset();
+  stub.milestone.mockReset();
 });
 
 afterEach(() => {
@@ -101,7 +104,9 @@ describe("public milestone page, unlinked", () => {
 
     expect(html).toBe(readFileSync(GOLDEN, "utf8"));
     expect(html).not.toContain("doqtri");
+    expect(html).not.toContain("Proof chain");
     expect(stub.check).not.toHaveBeenCalled();
+    expect(stub.milestone).not.toHaveBeenCalled();
   });
 });
 
@@ -118,12 +123,25 @@ describe("public milestone page, linked to a doqtri heading", () => {
     },
   };
 
+  const APPROVED_V2: MilestoneRead = {
+    ok: true,
+    record: {
+      status: "Approved",
+      version: 2,
+      proofHash: UNLINKED.anchors[0].proofHash as string,
+      submitter: UNLINKED.ownerAddress as string,
+      timestamp: 1792656700,
+    },
+  };
+
   const VERIFIED: DocSourceCheck = {
     state: "verified",
     network: "testnet",
     registryId: "CCCIDUCFQMTMAGESMPTB3MFW4TURS62ORSZNICFOE6MNQZO3MI7F6QRJ",
     chainVersion: 3,
+    docUpdatedAt: 1792843200,
     node: { state: "current", status: "Verified", signedVersion: 2, milestoneStatus: "Approved" },
+    nodeUpdatedAt: 1792843200,
   };
 
   it("checks the heading's record against the project's own registration", async () => {
@@ -138,15 +156,43 @@ describe("public milestone page, linked to a doqtri heading", () => {
     });
   });
 
-  it("adds the Planned in doqtri block and changes nothing else", async () => {
+  it("adds the proof chain and the Planned in doqtri block and changes nothing else", async () => {
     stub.check.mockResolvedValue(VERIFIED);
+    stub.milestone.mockResolvedValue(APPROVED_V2);
 
     const html = await render(LINKED);
+    const chain = /<section data-slot="proof-chain"[\s\S]*?<\/section>/.exec(html);
     const block = /<section data-slot="planned-in-doqtri"[\s\S]*?<\/section>/.exec(html);
 
+    expect(chain?.[0]).toContain("Proof chain");
+    // The chain comes first, then the block, both where the block used to be.
+    expect(html.indexOf(chain?.[0] ?? "-")).toBeLessThan(html.indexOf(block?.[0] ?? "-"));
     expect(block?.[0]).toContain("Planned in doqtri");
     expect(block?.[0]).toContain("Verified: planned in node h4, plan at v3");
-    expect(html.replace(block?.[0] ?? "", "")).toBe(readFileSync(GOLDEN, "utf8"));
+    expect(html.replace(chain?.[0] ?? "", "").replace(block?.[0] ?? "", "")).toBe(readFileSync(GOLDEN, "utf8"));
+  });
+
+  it("reads the milestone's record on the project's contract and shows four steps from it", async () => {
+    stub.check.mockResolvedValue(VERIFIED);
+    stub.milestone.mockResolvedValue(APPROVED_V2);
+
+    const html = await render(LINKED);
+
+    expect(stub.milestone).toHaveBeenCalledTimes(1);
+    expect(stub.milestone).toHaveBeenCalledWith(
+      { id: LINKED.docSource?.projectId, network: "testnet", contractId: LINKED.contractId },
+      LINKED.milestoneId,
+    );
+    expect([...html.matchAll(/data-step="([a-z]+)" data-step-state="([a-z]+)"/g)].map((m) => [m[1], m[2]])).toEqual([
+      ["plan", "done"],
+      ["submitted", "done"],
+      ["approved", "done"],
+      ["verified", "done"],
+    ]);
+    // Approved links the approve transaction qdit recorded at v2. The fixture's only submit row is
+    // v1, so Submitted links the contract with the event-window note instead.
+    expect(html).toContain(`/tx/${UNLINKED.anchors[1].txHash}"`);
+    expect(html).toContain("older than that cannot be looked up");
   });
 
   it("checks a project that never registered with no registration to hold the node to", async () => {
@@ -161,5 +207,9 @@ describe("public milestone page, linked to a doqtri heading", () => {
     });
     expect(html).toContain('data-state="unreachable"');
     expect(html).toContain("Could not check");
+    // Nothing to read on milestone_proof: the chain says so rather than asking.
+    expect(stub.milestone).not.toHaveBeenCalled();
+    expect(html).toContain('data-step="submitted" data-step-state="pending"');
+    expect(html).toContain('data-step="verified" data-step-state="unchecked"');
   });
 });
