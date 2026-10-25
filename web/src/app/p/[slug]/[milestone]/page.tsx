@@ -168,12 +168,14 @@ export default async function PublicProofPage({
 
         {/* The one number a reader is most likely to want to compare against
             something they were sent separately, so it does not make them read
-            the history to find it. */}
+            the history to find it. A digest, not a transaction: copyable, but
+            with no stellar.expert link, which would only open "not found"
+            (D-83). The transaction that anchored it is in the history. */}
         {currentHash ? (
           <section className="surface-primary mt-6 rounded-xl border border-border-strong p-4">
             <h2 className="text-sm font-medium">Current proof hash</h2>
             <div className="mt-2">
-              <HashLink value={currentHash} kind="tx" network={network} lead={10} tail={10} />
+              <HashLink value={currentHash} kind="hash" lead={10} tail={10} />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               SHA-256 of the milestone content as it was submitted. Version{" "}

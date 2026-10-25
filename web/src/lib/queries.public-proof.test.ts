@@ -5,15 +5,23 @@ import { fakeDatabase } from "@/test/fake-supabase";
 /**
  * `getPublicProof` passes the doqtri reference of a linked milestone through
  * (WP-3.2), hand-listed, with the doqtri link built from `DOQTRI_ORIGIN` and
- * the doc id (contract section 12), never a stored `doc_url`: the function no
- * longer sends one, and one sent anyway (an older function) is dropped. An
+ * the doc id (contract section 12), never a stored `doc_url`: the function
+ * sends one only on doqtri's origin (D-77), and it is dropped either way. An
  * unlinked milestone's answer is returned as the function sent it, with no
  * `docSource` added.
+ *
+ * The node id comes only from the service-role lookup (`readPublicNodeId`,
+ * D-77), never from the anon answer.
  */
 const createClient = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
   getUser: async () => null,
+}));
+
+const readPublicNodeId = vi.fn();
+vi.mock("@/lib/public-node", () => ({
+  readPublicNodeId: (...args: unknown[]) => readPublicNodeId(...args),
 }));
 
 const { getPublicProof } = await import("./queries");
@@ -33,9 +41,9 @@ const BASE = {
   reviews: [],
 };
 
+/** The anon answer's docSource (20261026100200): no node id. */
 const SOURCE = {
   docId: "c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f",
-  nodeId: "h4",
   nodeLabel: "Escrow contract",
   docVersion: 7,
   projectId: null,
@@ -46,6 +54,7 @@ const LINK = "https://www.doqtri.xyz/d/c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f";
 function answer(data: unknown) {
   const db = fakeDatabase({ rpc: { public_milestone_proof: [{ data, error: null }] } });
   createClient.mockResolvedValue(db.client);
+  readPublicNodeId.mockResolvedValue({ ok: true, nodeId: "h4" });
   return db;
 }
 
@@ -64,6 +73,8 @@ describe("getPublicProof", () => {
     expect(proof).toEqual(BASE);
     expect(proof && "docSource" in proof).toBe(false);
     expect(db.requests[0].args).toEqual({ p_slug: "soroban-payroll", p_milestone_id: BASE.milestoneId });
+    // Nothing to look up for an unlinked milestone.
+    expect(readPublicNodeId).not.toHaveBeenCalled();
   });
 
   it("keeps the doc reference and builds the doqtri link from DOQTRI_ORIGIN and the doc id", async () => {
@@ -72,7 +83,26 @@ describe("getPublicProof", () => {
 
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toEqual({
       ...BASE,
-      docSource: { ...SOURCE, docLink: LINK },
+      docSource: { ...SOURCE, nodeId: "h4", docLink: LINK },
+    });
+    expect(readPublicNodeId).toHaveBeenCalledWith("soroban-payroll", BASE.milestoneId);
+  });
+
+  it("takes the node id from the server-side lookup only, never from the anon answer (D-77)", async () => {
+    answer({ ...BASE, docSource: { ...SOURCE, nodeId: "h9" } });
+    readPublicNodeId.mockResolvedValue({ ok: true, nodeId: "h4" });
+
+    await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toMatchObject({
+      docSource: { nodeId: "h4" },
+    });
+  });
+
+  it("has no node id when the lookup fails, so the page says it could not check", async () => {
+    answer({ ...BASE, docSource: SOURCE });
+    readPublicNodeId.mockResolvedValue({ ok: false });
+
+    await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toMatchObject({
+      docSource: { docId: SOURCE.docId, nodeId: null },
     });
   });
 
@@ -82,7 +112,7 @@ describe("getPublicProof", () => {
 
     const proof = await getPublicProof("soroban-payroll", BASE.milestoneId);
 
-    expect(proof?.docSource).toEqual({ ...SOURCE, docLink: LINK });
+    expect(proof?.docSource).toEqual({ ...SOURCE, nodeId: "h4", docLink: LINK });
     expect(JSON.stringify(proof)).not.toContain("another-doc");
     expect(JSON.stringify(proof)).not.toContain("Secret");
   });
@@ -101,7 +131,7 @@ describe("getPublicProof", () => {
 
     await expect(getPublicProof("soroban-payroll", BASE.milestoneId)).resolves.toEqual({
       ...BASE,
-      docSource: { ...SOURCE, docLink: null },
+      docSource: { ...SOURCE, nodeId: "h4", docLink: null },
     });
   });
 

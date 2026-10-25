@@ -1034,9 +1034,12 @@ export async function setProjectPublicProofs(
  *
  *   1. Record the revoke (`record_oauth_client_revocation`, D-59). From then
  *      on /api/v1 refuses every token the app holds for this user, including
- *      the access token Auth cannot recall, so the app's next call gets 401.
- *      This comes first so that a disconnect reported as done has always cut
- *      that token off; if it fails, nothing has changed and the user retries.
+ *      the access token Auth cannot recall, so the app's next call gets 401,
+ *      and so do its writes through PostgREST (D-75). The same call marks
+ *      the plan docs this user's connection kept linked as lost, so the doc
+ *      cards say so at once. This comes first so that a disconnect reported
+ *      as done has always cut that token off; if it fails, nothing has
+ *      changed and the user retries.
  *   2. Revoke the grant in Supabase Auth: it marks the consent revoked, ends
  *      that client's sessions for this user and invalidates its refresh
  *      tokens, so the app's refresh after that 401 fails too — which is how
@@ -1044,7 +1047,9 @@ export async function setProjectPublicProofs(
  *      If Auth refuses, the app's current tokens stay refused but its refresh
  *      still works, so it carries on with a fresh token; the user is told the
  *      disconnect failed and can try again.
- *   3. Mark the plan docs this user's connection kept linked as lost.
+ *   3. Mark those plan docs lost again (`mark_doc_link_connections_revoked`),
+ *      which also upserts the revoke: either call alone leaves both on
+ *      record.
  *
  * Only ever the caller's own grant: both RPCs and revokeGrant() act for the
  * session's user, and the client id is parsed as a UUID before it goes
@@ -1072,13 +1077,14 @@ export async function revokeAuthorizedApp(clientId: string): Promise<ActionState
     return { error: "Could not disconnect that app. Try again." };
   }
 
-  // The grant is gone. Tell the plan docs this user's connection kept linked
-  // that it no longer does, so their doc cards say "Connection to doqtri lost"
-  // (20261025120600_doc_link_connections.sql). Only after Auth accepted the
-  // revoke: marking first would show a live connection as lost if the revoke
-  // then failed. A failure here leaves the card optimistic until the next
-  // write, which is worth a log line, not a failed disconnect: the revoke
-  // itself is already on record from step 1.
+  // The grant is gone. Step 1 already marked the plan docs this user's
+  // connection kept linked as lost (20261026100100_doc_link_connections_
+  // hardening.sql); this marks them again and upserts the revoke, so either
+  // call alone leaves both on record. Had Auth refused the revoke,
+  // step 1's mark would heal itself: doqtri's refresh still works, and its
+  // next write, with a later iat, makes the connection live again. A failure
+  // here is worth a log line, not a failed disconnect: the revoke and the
+  // mark are already on record from step 1.
   const marked = await supabase.rpc("mark_doc_link_connections_revoked", { p_client_id: id });
   if (marked.error) console.error("mark_doc_link_connections_revoked failed", marked.error);
 

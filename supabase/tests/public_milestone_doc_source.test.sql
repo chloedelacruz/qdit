@@ -2,14 +2,18 @@
 -- qdit — pgTAP
 -- supabase/tests/public_milestone_doc_source.test.sql
 --
--- Covers 20261025140000_public_milestone_doc_source.sql: the doqtri reference
--- public_milestone_proof() adds for a linked milestone (WP-3.2). A linked
--- milestone of a publishing project gets `docSource` with exactly the doc id,
--- node id, node label, doc version and project id (null until the project
--- is registered on chain), never the stored doc URL; an unlinked one gets the
--- function's previous answer, unchanged; the doc title is never sent; a
--- project that does not publish still answers null; and anon, which the
--- function is for, still reads none of the tables behind it.
+-- Covers 20261025140000_public_milestone_doc_source.sql and its WP-2.12
+-- revision, 20261026100200_public_proof_doc_source_hardening.sql: the doqtri
+-- reference public_milestone_proof() adds for a linked milestone (WP-3.2). A
+-- linked milestone of a publishing project gets `docSource` with exactly the
+-- doc id, node label, doc version, project id (null until the project is
+-- registered on chain) and doc URL (null unless it is on
+-- integration_settings.doqtri_origin, D-77), never the node id (D-77: the
+-- page server reads it with public_milestone_node_id(), service_role only);
+-- an unlinked one gets the function's previous answer, unchanged; the doc
+-- title is never sent; a project that does not publish still answers null;
+-- and anon, which the function is for, still reads none of the tables behind
+-- it.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
@@ -20,7 +24,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(28);
+select plan(42);
 
 
 -- ----------------------------------------------------------------------------
@@ -258,32 +262,40 @@ select is(
   (select proof -> 'docSource' from answers where k = 'linked'),
   jsonb_build_object(
     'docId',      'd3200000-0000-4000-8000-000000000001',
-    'nodeId',     'h4',
     'nodeLabel',  'Escrow contract',
     'docVersion', 7,
-    'projectId',  null
+    'projectId',  null,
+    'docUrl',     null
   ),
-  'linked: docSource is the doc id, node id, node label and doc version, and no project id off chain'
+  'linked: docSource is the doc id, node label and doc version, no project id off chain, and no doc URL while doqtri_origin is unset'
 );
 
 select is(
   (select array_agg(key order by key) from answers a, jsonb_object_keys(a.proof -> 'docSource') as key where a.k = 'linked'),
-  array['docId', 'docVersion', 'nodeId', 'nodeLabel', 'projectId'],
+  array['docId', 'docUrl', 'docVersion', 'nodeLabel', 'projectId'],
   'linked: docSource has exactly those five keys'
 );
 
--- Contract section 12: the page builds its doqtri link from DOQTRI_ORIGIN and
--- the doc id; the stored doc_url may name another doqtri page and is never
--- sent. P1's doc_url below names another doc, with a query.
+-- D-77: the node id reaches anon only under the node-evidence rule, which SQL
+-- cannot check, so it is never in this answer.
 select ok(
-  not ((select proof -> 'docSource' from answers where k = 'linked') ? 'docUrl'),
-  'linked: no docUrl key'
+  not ((select proof -> 'docSource' from answers where k = 'linked') ? 'nodeId'),
+  'linked: no nodeId key'
 );
 
 select is(
+  (select position('"h4"' in proof::text) from answers where k = 'linked'),
+  0,
+  'linked: the node id is not sent anywhere in the answer'
+);
+
+-- Contract section 12: the page builds its doqtri link from DOQTRI_ORIGIN and
+-- the doc id. P1's doc_url below names another doc, with a query; with no
+-- doqtri_origin set it is not sent (section 7 sets one).
+select is(
   (select position('another-doc' in proof::text) from answers where k = 'linked'),
   0,
-  'linked: the stored doc_url is not sent anywhere in the answer'
+  'linked: the stored doc_url is not sent while doqtri_origin is unset'
 );
 
 select is(
@@ -324,10 +336,9 @@ select is(
   'linked before the doc was anchored: docVersion is null'
 );
 
-select is(
-  (select proof #>> '{docSource,nodeId}' from answers where k = 'unversioned'),
-  'h6',
-  'linked before the doc was anchored: the node id is still sent'
+select ok(
+  not ((select proof -> 'docSource' from answers where k = 'unversioned') ? 'nodeId'),
+  'linked before the doc was anchored: no node id either'
 );
 
 
@@ -406,7 +417,112 @@ select is(
 
 
 -- ----------------------------------------------------------------------------
--- 6. Unlinking takes it off the page
+-- 6. doqtri_origin and docUrl (D-77)
+-- ----------------------------------------------------------------------------
+
+select pg_temp.as_postgres();
+
+select throws_ok(
+  $$ update public.integration_settings set doqtri_origin = 'https://www.doqtri.xyz/' $$,
+  '23514', null,
+  'doqtri_origin: a trailing slash is refused'
+);
+select throws_ok(
+  $$ update public.integration_settings set doqtri_origin = 'http://www.doqtri.xyz' $$,
+  '23514', null,
+  'doqtri_origin: http is refused'
+);
+select throws_ok(
+  $$ update public.integration_settings set doqtri_origin = 'https://www.doqtri.xyz/d' $$,
+  '23514', null,
+  'doqtri_origin: a path is refused'
+);
+select throws_ok(
+  $$ update public.integration_settings set doqtri_origin = 'https://WWW.doqtri.xyz' $$,
+  '23514', null,
+  'doqtri_origin: upper case is refused, as doqtri never writes its URLs that way'
+);
+
+update public.integration_settings set doqtri_origin = 'https://www.doqtri.xyz';
+select is((select doqtri_origin from public.integration_settings), 'https://www.doqtri.xyz',
+  'doqtri_origin: an https origin is stored');
+
+-- P3's doc_url is on the origin; P1's is too, with a query, so it is sent as
+-- stored. A look-alike host is not.
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005') #>> '{docSource,docUrl}',
+  'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000003',
+  'docUrl: a doc URL on doqtri_origin is sent'
+);
+
+update public.project_doc_links set doc_url = 'https://www.doqtri.xyz.evil.example/d/d3200000-0000-4000-8000-000000000003'
+ where id = 'e3200000-0000-4000-8000-000000000003';
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005') #> '{docSource,docUrl}',
+  'null'::jsonb,
+  'docUrl: a host that only starts with the origin is null'
+);
+
+update public.project_doc_links set doc_url = 'https://www.doqtri.xyz?d=d3200000-0000-4000-8000-000000000003'
+ where id = 'e3200000-0000-4000-8000-000000000003';
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005') #> '{docSource,docUrl}',
+  'null'::jsonb,
+  'docUrl: the origin straight into a query, with no /, is null'
+);
+
+update public.integration_settings set doqtri_origin = 'https://doqtri.xyz';
+update public.project_doc_links set doc_url = 'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000003'
+ where id = 'e3200000-0000-4000-8000-000000000003';
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005') #> '{docSource,docUrl}',
+  'null'::jsonb,
+  'docUrl: another host of doqtri''s (www against apex) is null'
+);
+update public.integration_settings set doqtri_origin = 'https://www.doqtri.xyz';
+
+select pg_temp.as_anon();
+select is(
+  public.public_milestone_proof('src-onchain', 'c3200000-0000-4000-8000-000000000005') #>> '{docSource,docUrl}',
+  'https://www.doqtri.xyz/d/d3200000-0000-4000-8000-000000000003',
+  'anon: gets the same docUrl'
+);
+
+-- public_milestone_node_id(): the page server's way to the node id.
+select pg_temp.as_postgres();
+select ok(
+  (select p.prosecdef and p.proconfig @> array['search_path=""']
+     from pg_catalog.pg_proc p
+    where p.oid = 'public.public_milestone_node_id(text, uuid)'::regprocedure)
+  and has_function_privilege('service_role', 'public.public_milestone_node_id(text, uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.public_milestone_node_id(text, uuid)', 'execute')
+  and not has_function_privilege('authenticated', 'public.public_milestone_node_id(text, uuid)', 'execute'),
+  'public_milestone_node_id: SECURITY DEFINER, empty search_path, service_role only'
+);
+
+select set_config('role', 'service_role', true);
+select is(
+  array[
+    public.public_milestone_node_id('src-published', 'c3200000-0000-4000-8000-000000000001'),
+    public.public_milestone_node_id('src-onchain', 'c3200000-0000-4000-8000-000000000005'),
+    public.public_milestone_node_id('src-published', 'c3200000-0000-4000-8000-000000000002'),
+    public.public_milestone_node_id('src-private', 'c3200000-0000-4000-8000-000000000004'),
+    public.public_milestone_node_id('src-published', 'c3200000-0000-4000-8000-000000000004')
+  ],
+  array['h4', 'h2', null, null, null]::text[],
+  'service_role: the node id of a published linked milestone; null when unlinked, unpublished or under another slug'
+);
+
+select pg_temp.as_anon();
+select throws_ok(
+  $$ select public.public_milestone_node_id('src-published', 'c3200000-0000-4000-8000-000000000001') $$,
+  '42501', null,
+  'anon: cannot call public_milestone_node_id'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 7. Unlinking takes it off the page
 -- ----------------------------------------------------------------------------
 
 select pg_temp.as_postgres();

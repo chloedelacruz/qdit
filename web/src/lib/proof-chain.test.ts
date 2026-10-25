@@ -335,8 +335,18 @@ describe("proofChain, verified in doqtri (step 4)", () => {
     expect(verified.summary).toBe(
       "Heading h4 is signed as Verified for v3, but the milestone's record on chain is at v2, older than v3. Not verified.",
     );
-    const network: NodeAttestation = { state: "inconsistent", status: "Verified", signedVersion: 2, reason: "network", chainVersion: null };
-    expect(stepOf(withNode(network), "verified").summary).toMatch(/names another network than this project's/);
+    // D-74: another network or contract is no node evidence, so the step names
+    // neither the node nor its version.
+    for (const reason of ["network", "contract"] as const) {
+      const other: NodeAttestation = { state: "inconsistent", status: "Verified", signedVersion: 2, reason, chainVersion: null };
+      const step = stepOf(withNode(other), "verified");
+      expect(step.state).toBe("mismatch");
+      expect(step.summary).toBe(
+        `A heading of this doc is signed for this milestone, but its record names another ${reason} than this project's registration. Not verified.`,
+      );
+      expect(step.summary).not.toContain("h4");
+      expect(stepOf(withNode(other), "plan").state).toBe("mismatch");
+    }
   });
 
   it("could not check when a read failed or no registry is configured", () => {
@@ -348,5 +358,91 @@ describe("proofChain, verified in doqtri (step 4)", () => {
     expect(
       stepOf({ check: { ...VERIFIED_CHECK, state: "unconfigured", network: null, registryId: null, node: null } }, "verified"),
     ).toMatchObject({ state: "unchecked", link: null });
+  });
+});
+
+describe("proofChain, step 3 against qdit's own decisions (WP-2.12)", () => {
+  it.each([
+    ["Submitted", "awaits a decision"],
+    ["Rejected", "was rejected"],
+  ] as const)("a mismatch when qdit recorded an approval the chain does not have (%s)", (status, says) => {
+    const approved = stepOf(
+      { milestone: record(status), anchors: [anchor("submit", 2, SUBMIT_TX), anchor("approve", 2, APPROVE_TX)] },
+      "approved",
+    );
+    expect(approved.state).toBe("mismatch");
+    expect(approved.summary).toBe(`qdit recorded an approval of v2, but milestone_proof on Testnet says v2 ${says}.`);
+    expect(approved.link).toEqual({ kind: "tx", hash: APPROVE_TX, network: "testnet", ledger: 123458, unconfirmed: true });
+  });
+
+  it("a mismatch when qdit recorded a rejection while the chain says Approved", () => {
+    const approved = stepOf(
+      {
+        anchors: [anchor("submit", 2, SUBMIT_TX), anchor("reject", 2, REJECT_TX), anchor("approve", 2, APPROVE_TX)],
+      },
+      "approved",
+    );
+    expect(approved.state).toBe("mismatch");
+    expect(approved.summary).toBe("qdit recorded a rejection of v2, but milestone_proof on Testnet says v2 is approved.");
+    expect(approved.link).toMatchObject({ kind: "tx", hash: REJECT_TX, unconfirmed: true });
+  });
+
+  it("only qdit's decisions at the record's version count", () => {
+    // A v1 approval recorded before a resubmission says nothing about v2.
+    const approved = stepOf(
+      { milestone: record("Submitted"), anchors: [anchor("approve", 1, APPROVE_TX), anchor("submit", 2, SUBMIT_TX)] },
+      "approved",
+    );
+    expect(approved.state).toBe("pending");
+  });
+
+  it("keyed on the current record, noting a heading signed for another version (D-78)", () => {
+    const approved = stepOf(
+      withNode({ state: "resubmitted", status: "Built", signedVersion: 1, chainVersion: 2, milestoneStatus: "Approved" }),
+      "approved",
+    );
+    expect(approved.state).toBe("done");
+    expect(approved.summary).toBe(
+      "v2 approved on Testnet by the project's registered owner. The doqtri heading was signed for v1, an older version of this milestone.",
+    );
+    // No note when the versions agree, for a reference ahead of the record
+    // (inconsistent, step 4's to say), or without node evidence to name one.
+    expect(stepOf({}, "approved").summary).toBe("v2 approved on Testnet by the project's registered owner.");
+    expect(
+      stepOf(
+        withNode({ state: "inconsistent", status: "Verified", signedVersion: 3, reason: "older", chainVersion: 2 }),
+        "approved",
+      ).summary,
+    ).toBe("v2 approved on Testnet by the project's registered owner.");
+    expect(
+      stepOf(
+        withNode({ state: "inconsistent", status: "Verified", signedVersion: 1, reason: "contract", chainVersion: null }),
+        "approved",
+      ).summary,
+    ).toBe("v2 approved on Testnet by the project's registered owner.");
+  });
+});
+
+describe("proofChain, the node id could not be looked up (D-77)", () => {
+  it("steps 1 and 4 could not check, with the registry linked; steps 2 and 3 still read", () => {
+    const chain = steps({
+      source: { ...DONE.source, nodeId: null },
+      check: { ...VERIFIED_CHECK, state: "unavailable", chainVersion: null, docUpdatedAt: null, node: null, nodeUpdatedAt: null },
+    });
+    expect(chain.map((s) => s.state)).toEqual(["unchecked", "done", "done", "unchecked"]);
+    expect(chain[0].summary).toMatch(/could not look up which doqtri heading/);
+    expect(chain[0].link).toMatchObject({ kind: "contract", contractId: REGISTRY });
+    expect(chain[3].link).toMatchObject({ kind: "contract", contractId: REGISTRY });
+  });
+});
+
+describe("proofChain, the registry's facts are read from current state", () => {
+  it("steps 1 and 4 say where the history is", () => {
+    for (const key of ["plan", "verified"] as const) {
+      const link = stepOf({}, key).link;
+      expect(link?.kind === "contract" && link.note).toContain(
+        "Read from current state; see the contract's history on Stellar Expert for the transaction.",
+      );
+    }
   });
 });

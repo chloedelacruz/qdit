@@ -29,12 +29,19 @@ import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
  * still shows the record it read, and links the contract instead (section
  * 12, "Transaction links").
  *
- * Each step is one of four states, said in words on the page:
+ * Each step is one of four states, said in words on the page, the same four
+ * words doqtri's public page uses (D-78):
  *
- *   done       the chain says it happened
- *   pending    the chain says it has not happened yet
- *   mismatch   the records contradict each other; the step names how
- *   unchecked  a read failed or is not configured: never a pass
+ *   done       "Done": the chain says it happened
+ *   pending    "Pending": the chain says it has not happened yet
+ *   mismatch   "Does not match": the records contradict each other; the
+ *              step names how
+ *   unchecked  "Could not check": a read failed or is not configured, never
+ *              a pass
+ *
+ * Step 3 is keyed on the milestone's current on-chain record, as on doqtri's
+ * page (D-78); when the heading was signed for another version than the one
+ * approved, the step says so.
  *
  * Pure: the page passes the reads in.
  */
@@ -101,8 +108,8 @@ const NO_TX_QDIT =
   "so one older than that cannot be looked up there. This links the contract instead; the step shows its current record.";
 
 const NO_TX_DOQTRI =
-  "qdit does not keep doqtri's transactions, so this links the DoqtriRegistry contract instead; " +
-  "the step shows its current record.";
+  "qdit does not keep doqtri's transactions, so this links the DoqtriRegistry contract instead. " +
+  "Read from current state; see the contract's history on Stellar Expert for the transaction.";
 
 const unixIso = (seconds: number) => new Date(seconds * 1000).toISOString();
 
@@ -199,10 +206,15 @@ function planStep({ source, check }: ProofChainInput): ChainStep {
       );
     case "unreachable":
       return step("plan", "unchecked", `DoqtriRegistry on ${on} did not answer just now.`, { link });
+    case "unavailable":
+      return step("plan", "unchecked", UNAVAILABLE, { link });
     case "unconfigured":
       return step("plan", "unchecked", "This qdit deployment does not read a DoqtriRegistry.");
   }
 }
+
+const UNAVAILABLE =
+  "qdit could not look up which doqtri heading this milestone is linked to just now, so its record was not read.";
 
 // ---------------------------------------------------------------------------
 // 2. Submitted and 3. Approved
@@ -316,12 +328,32 @@ function approvedStep(input: ProofChainInput): ChainStep {
     return step("approved", "pending", "Nothing is submitted on chain to approve yet.");
   }
 
+  // qdit's own record of a decision the chain contradicts at this version:
+  // the chain wins (D-04), and the step names the contradiction and links
+  // qdit's transaction as unconfirmed, as step 2 does.
+  const contradicts = (action: "approve" | "reject", says: string) => {
+    const anchor = anchorFor(input, action, record.version);
+    return anchor
+      ? step(
+          "approved",
+          "mismatch",
+          `qdit recorded ${action === "approve" ? "an approval" : "a rejection"} of v${record.version}, but milestone_proof on ${on} says v${record.version} ${says}.`,
+          { link: txOrContract(input, anchor, true) },
+        )
+      : null;
+  };
+
   switch (record.status) {
     case "Submitted":
-      return step("approved", "pending", `v${record.version} awaits the project owner's decision on ${on}.`, {
-        link: txOrContract(input, null),
-      });
+      return (
+        contradicts("approve", "awaits a decision") ??
+        step("approved", "pending", `v${record.version} awaits the project owner's decision on ${on}.`, {
+          link: txOrContract(input, null),
+        })
+      );
     case "Rejected": {
+      const mismatch = contradicts("approve", "was rejected");
+      if (mismatch) return mismatch;
       const anchor = anchorFor(input, "reject", record.version);
       return step(
         "approved",
@@ -334,13 +366,35 @@ function approvedStep(input: ProofChainInput): ChainStep {
       );
     }
     case "Approved": {
+      const mismatch = contradicts("reject", "is approved");
+      if (mismatch) return mismatch;
       const anchor = anchorFor(input, "approve", record.version);
-      return step("approved", "done", `v${record.version} approved on ${on} by the project's registered owner.`, {
-        link: txOrContract(input, anchor),
-        at: anchor ? { iso: anchor.createdAt, source: "qdit" } : null,
-      });
+      return step(
+        "approved",
+        "done",
+        `v${record.version} approved on ${on} by the project's registered owner.${signedForOther(input, record.version)}`,
+        {
+          link: txOrContract(input, anchor),
+          at: anchor ? { iso: anchor.createdAt, source: "qdit" } : null,
+        },
+      );
     }
   }
+}
+
+/**
+ * D-78's note on step 3 (contract section 12, "Step states"): the heading
+ * was signed for an older version than the one approved, because the
+ * milestone was resubmitted after it was signed. It does not change the
+ * step's state; step 4 says what that means for the signature. Only on node
+ * evidence, the one case the page may name the node's version. A reference
+ * ahead of the record is inconsistent, and step 4 says so instead.
+ */
+function signedForOther({ check }: ProofChainInput, approved: number): string {
+  const node = check.node;
+  return namesThisMilestone(node) && node.signedVersion < approved
+    ? ` The doqtri heading was signed for v${node.signedVersion}, an older version of this milestone.`
+    : "";
 }
 
 // ---------------------------------------------------------------------------
@@ -349,11 +403,8 @@ function approvedStep(input: ProofChainInput): ChainStep {
 
 type Inconsistent = Extract<NodeEvidence, { state: "inconsistent" }>;
 
+/** Why a heading on this project's chain does not line up (node evidence only). */
 const INCONSISTENT: Record<Inconsistent["reason"], (node: Inconsistent) => string> = {
-  // Never reached: without a registration there is no node evidence.
-  "no-chain": () => "this project is not registered on chain",
-  network: () => "it names another network than this project's",
-  contract: () => "it names another contract than this project's",
   "not-found": () => "the milestone has no record on chain",
   older: (node) => `the milestone's record on chain is at v${node.chainVersion}, older than v${node.signedVersion}`,
 };
@@ -368,8 +419,21 @@ function verifiedStep({ source, check }: ProofChainInput): ChainStep {
   if (check.state === "unreachable") {
     return step("verified", "unchecked", `DoqtriRegistry on ${on} did not answer just now.`, { link });
   }
+  if (check.state === "unavailable") {
+    return step("verified", "unchecked", UNAVAILABLE, { link });
+  }
 
   const node = check.node;
+  if (node?.state === "inconsistent" && (node.reason === "network" || node.reason === "contract")) {
+    // D-74: a reference to another chain is no node evidence, so no node id
+    // or version, only the explicit inconsistent state.
+    return step(
+      "verified",
+      "mismatch",
+      `A heading of this doc is signed for this milestone, but its record names another ${node.reason} than this project's registration. Not verified.`,
+      { link },
+    );
+  }
   if (!namesThisMilestone(node)) {
     return step("verified", "pending", "Not yet verified in doqtri: no heading is signed for this milestone.", { link });
   }
