@@ -496,8 +496,6 @@ describe("namesThisMilestone and plannedVerdict (contract section 12, both check
       CHECK.node!,
       { state: "resubmitted", status: "Built", signedVersion: 2, chainVersion: 3, milestoneStatus: "Submitted" },
       { state: "unchecked", status: "Built", signedVersion: 2 },
-      inconsistent("network"),
-      inconsistent("contract"),
       inconsistent("not-found"),
       inconsistent("older"),
     ];
@@ -510,8 +508,22 @@ describe("namesThisMilestone and plannedVerdict (contract section 12, both check
       { state: "elsewhere", status: "Verified" },
       // The project id was never compared.
       inconsistent("no-chain"),
+      // D-74: a reference to another chain does not point at this project's records.
+      inconsistent("network"),
+      inconsistent("contract"),
     ];
     for (const node of none) expect(namesThisMilestone(node)).toBe(false);
+  });
+
+  it("a reference to another network or contract is the inconsistent verdict, never unsigned or verified (D-74)", () => {
+    for (const reason of ["network", "contract", "not-found", "older"] as const) {
+      expect(plannedVerdict({ ...CHECK, node: inconsistent(reason) })).toBe("inconsistent");
+    }
+    expect(plannedVerdict({ ...CHECK, node: inconsistent("no-chain") })).toBe("no-chain");
+  });
+
+  it("unavailable when the node id could not be looked up (D-77)", () => {
+    expect(plannedVerdict({ ...CHECK, state: "unavailable", chainVersion: null, node: null })).toBe("unavailable");
   });
 
   it("verified only when the node evidence holds, lines up, and the doc is anchored", () => {
@@ -685,6 +697,37 @@ describe("checkDocSource", () => {
 
     now += 1;
     await expect(checkDocSource(STORED, CONTEXT, options)).resolves.toMatchObject({ state: "verified" });
+  });
+
+  it("forgets a read that rejected, so the next caller of the key reads again", async () => {
+    const { fetchMock } = rpcReplies({ ...ALL, get_milestone_status: { retval: RECORD.approved_v2 } });
+    const options = { env: ENV, now: () => 1_000_000 };
+
+    // The readers catch everything, so only a regression makes one reject. A
+    // doc id that is not a string does: nativeToScVal throws before the
+    // read's own try. The cache key is the same as the string's.
+    await expect(checkDocSource({ ...STORED, docId: 123 as unknown as string }, CONTEXT, options)).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(checkDocSource({ ...STORED, docId: "123" }, CONTEXT, options)).resolves.toMatchObject({
+      state: "verified",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("reads nothing, and says so, when the node id could not be looked up (D-77)", async () => {
+    const { fetchMock } = rpcReplies(ALL);
+
+    await expect(checkDocSource({ ...STORED, nodeId: null }, CONTEXT, { env: ENV })).resolves.toEqual({
+      state: "unavailable",
+      network: "testnet",
+      registryId: REGISTRY,
+      chainVersion: null,
+      docUpdatedAt: null,
+      node: null,
+      nodeUpdatedAt: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

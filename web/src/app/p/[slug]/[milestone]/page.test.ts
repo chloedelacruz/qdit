@@ -15,6 +15,12 @@ import type { PublicProof } from "@/lib/queries";
  * The golden file is the markup the page produced for an unlinked milestone
  * before WP-3.2 touched it. A milestone with no doqtri link must render
  * exactly that, byte for byte, and must not ask the registry anything.
+ *
+ * One deliberate change since (WP-2.12, D-83): "Current proof hash" is a
+ * SHA-256 of the milestone content, not a transaction, so it lost its
+ * stellar.expert /tx/ link, which only ever opened "not found", and its copy
+ * button says "Copy hash". The golden file was edited for exactly that and
+ * nothing else; the test below checks both halves.
  */
 
 const stub = vi.hoisted(() => ({
@@ -107,6 +113,18 @@ describe("public milestone page, unlinked", () => {
     expect(html).not.toContain("Proof chain");
     expect(stub.check).not.toHaveBeenCalled();
     expect(stub.milestone).not.toHaveBeenCalled();
+  });
+
+  it("shows the current proof hash copyable, with no transaction link (D-83)", async () => {
+    const html = await render(UNLINKED);
+    const hash = UNLINKED.anchors[0].proofHash as string;
+
+    expect(html).toContain(`title="${hash}"`);
+    expect(html).toContain('aria-label="Copy hash"');
+    expect(html).not.toContain(`/tx/${hash}`);
+    // The anchoring transactions in the history still link /tx/.
+    expect(html).toContain(`/tx/${UNLINKED.anchors[0].txHash}"`);
+    expect(html).toContain(`/tx/${UNLINKED.anchors[1].txHash}"`);
   });
 });
 
