@@ -664,7 +664,12 @@ export type Database = {
           created_at?: string
           updated_at?: string
         }
-        /** Admins in a qdit session only; apps refresh through `link_project_doc`. */
+        /**
+         * No client updates (or inserts) a doc link directly: both are revoked
+         * from `authenticated` (D-48). The title and URL are refreshed only by
+         * `link_project_doc`, which an app calls through the API (D-60). Kept
+         * for the trigger's shape: these are the only columns that ever move.
+         */
         Update: {
           doc_title?: string
           doc_url?: string
