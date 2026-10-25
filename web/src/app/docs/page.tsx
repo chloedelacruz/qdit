@@ -696,6 +696,19 @@ function PublicProofs() {
         null and are deliberately indistinguishable: telling them apart would confirm that
         private work exists.
       </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        A milestone that came from a doqtri heading also carries <C>docSource</C>: the doc
+        id, the heading&rsquo;s node id and label (the milestone title), the doc version the
+        link was written against and the doc URL — never the doc&rsquo;s title, which is
+        doqtri&rsquo;s private note title. The page shows it as a &ldquo;Planned in
+        doqtri&rdquo; block and checks the version against doqtri&rsquo;s{" "}
+        <C>DoqtriRegistry</C> on the project&rsquo;s network with a read-only Soroban
+        simulation (<C>DOQTRI_REGISTRY_CONTRACT_ID_TESTNET</C> /{" "}
+        <C>_MAINNET</C>), cached for 30 seconds: matches, plan changed since, does not match,
+        not found, or an explicit &ldquo;could not check&rdquo; when the registry is not
+        configured or does not answer. An unlinked milestone has no <C>docSource</C> key and
+        its page is unchanged.
+      </p>
     </section>
   );
 }
