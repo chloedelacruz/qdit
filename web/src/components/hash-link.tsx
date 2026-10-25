@@ -21,15 +21,20 @@ const URL_FOR: Record<Kind, (value: string, network: StellarNetwork) => string> 
   account: accountUrl,
 };
 
-const LABEL: Record<Kind, string> = {
+const LABEL: Record<Kind | "hash", string> = {
   contract: "contract",
   tx: "transaction",
   account: "account",
+  hash: "hash",
 };
 
 /**
  * Displays a contract ID, tx hash or wallet address: middle-truncated, mono,
  * copyable, and linked to the explorer for the right network.
+ *
+ * `kind="hash"` is a digest that is not a ledger object, such as a proof hash
+ * (the SHA-256 of a milestone's content): shown and copyable the same way,
+ * with no explorer link, because stellar.expert has no page for it (D-83).
  */
 export function HashLink({
   value,
@@ -40,12 +45,10 @@ export function HashLink({
   className,
 }: {
   value: string;
-  kind: Kind;
-  network: StellarNetwork;
   lead?: number;
   tail?: number;
   className?: string;
-}) {
+} & ({ kind: Kind; network: StellarNetwork } | { kind: "hash"; network?: undefined })) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -80,16 +83,18 @@ export function HashLink({
         {copied ? <Check className="text-success" /> : <Copy />}
       </Button>
 
-      <Button variant="ghost" size="xs" className="size-6 px-0" asChild>
-        <a
-          href={URL_FOR[kind](value, network)}
-          target="_blank"
-          rel="noreferrer noopener"
-          aria-label={`View ${LABEL[kind]} on stellar.expert`}
-        >
-          <ExternalLink />
-        </a>
-      </Button>
+      {kind !== "hash" && network ? (
+        <Button variant="ghost" size="xs" className="size-6 px-0" asChild>
+          <a
+            href={URL_FOR[kind](value, network)}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label={`View ${LABEL[kind]} on stellar.expert`}
+          >
+            <ExternalLink />
+          </a>
+        </Button>
+      ) : null}
     </span>
   );
 }
