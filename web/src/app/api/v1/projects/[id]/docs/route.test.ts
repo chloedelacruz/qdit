@@ -200,6 +200,37 @@ describe("POST /api/v1/projects/{id}/docs", () => {
     expect(db.requests.map((r) => (r.args as { p_doc_url: string }).p_doc_url)).toEqual([staging]);
   });
 
+  it("answers the database's origin refusal as 400 on doc_url, and warns that the origins differ (D-95)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const refusal = {
+      code: "22023",
+      message: "must be a doqtri URL starting with https://doqtri.xyz/",
+      hint: "doc_url",
+    };
+    signedIn({ rpc: { link_project_doc: [{ data: null, error: refusal }] } });
+
+    const response = await post(BODY);
+
+    expect(response.status).toBe(400);
+    const error = (await response.json()).error;
+    expect(error.code).toBe("invalid_request");
+    expect(error.details.fields).toEqual({ doc_url: "must be a doqtri URL starting with https://doqtri.xyz/" });
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(/integration_settings\.doqtri_origin refused/);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("answers another 22023 as 500, not as a doc_url problem", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    signedIn({ rpc: { link_project_doc: [{ data: null, error: { code: "22023", message: "boom", hint: null } }] } });
+
+    const response = await post(BODY);
+
+    expect(response.status).toBe(500);
+    expect(console.error).toHaveBeenCalledTimes(1);
+  });
+
   it("answers 500 without touching the database when DOQTRI_ORIGIN is not an https origin", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     process.env.DOQTRI_ORIGIN = "http://www.doqtri.xyz";
