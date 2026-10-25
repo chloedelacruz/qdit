@@ -14,7 +14,7 @@
 -- And 20261025130000_oauth_revocations.sql: only doqtri's client, as pinned
 -- in integration_settings, records anything (D-61); a revoke by a user with no
 -- rows is still remembered, so their pre-revoke token's writes record revoked
--- rows (D-59).
+-- rows (D-59); and doc links are written only through an app (D-60).
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
 -- Everything happens inside one transaction that is rolled back. Callers are
@@ -25,7 +25,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(47);
+select plan(48);
 
 
 -- ----------------------------------------------------------------------------
@@ -178,20 +178,36 @@ select lives_ok(
   'oauth admin links D1'
 );
 
--- D2: linked by the owner from their own qdit session, not through doqtri.
+-- D2: the owner's own qdit session cannot link a doc (D-60), so an operator
+-- writes it, and the owner links a milestone to one of its headings from
+-- their session.
 select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
-select lives_ok(
+select throws_ok(
   $$ select * from public.link_project_doc('b2000000-0000-4000-8000-000000000001',
        'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan',
        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002') $$,
-  'session owner links D2'
+  '42501', null,
+  'session owner cannot link D2 through link_project_doc (D-60)'
+);
+
+select pg_temp.as_postgres();
+insert into public.project_doc_links (project_id, doc_id, doc_title, doc_url, linked_by)
+values ('b2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000002', 'Hand-linked plan',
+        'https://www.doqtri.xyz/d/d2000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001');
+
+select pg_temp.as_session('a2000000-0000-4000-8000-000000000001');
+select lives_ok(
+  $$ insert into public.milestone_external_links (milestone_id, project_id, doc_id, node_id, node_label, created_by)
+     values ('c2000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000001',
+             'd2000000-0000-4000-8000-000000000002', 'h0', 'Hand-linked', 'a2000000-0000-4000-8000-000000000001') $$,
+  'session owner links a milestone to a heading of D2'
 );
 
 select pg_temp.as_postgres();
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000001'), array['2:live'],
   'an app''s doc link records the linker''s connection');
 select is(pg_temp.connections('d2000000-0000-4000-8000-000000000002'), '{}'::text[],
-  'a first-party doc link records no connection');
+  'first-party link writes record no connection');
 
 select is(
   (select c.client_id::text from public.doc_link_connections c
