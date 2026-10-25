@@ -696,6 +696,30 @@ function PublicProofs() {
         null and are deliberately indistinguishable: telling them apart would confirm that
         private work exists.
       </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        A milestone linked to a doqtri heading also carries <C>docSource</C>: the doc id, the
+        heading&rsquo;s node id and label (the milestone title), the doc version the link was
+        written against, and the project id once the project is registered on chain (where it
+        is public already, and never shown) — never the doc&rsquo;s title, which is
+        doqtri&rsquo;s private note title, and never the stored doc URL. The page shows it as a
+        &ldquo;Planned in doqtri&rdquo; block, and treats it as a pointer, not as evidence:
+        anyone who may write the link could have written it. It reads this deployment&rsquo;s{" "}
+        <C>DoqtriRegistry</C> (<C>DOQTRI_REGISTRY_CONTRACT_ID</C> on{" "}
+        <C>DOQTRI_REGISTRY_NETWORK</C>) with a read-only Soroban simulation, cached for 30
+        seconds, and makes two checks. The node id, its status and version appear only when{" "}
+        <C>get_node</C> has <C>tool</C> &ldquo;qdit&rdquo; and an <C>artifact_ref</C> naming
+        this project and milestone; otherwise the block says only that the milestone is linked
+        to the doc and not signed in doqtri yet. The doc check, labelled &ldquo;doc anchored at
+        version &ge; V&rdquo;, holds when <C>get_document</C> is at or past the linked version
+        (with a &ldquo;plan changed since&rdquo; note when past it). The block says verified
+        only when both hold, naming the on-chain version; anything else is not verified with its
+        reason, or an explicit &ldquo;could not check&rdquo; when a read failed or no registry
+        is configured. The heading&rsquo;s own record counts as Verified only when{" "}
+        <C>get_milestone_status</C> also shows the milestone Approved at the version it names.
+        &ldquo;Open in doqtri&rdquo; goes to <C>DOQTRI_ORIGIN</C>/d/&lt;doc id&gt;, built by
+        qdit, and is absent when <C>DOQTRI_ORIGIN</C> is unset. An unlinked milestone has no{" "}
+        <C>docSource</C> key and its page is unchanged.
+      </p>
     </section>
   );
 }
