@@ -20,7 +20,12 @@ import type { PublicProof } from "@/lib/queries";
  * SHA-256 of the milestone content, not a transaction, so it lost its
  * stellar.expert /tx/ link, which only ever opened "not found", and its copy
  * button says "Copy hash". The golden file was edited for exactly that and
- * nothing else; the test below checks both halves.
+ * nothing else; the test below checks both halves. The same deliberate D-83
+ * edit, finished in WP-2.14: the intro sentence above it said "Every hash
+ * below opens on stellar.expert.", no longer true of the proof hash, and now
+ * says "Every transaction and contract below opens on stellar.expert." (the
+ * history's signers are not links). Those two sentences are the only other
+ * difference from the pre-WP-3.2 markup.
  */
 
 const stub = vi.hoisted(() => ({
@@ -125,6 +130,9 @@ describe("public milestone page, unlinked", () => {
     // The anchoring transactions in the history still link /tx/.
     expect(html).toContain(`/tx/${UNLINKED.anchors[0].txHash}"`);
     expect(html).toContain(`/tx/${UNLINKED.anchors[1].txHash}"`);
+    // The intro no longer says every hash opens on stellar.expert.
+    expect(html).not.toContain("Every hash below opens on stellar.expert.");
+    expect(html).toContain("Every transaction and contract below opens on stellar.expert.");
   });
 });
 
