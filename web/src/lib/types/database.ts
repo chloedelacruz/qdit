@@ -776,6 +776,41 @@ export type Database = {
       }
 
       /**
+       * When each user last revoked each OAuth client
+       * (20261025130000_oauth_revocations.sql, D-59). No client role can read
+       * or write it; `record_oauth_client_revocation` and
+       * `mark_doc_link_connections_revoked` write it, `oauth_token_revoked`
+       * reads it.
+       */
+      oauth_client_revocations: {
+        Row: {
+          user_id: string
+          client_id: string
+          revoked_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * One row of per-environment integration config, written by an operator
+       * in the SQL editor (20261025130000_oauth_revocations.sql). No client
+       * role can read it.
+       */
+      integration_settings: {
+        Row: {
+          id: true
+          /** doqtri's OAuth client id here (D-61); null until set. */
+          doqtri_oauth_client_id: string | null
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
        * Where qdit sends milestone events (20261024130000_integration_webhooks.sql).
        * No client role can read it; the cron route reads it only through
        * `claim_integration_events`. The secret columns are ciphertext
@@ -944,13 +979,31 @@ export type Database = {
         Returns: string[]
       }
       /**
-       * After the user revokes an app in Settings: marks the caller's own doc
-       * link connections through that client lost. First-party sessions only;
-       * returns how many rows it marked.
+       * After the user revokes an app in Settings: records the revoke (D-59)
+       * and marks the caller's own doc link connections through that client
+       * lost. First-party sessions only; returns how many rows it marked.
        */
       mark_doc_link_connections_revoked: {
         Args: { p_client_id: string }
         Returns: number
+      }
+      /**
+       * Before the user revokes an app in Settings: records that the caller
+       * revoked `p_client_id` now, so /api/v1 refuses that app's tokens issued
+       * until now (D-59). First-party sessions only; returns the revoke time.
+       */
+      record_oauth_client_revocation: {
+        Args: { p_client_id: string }
+        Returns: string
+      }
+      /**
+       * Whether the caller's own OAuth token was issued at or before that
+       * user's latest revoke of its client (D-59). Reads sub, client_id and
+       * iat from the request JWT; called once per /api/v1 request.
+       */
+      oauth_token_revoked: {
+        Args: Record<string, never>
+        Returns: boolean
       }
       /**
        * POST /api/v1/milestones. Member and above. Returns the new milestone

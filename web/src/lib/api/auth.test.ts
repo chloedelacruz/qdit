@@ -13,8 +13,10 @@ const signingKey = vi.fn();
 vi.mock("./jwks", () => ({
   signingKey: (...args: unknown[]) => signingKey(...args),
 }));
+// The scoped client's one call: oauth_token_revoked() (D-59).
+const rpc = vi.fn();
 const createClient = vi.fn((_url: string, _key: string, options?: { accessToken?: () => Promise<string> }) =>
-  options?.accessToken ? { scoped: true, options } : { auth: { getClaims } },
+  options?.accessToken ? { scoped: true, options, rpc } : { auth: { getClaims } },
 );
 
 vi.mock("@supabase/supabase-js", async (importOriginal) => ({
@@ -64,6 +66,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
   vi.spyOn(console, "error").mockImplementation(() => {});
   signingKey.mockResolvedValue(KEY);
+  rpc.mockResolvedValue({ data: false, error: null });
 });
 
 afterEach(() => {
@@ -244,6 +247,66 @@ describe("authenticate", () => {
     expect(key).toBe("sb_publishable_test");
     await expect(options?.accessToken?.()).resolves.toBe(TOKEN);
     expect(auth.supabase).toMatchObject({ scoped: true });
+  });
+
+  it("asks the database once whether the token was revoked, with the caller's token", async () => {
+    getClaims.mockResolvedValue({ data: { claims: claims() }, error: null });
+
+    await authenticate(request(`Bearer ${TOKEN}`));
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("oauth_token_revoked");
+  });
+
+  it("401s with invalid_token for a token issued before a revoke (D-59)", async () => {
+    getClaims.mockResolvedValue({ data: { claims: claims() }, error: null });
+    rpc.mockResolvedValue({ data: true, error: null });
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    expect(error.status).toBe(401);
+    expect(error.code).toBe("unauthorized");
+    expect(error.headers["WWW-Authenticate"]).toBe('Bearer error="invalid_token"');
+  });
+
+  it("accepts a token the database says postdates any revoke", async () => {
+    getClaims.mockResolvedValue({ data: { claims: claims() }, error: null });
+    rpc.mockResolvedValueOnce({ data: true, error: null });
+    await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    // The re-consent's token: a later iat, so the lookup answers false.
+    rpc.mockResolvedValueOnce({ data: false, error: null });
+    await expect(authenticate(request(`Bearer ${TOKEN}`))).resolves.toMatchObject({ userId: USER });
+  });
+
+  it.each([
+    ["the lookup returns an error", { data: null, error: { code: "57014", message: "timeout" } }],
+    ["the lookup returns no answer", { data: null, error: null }],
+    ["the lookup returns something other than a boolean", { data: "false", error: null }],
+  ])("503s, failing closed, when %s", async (_label, answer) => {
+    getClaims.mockResolvedValue({ data: { claims: claims() }, error: null });
+    rpc.mockResolvedValue(answer);
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+
+    expect(error.code).toBe("unavailable");
+    expect(error.status).toBe(503);
+    expect(error.headers["Retry-After"]).toBeDefined();
+  });
+
+  it("503s when the lookup throws", async () => {
+    getClaims.mockResolvedValue({ data: { claims: claims() }, error: null });
+    rpc.mockRejectedValue(new TypeError("fetch failed"));
+
+    const error = await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+    expect(error.status).toBe(503);
+  });
+
+  it("does not look up revocations for a token it already refused", async () => {
+    getClaims.mockResolvedValue({ data: { claims: claims({ client_id: undefined }) }, error: null });
+
+    await rejection(authenticate(request(`Bearer ${TOKEN}`)));
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("builds the verifier without any session persistence", async () => {
