@@ -51,6 +51,10 @@ import { signingKey } from "./jwks";
  *     token has no `client_id`; the contract refuses it here so that a stolen
  *     browser session cannot drive the API, and so that the D-03 RESTRICTIVE
  *     policies (WP-2.2), which key on `client_id`, always have one to key on.
+ *   - `client_id` is a UUID, as Supabase issues them (D-77). The revoke table
+ *     keys on a uuid, so a revoke could never be recorded for any other
+ *     shape, and `oauth_token_revoked()` answers false for one: without this
+ *     check D-59 would fail open for such a client.
  *
  * And one thing only the database knows (D-59):
  *
@@ -273,8 +277,7 @@ function acceptable(claims: Record<string, unknown>): claims is ApiClaims {
     typeof sub === "string" &&
     UUID.test(sub) &&
     typeof clientId === "string" &&
-    clientId.length > 0 &&
-    clientId.length <= 255 &&
+    UUID.test(clientId) &&
     // getClaims() already rejects a missing or past `exp`. Checked again so
     // the contract's list is enforced in one readable place, not partly
     // inside a dependency whose behaviour can change on upgrade.

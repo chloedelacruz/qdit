@@ -196,6 +196,9 @@ describe("authenticate", () => {
   it.each([
     ["a first-party session token (no client_id)", { client_id: undefined }],
     ["an empty client_id", { client_id: "" }],
+    ["a client_id that is not a UUID (D-77)", { client_id: "doqtri" }],
+    ["a client_id that is a UUID with a suffix", { client_id: `${CLIENT}x` }],
+    ["a client_id that is not a string", { client_id: 42 }],
     ["another issuer", { iss: "https://evil.supabase.co/auth/v1" }],
     ["the anon role", { role: "anon" }],
     ["the service_role role", { role: "service_role" }],
