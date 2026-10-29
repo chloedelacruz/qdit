@@ -48,7 +48,7 @@ const post = (body: unknown, project = PROJECT, init: Parameters<typeof apiReque
   POST(apiRequest(`/projects/${project}/docs`, { method: "POST", body, ...init }), params({ id: project }));
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.app";
   delete process.env.DOQTRI_ORIGIN;
 });
 
