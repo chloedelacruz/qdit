@@ -24,8 +24,8 @@ describe("qditUrl", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
     vi.stubEnv("NODE_ENV", "production");
 
-    expect(qditUrl("/projects/a")).toBe("https://qdit.atalusan.com/projects/a");
-    expect(qditUrl("/projects/b")).toBe("https://qdit.atalusan.com/projects/b");
+    expect(qditUrl("/projects/a")).toBe("https://qdit.app/projects/a");
+    expect(qditUrl("/projects/b")).toBe("https://qdit.app/projects/b");
     expect(log).toHaveBeenCalledTimes(1);
   });
 });
