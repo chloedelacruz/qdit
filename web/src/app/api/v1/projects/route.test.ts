@@ -53,7 +53,7 @@ const request = (query = "") =>
   });
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.app";
 });
 
 afterEach(() => {
@@ -95,7 +95,7 @@ describe("GET /api/v1/projects", () => {
             network: "testnet",
             contract_id: "CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG",
           },
-          url: "https://qdit.atalusan.com/projects/soroban-payroll",
+          url: "https://qdit.app/projects/soroban-payroll",
           created_at: "2026-10-01T09:30:00+00:00",
           updated_at: "2026-10-20T14:02:11+00:00",
         },

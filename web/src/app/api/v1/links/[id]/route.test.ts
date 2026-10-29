@@ -49,7 +49,7 @@ const remove = (id = LINK) => DELETE(apiRequest(`/links/${id}`, { method: "DELET
 const role = (value: string) => ({ data: { role: value }, error: null });
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.app";
 });
 
 afterEach(() => {
