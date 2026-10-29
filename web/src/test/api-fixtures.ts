@@ -86,7 +86,7 @@ export function expectedMilestone(overrides: Record<string, unknown> = {}) {
     status: "submitted",
     due_date: "2026-11-15",
     order_index: 3,
-    url: "https://qdit.atalusan.com/projects/soroban-payroll/milestones",
+    url: "https://qdit.app/projects/soroban-payroll/milestones",
     link: {
       id: LINK,
       doc_id: DOC,

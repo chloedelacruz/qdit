@@ -49,7 +49,7 @@ function signedIn(script: Parameters<typeof fakeDatabase>[0] = {}) {
 const create = (body: unknown) => POST(apiRequest("/milestones", { method: "POST", body }));
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.app";
 });
 
 afterEach(() => {
