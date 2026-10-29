@@ -49,7 +49,7 @@ export const PROJECT_COLUMNS =
   "id, name, slug, description, status, chain_network, chain_contract_id, created_at, updated_at";
 
 /** The contract's production origin (section 7). */
-const PRODUCTION_ORIGIN = "https://qdit.atalusan.com";
+const PRODUCTION_ORIGIN = "https://qdit.app";
 
 let warnedMissingSite = false;
 
