@@ -46,7 +46,7 @@ const patch = (body: unknown, id = MILESTONE) =>
 const role = (value: string | null) => ({ data: value ? { role: value } : null, error: null });
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.atalusan.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://qdit.app";
 });
 
 afterEach(() => {
