@@ -37,8 +37,9 @@ import type { PublicProof } from "@/lib/queries";
  * block (WP-3.2), against a mocked Soroban RPC.
  *
  * The XDR below is real. It was produced by DoqtriRegistry v3's own wasm (the
- * build of doqtri's contract/ on integration/suite that G1 and G2 ran) in a
- * soroban-sdk 22 test host: three `anchor` calls on doc
+ * build of doqtri's contract/ on integration/suite, since folded into
+ * staging, that G1 and G2 ran) in a soroban-sdk 22 test host: three `anchor`
+ * calls on doc
  * c2d1e0f9-8a7b-4c6d-9e5f-4a3b2c1d0e9f, the last signing `h4` Verified with
  * tool "qdit" and the contract's artifact_ref, and `h2` Built as a rollup;
  * then get_document and get_node, with each return value encoded as ScVal
