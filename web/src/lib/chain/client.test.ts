@@ -73,8 +73,11 @@ describe("buildUnsigned", () => {
     const toXDR = vi.fn(() => "AAAAAgAAAA-unassembled");
     stub.assembled = {
       simulation: { error: "HostError: Error(Contract, #5)" },
-      // What the generated bindings decode `#5` into, via their `Errors` map.
-      result: { isErr: () => true, unwrapErr: () => ({ message: "InvalidStatus" }) },
+      // What the SDK decodes `#5` into: the error's doc comment from the spec.
+      result: {
+        isErr: () => true,
+        unwrapErr: () => ({ message: "The milestone is not in a status that permits this transition." }),
+      },
       toXDR,
     };
 
