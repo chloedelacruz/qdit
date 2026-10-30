@@ -135,11 +135,18 @@ export function MilestoneRowActions({
     a feature nobody uses — which is exactly what a tester had already said
     about Re-submit hiding in a dropdown.
   */
+  /*
+    Only what the contract would accept next, read from the newest anchor: an
+    approval is final (nothing more), and approve or reject needs a submission
+    to decide on. Offering the rest only led to "not in a status that permits
+    this transition" after the click.
+  */
+  const lastAnchor = milestone.anchor?.action ?? null;
   const anchorItems: { key: AnchorAction; label: string }[] =
-    anchoring && canEdit
+    anchoring && canEdit && lastAnchor !== "approve"
       ? [
           { key: "submit", label: "Anchor proof on chain" },
-          ...(isOwner
+          ...(isOwner && lastAnchor === "submit"
             ? [
                 { key: "approve" as const, label: "Approve on chain" },
                 { key: "reject" as const, label: "Reject on chain" },
