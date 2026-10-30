@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
   canonicalMilestone,
+  canonicalMilestoneV1,
   isMilestoneAnchorStale,
   milestoneProofHash,
   proofHashBytes,
@@ -36,7 +39,6 @@ function milestone(overrides: Partial<MilestoneDigestInput> = {}): MilestoneDige
     projectId: "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7",
     title: "Ship the contract",
     description: null,
-    status: "submitted",
     dueDate: null,
     proofs: [],
     ...overrides,
@@ -46,6 +48,19 @@ function milestone(overrides: Partial<MilestoneDigestInput> = {}): MilestoneDige
 describe("canonicalMilestone", () => {
   it("length-prefixes every field and marks nulls", () => {
     expect(canonicalMilestone(milestone())).toBe(
+      "17:qdit/milestone/v2" +
+        "|36:8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2" +
+        "|36:c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7" +
+        "|17:Ship the contract" +
+        "|~" +
+        "|~" +
+        "|1:0",
+    );
+  });
+
+  /** v1 anchors are on the ledger for good, so its form stays pinned too. */
+  it("keeps v1's form, with the status, for anchors taken under it", () => {
+    expect(canonicalMilestoneV1(milestone(), "submitted")).toBe(
       "17:qdit/milestone/v1" +
         "|36:8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2" +
         "|36:c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7" +
@@ -109,7 +124,6 @@ describe("milestoneProofHash", () => {
   it.each([
     ["title", { title: "Ship the contract " }],
     ["description", { description: "" }],
-    ["status", { status: "approved" }],
     ["due date", { dueDate: "2026-08-09" }],
   ])("changes when the %s changes", (_label, overrides) => {
     expect(milestoneProofHash(milestone(overrides))).not.toBe(
@@ -158,7 +172,25 @@ describe("isMilestoneAnchorStale", () => {
 
   it("is true once the milestone changes", () => {
     const anchored = milestoneProofHash(milestone());
-    expect(isMilestoneAnchorStale(milestone({ status: "approved" }), anchored)).toBe(true);
+    expect(isMilestoneAnchorStale(milestone({ title: "Ship the contract v2" }), anchored)).toBe(true);
+  });
+
+  /**
+   * A v1 hash covered the status, so approving a milestone anchored while it
+   * was proposed used to read as an edit. It matches under whichever status
+   * it was taken with.
+   */
+  it.each([["proposed"], ["submitted"], ["approved"], ["rejected"]])(
+    "matches a v1 anchor taken while %s",
+    (status) => {
+      const anchored = createHash("sha256").update(canonicalMilestoneV1(milestone(), status), "utf8").digest("hex");
+      expect(isMilestoneAnchorStale(milestone(), anchored)).toBe(false);
+    },
+  );
+
+  it("is true for a v1 anchor once the content changes", () => {
+    const anchored = createHash("sha256").update(canonicalMilestoneV1(milestone(), "proposed"), "utf8").digest("hex");
+    expect(isMilestoneAnchorStale(milestone({ dueDate: "2026-08-09" }), anchored)).toBe(true);
   });
 
   /** Fail toward "re-anchor". No hash is not evidence that one would match. */

@@ -22,6 +22,7 @@ import {
   MILESTONE_TRANSITIONS,
   type MilestoneStatus,
 } from "@/lib/constants";
+import { parseClientId } from "@/lib/auth/oauth-grants";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
 
@@ -351,6 +352,12 @@ export async function createMilestone(
 /**
  * Title, description and due date. Status is deliberately absent — it moves
  * through `updateMilestoneStatus`, which enforces the contract's transitions.
+ *
+ * The title is left out for a milestone linked to a doqtri heading: doqtri
+ * owns that title (D-12), the form shows it read-only, and the database's
+ * `guard_milestone_update()` refuses a qdit session's change to it anyway.
+ * Skipping it here keeps the rest of the edit working rather than failing the
+ * whole save on a field the user could not change.
  */
 export async function updateMilestone(
   _prev: ActionState,
@@ -370,10 +377,17 @@ export async function updateMilestone(
   if (!parsed.success) return toFieldErrors(parsed.error);
 
   const supabase = await createClient();
+  const { count: linked, error: linkError } = await supabase
+    .from("milestone_external_links")
+    .select("id", { count: "exact", head: true })
+    .eq("milestone_id", milestoneId);
+
+  if (linkError) return { error: friendly(linkError.message, linkError.code) };
+
   const { error } = await supabase
     .from("milestones")
     .update({
-      title: parsed.data.title,
+      ...(linked ? {} : { title: parsed.data.title }),
       description: orNull(formData.get("description")),
       due_date: orNull(formData.get("dueDate")),
     })
@@ -1009,6 +1023,72 @@ export async function setProjectPublicProofs(
 
   if (error) return { error: friendly(error.message, error.code) };
 
+  revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * Disconnects an app the user authorized through qdit's OAuth server.
+ *
+ * Three steps, in this order:
+ *
+ *   1. Record the revoke (`record_oauth_client_revocation`, D-59). From then
+ *      on /api/v1 refuses every token the app holds for this user, including
+ *      the access token Auth cannot recall, so the app's next call gets 401,
+ *      and so do its writes through PostgREST (D-75). The same call marks
+ *      the plan docs this user's connection kept linked as lost, so the doc
+ *      cards say so at once. This comes first so that a disconnect reported
+ *      as done has always cut that token off; if it fails, nothing has
+ *      changed and the user retries.
+ *   2. Revoke the grant in Supabase Auth: it marks the consent revoked, ends
+ *      that client's sessions for this user and invalidates its refresh
+ *      tokens, so the app's refresh after that 401 fails too — which is how
+ *      doqtri learns to show "reconnect" (integration contract, section 5).
+ *      If Auth refuses, the app's current tokens stay refused but its refresh
+ *      still works, so it carries on with a fresh token; the user is told the
+ *      disconnect failed and can try again.
+ *   3. Mark those plan docs lost again (`mark_doc_link_connections_revoked`),
+ *      which also upserts the revoke: either call alone leaves both on
+ *      record.
+ *
+ * Only ever the caller's own grant: both RPCs and revokeGrant() act for the
+ * session's user, and the client id is parsed as a UUID before it goes
+ * anywhere.
+ */
+export async function revokeAuthorizedApp(clientId: string): Promise<ActionState> {
+  const user = await getUser();
+  if (!user) return { error: "Your session expired. Sign in again." };
+
+  const id = parseClientId(clientId);
+  if (!id) return { error: "That is not a connected app." };
+
+  const supabase = await createClient();
+
+  const recorded = await supabase.rpc("record_oauth_client_revocation", { p_client_id: id });
+  if (recorded.error) {
+    console.error("record_oauth_client_revocation failed", recorded.error);
+    return { error: "Could not disconnect that app. Try again." };
+  }
+
+  const { error } = await supabase.auth.oauth.revokeGrant({ clientId: id });
+
+  if (error) {
+    console.error("revokeGrant failed", error);
+    return { error: "Could not disconnect that app. Try again." };
+  }
+
+  // The grant is gone. Step 1 already marked the plan docs this user's
+  // connection kept linked as lost (20261026100100_doc_link_connections_
+  // hardening.sql); this marks them again and upserts the revoke, so either
+  // call alone leaves both on record. Had Auth refused the revoke,
+  // step 1's mark would heal itself: doqtri's refresh still works, and its
+  // next write, with a later iat, makes the connection live again. A failure
+  // here is worth a log line, not a failed disconnect: the revoke and the
+  // mark are already on record from step 1.
+  const marked = await supabase.rpc("mark_doc_link_connections_revoked", { p_client_id: id });
+  if (marked.error) console.error("mark_doc_link_connections_revoked failed", marked.error);
+
+  // Settings, and every page that shows a doc card.
   revalidateAll();
   return { ok: true };
 }

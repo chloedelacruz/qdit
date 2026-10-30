@@ -77,7 +77,7 @@ async function digestInput(milestoneId: string): Promise<MilestoneDigestInput | 
 
   const { data: milestone } = await supabase
     .from("milestones")
-    .select("id, project_id, title, description, status, due_date")
+    .select("id, project_id, title, description, due_date")
     .eq("id", milestoneId)
     .maybeSingle();
 
@@ -93,7 +93,6 @@ async function digestInput(milestoneId: string): Promise<MilestoneDigestInput | 
     projectId: milestone.project_id,
     title: milestone.title,
     description: milestone.description,
-    status: milestone.status,
     dueDate: milestone.due_date,
     proofs: (proofs ?? []).map((proof) => ({
       id: proof.id,

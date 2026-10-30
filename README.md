@@ -15,11 +15,11 @@
 </p>
 
 <p align="center">
-  <a href="https://qdit.atalusan.com"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
+  <a href="https://qdit.app"><img src="https://img.shields.io/badge/◆_Live_demo-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live demo" /></a>
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing"><img src="https://img.shields.io/badge/▶_Demo_video-EA4335?style=for-the-badge&logo=googledrive&logoColor=white" alt="Demo video" /></a>
   <a href="https://x.com/tyrontalusan/status/2090972526537212390"><img src="https://img.shields.io/badge/▶_Video_on_X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Video on X" /></a>
-  <a href="https://qdit.atalusan.com/user-guide"><img src="https://img.shields.io/badge/📖_User_guide-6D5EF8?style=for-the-badge&logoColor=white" alt="User guide" /></a>
-  <a href="https://qdit.atalusan.com/docs"><img src="https://img.shields.io/badge/⌘_Technical_docs-4B5563?style=for-the-badge&logoColor=white" alt="Technical documentation" /></a>
+  <a href="https://qdit.app/user-guide"><img src="https://img.shields.io/badge/📖_User_guide-6D5EF8?style=for-the-badge&logoColor=white" alt="User guide" /></a>
+  <a href="https://qdit.app/docs"><img src="https://img.shields.io/badge/⌘_Technical_docs-4B5563?style=for-the-badge&logoColor=white" alt="Technical documentation" /></a>
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing"><img src="https://img.shields.io/badge/Pitch_deck-F4B400?style=for-the-badge&logo=googleslides&logoColor=white" alt="Pitch deck" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1b3Sor1gr-LkVshQ69jSiRjPMWOejfwt9uE3vdGPjVtc/edit?usp=sharing"><img src="https://img.shields.io/badge/Mainnet_responses_·_round_2-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Mainnet feedback responses, round 2" /></a>
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing"><img src="https://img.shields.io/badge/Mainnet_responses_·_round_1-0F9D58?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Mainnet feedback responses, round 1" /></a>
@@ -32,11 +32,11 @@
 </p>
 
 <p align="center">
-  <a href="https://qdit.atalusan.com">Live demo</a> ·
+  <a href="https://qdit.app">Live demo</a> ·
   <a href="https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing">Demo video</a> ·
   <a href="https://x.com/tyrontalusan/status/2090972526537212390">Video on X</a> ·
-  <a href="https://qdit.atalusan.com/user-guide">User guide</a> ·
-  <a href="https://qdit.atalusan.com/docs">Technical docs</a> ·
+  <a href="https://qdit.app/user-guide">User guide</a> ·
+  <a href="https://qdit.app/docs">Technical docs</a> ·
   <a href="https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing">Pitch deck</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1b3Sor1gr-LkVshQ69jSiRjPMWOejfwt9uE3vdGPjVtc/edit?usp=sharing">Mainnet responses (round 2)</a> ·
   <a href="https://docs.google.com/spreadsheets/d/1h1eIa4kQK8pjmgnNR30P9ZLOy4UXONTWf2bPQOnSVCc/edit?usp=sharing">Mainnet responses (round 1)</a> ·
@@ -125,9 +125,9 @@ screenshot.
 
 | Asset | Link |
 | --- | --- |
-| **Live app** — running on Stellar Testnet | [qdit.atalusan.com](https://qdit.atalusan.com) |
-| **User guide** — step-by-step, in plain, simplified English | [Open the guide](https://qdit.atalusan.com/user-guide) |
-| **Technical docs** — architecture, contract, data model, anchoring flow | [Open the docs](https://qdit.atalusan.com/docs) |
+| **Live app** — running on Stellar Testnet | [qdit.app](https://qdit.app) |
+| **User guide** — step-by-step, in plain, simplified English | [Open the guide](https://qdit.app/user-guide) |
+| **Technical docs** — architecture, contract, data model, anchoring flow | [Open the docs](https://qdit.app/docs) |
 | **Demo video** — end-to-end walkthrough | [Watch on Google Drive](https://drive.google.com/file/d/1HBxmheFjpR25ik5xgWOF2vvOb32JEDIf/view?usp=sharing) |
 | **Pitch deck** — 14 slides, problem → architecture → proof | [Open in Google Slides](https://docs.google.com/presentation/d/1WNYg2brDl0bo-e9BkYXfPY9PjTfNUpK-TKeA31Zbid4/edit?usp=sharing) |
 | **User feedback** — 50 testnet responses, wallet · email · name · rating · free text | [Open in Google Sheets](https://docs.google.com/spreadsheets/d/1dDzm2ZqA2hROPp0Pzd1iX9gffqs0nYsQ1euOW40rT-A/edit?usp=sharing) |
@@ -1164,7 +1164,7 @@ cannot sign as `current_owner`.
 
 ## Quick start — app (`web/`)
 
-The app is deployed at **[qdit.atalusan.com](https://qdit.atalusan.com)** — connect a
+The app is deployed at **[qdit.app](https://qdit.app)** — connect a
 Freighter wallet on Testnet and it works without any of the setup below. To run it
 locally:
 
@@ -1240,8 +1240,14 @@ simply do not render, which is how CI builds it.
 | `NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID` | deployed contract id, or empty to disable anchoring |
 | `SUPABASE_SECRET_KEY` | server-only; required for wallet sign-in |
 | `STELLAR_AUTH_SERVER_SECRET` | server-only; signs the SEP-10 challenge. An ordinary keypair, generated once and never funded |
+| `CRON_SECRET` | server-only; bearer secret for `/api/cron/deliver-webhooks` (webhooks to doqtri). A pg_cron job calls the route every minute with it, reading the URL and this value from Vault (`qdit_deliver_webhooks_url`, `qdit_cron_secret`); Vercel Cron calls it once a day as a backstop. See `web/.env.example` |
+| `INTEGRATION_WEBHOOK_ENCRYPTION_KEY` | server-only; 32-byte base64 key that encrypts webhook signing secrets in `integration_webhooks` |
+| `DOQTRI_ORIGIN` | server-only; doqtri's exact origin. A linked doc's `doc_url` must start with it followed by `/` |
 
 Every variable is documented inline in [`web/.env.example`](./web/.env.example).
+Connecting doqtri also needs Supabase settings and a few SQL statements (asymmetric JWT keys,
+the OAuth 2.1 server, doqtri's client id in `integration_settings`, Vault, the webhook row):
+see [`docs/integration/qdit-oauth-setup.md`](./docs/integration/qdit-oauth-setup.md).
 `NEXT_PUBLIC_*` values are inlined at build time, so changing them in a hosting dashboard
 has no effect until a new build runs — redeploy after editing them.
 

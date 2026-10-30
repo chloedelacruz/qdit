@@ -177,7 +177,9 @@ detail: proofs anchored on Testnet are not durable evidence, even though
   transaction that does not exist, and the hash is checkable, but nothing in the
   app currently re-checks it.
 - **The proof digest is a cross-system contract.** Changing `canonicalMilestone`
-  invalidates every anchor already on the ledger, silently.
+  invalidates every anchor already on the ledger, silently. v2 dropped the
+  status (an approval made every anchor stale); v1 anchors are still checked
+  through `canonicalMilestoneV1`, so a v3 has to keep both readable.
 
 ## 4. Untested by construction
 
