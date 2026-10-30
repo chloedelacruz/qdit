@@ -696,6 +696,43 @@ function PublicProofs() {
         null and are deliberately indistinguishable: telling them apart would confirm that
         private work exists.
       </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        A milestone linked to a doqtri heading also carries <C>docSource</C>: the doc id, the
+        heading&rsquo;s node id and label (the milestone title), the doc version the link was
+        written against, and the project id once the project is registered on chain (where it
+        is public already, and never shown) — never the doc&rsquo;s title, which is
+        doqtri&rsquo;s private note title, and never the stored doc URL. The page shows it as a
+        &ldquo;Planned in doqtri&rdquo; block, and treats it as a pointer, not as evidence:
+        anyone who may write the link could have written it. It reads this deployment&rsquo;s{" "}
+        <C>DoqtriRegistry</C> (<C>DOQTRI_REGISTRY_CONTRACT_ID</C> on{" "}
+        <C>DOQTRI_REGISTRY_NETWORK</C>) with a read-only Soroban simulation, cached for 30
+        seconds, and makes two checks. The node id, its status and version appear only when{" "}
+        <C>get_node</C> has <C>tool</C> &ldquo;qdit&rdquo; and an <C>artifact_ref</C> naming
+        this project and milestone; otherwise the block says only that the milestone is linked
+        to the doc and not signed in doqtri yet. The doc check, labelled &ldquo;doc anchored at
+        version &ge; V&rdquo;, holds when <C>get_document</C> is at or past the linked version
+        (with a &ldquo;plan changed since&rdquo; note when past it). The block says verified
+        only when both hold, naming the on-chain version; anything else is not verified with its
+        reason, or an explicit &ldquo;could not check&rdquo; when a read failed or no registry
+        is configured. The heading&rsquo;s own record counts as Verified only when{" "}
+        <C>get_milestone_status</C> also shows the milestone Approved at the version it names.
+        &ldquo;Open in doqtri&rdquo; goes to <C>DOQTRI_ORIGIN</C>/d/&lt;doc id&gt;, built by
+        qdit, and is absent when <C>DOQTRI_ORIGIN</C> is unset. An unlinked milestone has no{" "}
+        <C>docSource</C> key and its page is unchanged.
+      </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        Above that block, a linked milestone shows its proof chain as an ordered list of four
+        steps: plan version (both checks above holding), submitted and approved (the
+        milestone&rsquo;s current record from <C>get_milestone_status</C> on the project&rsquo;s
+        own contract, read when the page loads and cached the same way), and verified in doqtri
+        (the heading&rsquo;s record, Verified for the version approved on chain). Each step says
+        in words whether it is done, pending, does not match, or could not be checked, with the
+        ledger time or the time qdit recorded it. Submitted and approved link the transaction
+        from the anchor history at the record&rsquo;s version; with none, they link the contract
+        and say that Stellar RPC keeps events for about 7 days, so an older transaction cannot be
+        looked up there. Plan version and verified link the <C>DoqtriRegistry</C> contract,
+        because qdit does not keep doqtri&rsquo;s transactions.
+      </p>
     </section>
   );
 }

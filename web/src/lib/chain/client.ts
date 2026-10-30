@@ -196,18 +196,39 @@ type AssembledWrite = {
 };
 
 /**
+ * The contract's error doc comments, by the name each belongs to.
+ *
+ * The SDK builds a contract error from the spec as `{ message: doc }`, not
+ * from the bindings' `Errors` map, so `result` yields "The milestone is not in
+ * a status that permits this transition." for `#5`, not "InvalidStatus".
+ * Kept in step with `Error` in contracts/milestone_proof/src/lib.rs.
+ */
+const CONTRACT_ERROR_DOCS: Record<string, string> = {
+  "A project with this id is already registered.": "ProjectExists",
+  "No project is registered under this id.": "ProjectNotFound",
+  "No milestone record exists for this project/milestone pair.": "MilestoneNotFound",
+  "Caller is authenticated but is not the project owner.": "NotAuthorized",
+  "The milestone is not in a status that permits this transition.": "InvalidStatus",
+  "An identifier exceeds [`MAX_ID_LEN`].": "IdTooLong",
+};
+
+/**
  * Name what the contract actually objected to.
  *
  * Every write returns `Result<(), Error>`, so `result` decodes an
- * `Error(Contract, #5)` back into the contract's own name — "InvalidStatus" —
- * which `describe` in `actions.ts` turns into a sentence. Anything else is not
- * a contract error at all (a host failure, an unfunded source, expired state),
- * and there the raw simulation text is the only description available.
+ * `Error(Contract, #5)` into that error's doc comment, which is mapped back
+ * to the contract's own name — "InvalidStatus" — for `describe` in
+ * `actions.ts` to turn into a sentence. Anything else is not a contract error
+ * at all (a host failure, an unfunded source, expired state), and there the
+ * raw simulation text is the only description available.
  */
 function simulationFailure(assembled: AssembledWrite): string {
   try {
     const outcome = assembled.result;
-    if (outcome.isErr()) return outcome.unwrapErr().message;
+    if (outcome.isErr()) {
+      const message = outcome.unwrapErr().message;
+      return CONTRACT_ERROR_DOCS[message.trim()] ?? message;
+    }
   } catch {
     // `result` rethrows when the failure has no contract error to decode.
   }

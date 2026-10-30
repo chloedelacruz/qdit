@@ -1,0 +1,91 @@
+import { NextResponse } from "next/server";
+
+import { doqtriOriginWarning, readDoqtriOriginHealth } from "@/lib/doqtri-origin-health";
+import { isCronAuthorized } from "@/lib/webhooks/cron-auth";
+import { deliverDueEvents } from "@/lib/webhooks/deliver";
+import { supabaseOutbox } from "@/lib/webhooks/outbox";
+import { readSchedulerHealth, schedulerWarning } from "@/lib/webhooks/scheduler-health";
+import { parseEncryptionKey } from "@/lib/webhooks/secret-box";
+
+/**
+ * `GET /api/cron/deliver-webhooks` — sends due webhook events to doqtri
+ * (docs/integration/CONTRACT.md section 9). Called with
+ * `Authorization: Bearer <CRON_SECRET>` every minute by a pg_cron job through
+ * pg_net (section 8 of supabase/migrations/20261024130000_integration_webhooks.sql),
+ * and once a day by Vercel Cron (web/vercel.json) as a backstop: a Hobby
+ * project rejects deployments with a more frequent Vercel cron. Anything else
+ * gets a 401 and does nothing.
+ *
+ * One run claims and sends until nothing is due or the time budget is spent,
+ * so an event released by its predecessor's delivery goes out in the same
+ * run. The next run picks up the rest; leases keep two overlapping runs from
+ * sending one event twice (supabase/migrations/20261024130000_integration_webhooks.sql).
+ *
+ * Each run also reports whether the pg_cron job can run at all
+ * (`data.scheduler`, D-57, lib/webhooks/scheduler-health.ts) and logs a
+ * warning when it cannot, so the daily Vercel run says so when it is the only
+ * thing delivering. An operator can call the route with the CRON_SECRET to
+ * read it. It reports and warns the same way when `DOQTRI_ORIGIN` and the
+ * database's `integration_settings.doqtri_origin` differ or the latter is
+ * unset (`data.doqtriOrigin`, D-95, lib/doqtri-origin-health.ts): not a
+ * webhook matter, but this is the log an operator reads.
+ *
+ * Configuration faults answer 503 and are logged by name, never by value.
+ */
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+/** No new claim round starts after this much of the run. */
+const RUN_BUDGET_MS = 40_000;
+
+const NO_STORE = { "Cache-Control": "no-store" };
+
+function failure(status: number, code: string, message: string) {
+  return NextResponse.json({ error: { code, message, details: null } }, { status, headers: NO_STORE });
+}
+
+export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("webhooks cron: CRON_SECRET is not set; refusing every call. See web/.env.example.");
+    return failure(503, "unavailable", "Webhook delivery is not configured.");
+  }
+  if (!isCronAuthorized(request.headers.get("authorization"), cronSecret)) {
+    return failure(401, "unauthorized", "Missing or wrong cron secret.");
+  }
+
+  const secretKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secretKey) {
+    console.error("webhooks cron: SUPABASE_SECRET_KEY is not set. See web/.env.example.");
+    return failure(503, "unavailable", "Webhook delivery is not configured.");
+  }
+
+  let encryptionKey: Buffer;
+  try {
+    encryptionKey = parseEncryptionKey(process.env.INTEGRATION_WEBHOOK_ENCRYPTION_KEY);
+  } catch (error) {
+    console.error("webhooks cron:", error instanceof Error ? error.message : error);
+    return failure(503, "unavailable", "Webhook delivery is not configured.");
+  }
+
+  try {
+    const [summary, scheduler, doqtriOrigin] = await Promise.all([
+      deliverDueEvents({
+        outbox: supabaseOutbox(secretKey),
+        fetch,
+        encryptionKey,
+        deadline: Date.now() + RUN_BUDGET_MS,
+      }),
+      readSchedulerHealth(secretKey),
+      readDoqtriOriginHealth(secretKey),
+    ]);
+    for (const warning of [schedulerWarning(scheduler), doqtriOriginWarning(doqtriOrigin)]) {
+      if (warning) console.warn(warning);
+    }
+    return NextResponse.json({ data: { ...summary, scheduler, doqtriOrigin } }, { headers: NO_STORE });
+  } catch (error) {
+    console.error("webhooks cron: delivery run failed", error);
+    return failure(500, "internal_error", "Webhook delivery run failed.");
+  }
+}

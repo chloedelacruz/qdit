@@ -597,6 +597,294 @@ export type Database = {
           },
         ]
       }
+      api_requests: {
+        Row: {
+          id: string
+          /** The `X-Request-Id` the response carried. */
+          request_id: string
+          /** OAuth client id from the token's `client_id` claim. */
+          client_id: string
+          user_id: string
+          method: string
+          path: string
+          status: number
+          created_at: string
+        }
+        /**
+         * Written only by `lib/api/audit.ts` with the secret key; RLS has no
+         * policies and `authenticated` holds no grant on this table.
+         */
+        Insert: {
+          id?: string
+          request_id: string
+          client_id: string
+          user_id: string
+          method: string
+          path: string
+          status: number
+          created_at?: string
+        }
+        /** Append-only: no role the app uses may update a row. */
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'api_requests_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * A doqtri doc linked to a project (20261024120000_integration_links.sql).
+       * `doc_id` is unique: a doc belongs to at most one project (D-09).
+       */
+      project_doc_links: {
+        Row: {
+          id: string
+          project_id: string
+          /** doqtri's `documents.id`. */
+          doc_id: string
+          doc_title: string
+          /** Always `https://`. */
+          doc_url: string
+          linked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          doc_id: string
+          doc_title: string
+          doc_url: string
+          linked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        /**
+         * No client updates (or inserts) a doc link directly: both are revoked
+         * from `authenticated` (D-48). The title and URL are refreshed only by
+         * `link_project_doc`, which an app calls through the API (D-60). Kept
+         * for the trigger's shape: these are the only columns that ever move.
+         */
+        Update: {
+          doc_title?: string
+          doc_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'project_doc_links_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * The doqtri heading a milestone is linked to. While a row exists the
+       * milestone's title is doqtri's (D-12); `node_label` always equals it.
+       */
+      milestone_external_links: {
+        Row: {
+          id: string
+          milestone_id: string
+          project_id: string
+          source: 'doqtri'
+          doc_id: string
+          /** doqtri positional node id: `root`, `h0`, `h1`, ... */
+          node_id: string
+          node_label: string
+          /** DoqtriRegistry `Document.version`, or null when not anchored. */
+          doc_version: number | null
+          /** Copy of `project_doc_links.doc_title`, kept in step by trigger. */
+          doc_title: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          milestone_id: string
+          project_id: string
+          source?: 'doqtri'
+          doc_id: string
+          node_id: string
+          /** Must equal the milestone's title. */
+          node_label: string
+          doc_version?: number | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        /**
+         * Only these move after insert (D-21); a trigger refuses the rest.
+         * `node_label` follows the milestone title by trigger.
+         */
+        Update: {
+          node_id?: string
+          doc_version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'milestone_external_links_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: true
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'milestone_external_links_doc_fkey'
+            columns: ['project_id', 'doc_id']
+            isOneToOne: false
+            referencedRelation: 'project_doc_links'
+            referencedColumns: ['project_id', 'doc_id']
+          },
+        ]
+      }
+
+      /**
+       * Which (user, OAuth client) pairs have written a doc link or its
+       * milestone links, and whether that grant is still usable
+       * (20261025120600_doc_link_connections.sql). Project viewers read
+       * doc_link_id, lost_at and lost_reason only (column grants: selecting
+       * any other column is refused); apps see nothing. Written only by triggers and
+       * `mark_doc_link_connections_revoked`.
+       */
+      doc_link_connections: {
+        Row: {
+          id: string
+          doc_link_id: string
+          user_id: string
+          client_id: string
+          last_write_at: string
+          /** Null while the connection is live. */
+          lost_at: string | null
+          lost_reason: 'revoked' | 'left_project' | null
+        }
+        /** `authenticated` holds no write grant on this table. */
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'doc_link_connections_doc_link_id_fkey'
+            columns: ['doc_link_id']
+            isOneToOne: false
+            referencedRelation: 'project_doc_links'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * When each user last revoked each OAuth client
+       * (20261025130000_oauth_revocations.sql, D-59). No client role can read
+       * or write it; `record_oauth_client_revocation` and
+       * `mark_doc_link_connections_revoked` write it, `oauth_token_revoked`
+       * reads it.
+       */
+      oauth_client_revocations: {
+        Row: {
+          user_id: string
+          client_id: string
+          revoked_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * One row of per-environment integration config, written by an operator
+       * in the SQL editor (20261025130000_oauth_revocations.sql). No client
+       * role can read it.
+       */
+      integration_settings: {
+        Row: {
+          id: true
+          /** doqtri's OAuth client id here (D-61); null until set. */
+          doqtri_oauth_client_id: string | null
+          /** doqtri's origin here (D-77, D-95): https, lower case, no path; null until set. */
+          doqtri_origin: string | null
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * Where qdit sends milestone events (20261024130000_integration_webhooks.sql).
+       * No client role can read it; the cron route reads it only through
+       * `claim_integration_events`. The secret columns are ciphertext
+       * (`lib/webhooks/secret-box.ts`), never a plain secret.
+       */
+      integration_webhooks: {
+        Row: {
+          id: string
+          /** The OAuth client this endpoint belongs to. */
+          client_id: string
+          link_source: 'doqtri'
+          target_url: string
+          secret_ciphertext: string
+          /** Set during rotation; deliveries are then signed with both. */
+          next_secret_ciphertext: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        /** Written by an operator in the SQL editor, never by the app. */
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * The webhook outbox. Written by trigger; settled only through
+       * `record_integration_delivery`. `id` is the event id.
+       */
+      integration_events: {
+        Row: {
+          id: string
+          seq: number
+          webhook_id: string
+          milestone_id: string
+          project_id: string
+          event: 'milestone.status_changed'
+          status: Database['public']['Enums']['milestone_status']
+          cause: 'status_changed' | 'anchor_recorded'
+          occurred_at: string
+          attempts: number
+          next_attempt_at: string
+          claim_token: string | null
+          delivered_at: string | null
+          dead_at: string | null
+          last_error: string | null
+          created_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'integration_events_webhook_id_fkey'
+            columns: ['webhook_id']
+            isOneToOne: false
+            referencedRelation: 'integration_webhooks'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'integration_events_milestone_id_fkey'
+            columns: ['milestone_id']
+            isOneToOne: false
+            referencedRelation: 'milestones'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -663,6 +951,155 @@ export type Database = {
         Args: { p_slug: string; p_milestone_id: string }
         Returns: Json
       }
+      /**
+       * The node id of a published, linked milestone's doqtri heading, or
+       * null (D-77). service_role only: the public page's server reads it to
+       * know which DoqtriRegistry record to check (`lib/public-node.ts`).
+       */
+      public_milestone_node_id: {
+        Args: { p_slug: string; p_milestone_id: string }
+        Returns: string | null
+      }
+      /**
+       * POST /api/v1/projects/{id}/docs. OAuth clients only (D-60: 42501 for
+       * a qdit session), admin and above. Raises P0002 for a project the
+       * caller is not in, 42501 below admin, 22023 with hint `doc_url` for a
+       * URL off `integration_settings.doqtri_origin` once that is set (D-95),
+       * and QD409 with message `doc_linked_elsewhere`. `created` is false on
+       * a refresh.
+       */
+      link_project_doc: {
+        Args: {
+          p_project_id: string
+          p_doc_id: string
+          p_doc_title: string
+          p_doc_url: string
+        }
+        Returns: {
+          id: string
+          project_id: string
+          doc_id: string
+          doc_title: string
+          doc_url: string
+          created_at: string
+          updated_at: string
+          created: boolean
+        }[]
+      }
+      /**
+       * DELETE /api/v1/projects/{id}/docs/{doc_id}. OAuth clients only (D-60),
+       * admin and above. Returns the removed milestone link ids (D-22); P0002
+       * when the doc is not linked. A qdit session unlinks by deleting the
+       * `project_doc_links` row instead.
+       */
+      unlink_project_doc: {
+        Args: { p_project_id: string; p_doc_id: string }
+        Returns: string[]
+      }
+      /**
+       * After the user revokes an app in Settings: records the revoke (D-59)
+       * and marks the caller's own doc link connections through that client
+       * lost. First-party sessions only; returns how many rows it marked.
+       */
+      mark_doc_link_connections_revoked: {
+        Args: { p_client_id: string }
+        Returns: number
+      }
+      /**
+       * Before the user revokes an app in Settings: records that the caller
+       * revoked `p_client_id` now, so /api/v1 refuses that app's tokens issued
+       * until now (D-59). First-party sessions only; returns the revoke time.
+       */
+      record_oauth_client_revocation: {
+        Args: { p_client_id: string }
+        Returns: string
+      }
+      /**
+       * Whether the caller's own OAuth token was issued at or before that
+       * user's latest revoke of its client (D-59). Reads sub, client_id and
+       * iat from the request JWT; called once per /api/v1 request.
+       */
+      oauth_token_revoked: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      /**
+       * POST /api/v1/milestones. Member and above. Returns the new milestone
+       * id. QD409 `doc_not_linked` or `node_already_linked` (HINT = the
+       * existing milestone id).
+       */
+      create_linked_milestone: {
+        Args: {
+          p_project_id: string
+          p_title: string
+          p_description: string | null
+          p_due_date: string | null
+          p_doc_id: string
+          p_node_id: string
+          p_doc_version: number | null
+        }
+        Returns: string
+      }
+      /**
+       * Webhook delivery (service_role only). Claims up to `p_limit` due
+       * events, at most one per (webhook, milestone) and only the head of
+       * that queue (D-25); counts the attempt and leases the row.
+       */
+      claim_integration_events: {
+        Args: { p_limit?: number; p_lease_seconds?: number }
+        Returns: {
+          id: string
+          webhook_id: string
+          milestone_id: string
+          project_id: string
+          event: 'milestone.status_changed'
+          status: Database['public']['Enums']['milestone_status']
+          occurred_at: string
+          /** Including the attempt this claim is for. */
+          attempts: number
+          claim_token: string
+          client_id: string
+          target_url: string
+          secret_ciphertext: string
+          next_secret_ciphertext: string | null
+        }[]
+      }
+      /**
+       * Settles one claimed attempt. `p_next_attempt_at` null means dead; the
+       * database also makes the 8th failure dead whatever is passed. Returns
+       * `stale` when the claim token no longer matches.
+       */
+      record_integration_delivery: {
+        Args: {
+          p_id: string
+          p_claim_token: string
+          p_delivered: boolean
+          p_error: string | null
+          p_next_attempt_at: string | null
+        }
+        Returns: 'delivered' | 'retry' | 'dead' | 'stale'
+      }
+      /**
+       * `integration_settings.doqtri_origin`, or null while unset
+       * (service_role only, D-95): compared with `DOQTRI_ORIGIN` by
+       * `lib/doqtri-origin-health.ts`.
+       */
+      doqtri_origin_setting: {
+        Args: Record<string, never>
+        Returns: string | null
+      }
+      /**
+       * Whether the pg_cron delivery job can run (service_role only, D-57).
+       * Secret names only, never values.
+       */
+      webhook_scheduler_health: {
+        Args: Record<string, never>
+        Returns: {
+          status: 'configured' | 'missing' | 'unavailable'
+          job: boolean
+          missing_secrets: string[]
+        }
+      }
     }
 
     Enums: {
@@ -718,6 +1155,8 @@ export type Milestone = Tables<'milestones'>
 export type Task = Tables<'tasks'>
 export type StellarProof = Tables<'stellar_proofs'>
 export type Deployment = Tables<'deployments'>
+export type ProjectDocLink = Tables<'project_doc_links'>
+export type MilestoneExternalLink = Tables<'milestone_external_links'>
 
 // Inserts
 export type ProfileInsert = TablesInsert<'profiles'>

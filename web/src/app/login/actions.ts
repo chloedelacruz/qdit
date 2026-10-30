@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ZodError } from "zod";
 
+import { safeNextPath } from "@/lib/auth/next-path";
 import { credentialsSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -54,7 +55,8 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  // The page put a sanitised value in the form, but the form is the client's.
+  redirect(safeNextPath(formData.get("next")));
 }
 
 /*

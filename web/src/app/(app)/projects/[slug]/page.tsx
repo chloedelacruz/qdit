@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { ProjectChainRegistration } from "@/components/project-chain";
 import { ProjectPublishing } from "@/components/project-publishing";
 import { Section } from "@/components/section";
-import { MilestoneListRow, ProofListRow } from "@/components/rows";
+import { MilestoneListRow, PlanDocListRow, ProofListRow } from "@/components/rows";
 import { StatTile } from "@/components/stat-tile";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
   getProject,
   getProjectRole,
   listMilestones,
+  listPlanDocs,
   listProofs,
 } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
@@ -49,9 +50,10 @@ export default async function ProjectOverviewPage({
 
   // Capped deliberately: an overview that grows without bound stops being one.
   const preview = { ...EMPTY_FILTERS, limit: 4 };
-  const [milestones, proofs, role, userId] = await Promise.all([
+  const [milestones, proofs, planDocs, role, userId] = await Promise.all([
     listMilestones({ projectId: project.id }, preview),
     listProofs({ projectId: project.id }, preview),
+    listPlanDocs(project.id),
     getProjectRole(project.id),
     getCurrentUserId(),
   ]);
@@ -186,6 +188,22 @@ export default async function ProjectOverviewPage({
       >
         {milestones.rows.map((milestone) => (
           <MilestoneListRow key={milestone.id} milestone={milestone} />
+        ))}
+      </Section>
+
+      {/* The doqtri plans this project's linked milestones come from (D-09).
+          Not capped like the previews: a project holds a handful of plans,
+          and this is the only place qdit lists them. Linking happens in
+          doqtri, so the empty state says where. */}
+      <Section
+        className="mt-6"
+        icon={ICON.planDoc}
+        title="Plan docs"
+        count={planDocs.length}
+        empty="No doqtri plans linked yet. Link one from the doc in doqtri."
+      >
+        {planDocs.map((doc) => (
+          <PlanDocListRow key={doc.id} doc={doc} />
         ))}
       </Section>
 

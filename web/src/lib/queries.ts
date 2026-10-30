@@ -17,8 +17,18 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/constants";
+import { toAuthorizedApps, type AuthorizedApp } from "@/lib/auth/oauth-grants";
+import {
+  connectionOf,
+  type ConnectionRecord,
+  type LinkedDoc,
+  type MilestoneDocLink,
+} from "@/lib/doqtri-doc-card";
+import { doqtriOrigin, isDoqtriDocUrl, publicDocLink } from "@/lib/doqtri-origin";
 import type { Filters } from "@/lib/filters";
 import { isMilestoneAnchorStale } from "@/lib/milestone-hash";
+import { docUrlHost } from "@/lib/plan-docs";
+import { readPublicNodeId } from "@/lib/public-node";
 import type { StellarNetwork } from "@/lib/stellar";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
@@ -175,6 +185,30 @@ export async function getOwnIdentity(): Promise<OwnIdentity | null> {
     username: data?.username ?? null,
     walletAddress: data?.wallet_address ?? null,
   };
+}
+
+/**
+ * Apps the signed-in user has connected through qdit's OAuth server — doqtri,
+ * today — for the "Authorized apps" section of Settings.
+ *
+ * Not a table read: grants live in Supabase Auth, and the user's own session is
+ * what lists them. `null` means Auth would not answer (the OAuth server is off
+ * in this project, or unreachable), which the page shows differently from an
+ * empty list — "none connected" would be a claim this could not check.
+ */
+export async function listAuthorizedApps(): Promise<AuthorizedApp[] | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.oauth.listGrants();
+
+  if (error) {
+    console.error("listGrants failed", error);
+    return null;
+  }
+
+  return toAuthorizedApps(data);
 }
 
 export type ProjectMember = Member & {
@@ -758,7 +792,21 @@ export type MilestoneRow = {
    * rejects it — a submission is not a decision.
    */
   reviews: MilestoneReview[];
+  /**
+   * The doqtri heading this milestone came from, or null. While it is set the
+   * title is doqtri's (D-12): shown read-only here, renamed only through the
+   * API, and refused by the database for a qdit session.
+   */
+  link: MilestoneLink | null;
 };
+
+/**
+ * The milestone's `milestone_external_links` row, with the doc link it points
+ * at as far as the viewer can read it (`doc` null: no-access, see
+ * `lib/doqtri-doc-card.ts`). The link row's own copy of the doc title is not
+ * carried: shown in place of an unreadable doc link, it would leak the title.
+ */
+export type MilestoneLink = MilestoneDocLink & { docId: string };
 
 /**
  * One approval or rejection, with the reason given.
@@ -798,7 +846,11 @@ const MILESTONE_SELECT = `
   done:tasks(count),
   stellar_proofs(id, contract_id, tx_hash, network, wallet_address, proof_url),
   milestone_anchors(action, proof_hash, version, tx_hash, network, signer_address, created_at),
-  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at)
+  milestone_reviews(id, from_status, to_status, reason, reviewer_id, created_at),
+  milestone_external_links(
+    doc_id, node_id, node_label, doc_version,
+    project_doc_links(doc_title, doc_url, doc_link_connections(lost_at, lost_reason))
+  )
 `;
 
 type MilestoneRecord = {
@@ -842,9 +894,50 @@ type MilestoneRecord = {
     reviewer_id: string | null;
     created_at: string;
   }[];
+  /**
+   * One-to-one (milestone_id is unique), so PostgREST sends an object or
+   * null. An array is accepted as well rather than trusted not to appear.
+   */
+  milestone_external_links: ExternalLinkRecord | ExternalLinkRecord[] | null;
 };
 
-function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
+type ExternalLinkRecord = {
+  doc_id: string;
+  node_id: string;
+  node_label: string;
+  doc_version: number | null;
+  /**
+   * Many-to-one through the composite foreign key, so an object, or null when
+   * RLS hides the doc link from this viewer.
+   */
+  project_doc_links: DocLinkRecord | null;
+};
+
+type DocLinkRecord = {
+  doc_title: string;
+  doc_url: string;
+  doc_link_connections: ConnectionRecord[] | null;
+};
+
+/**
+ * A readable doc link as the doc card takes it: the URL only when it is on
+ * doqtri's origin (D-45), and whether a doqtri connection still keeps it.
+ */
+function toLinkedDoc(record: DocLinkRecord, origin: string | null): LinkedDoc {
+  const url = origin && isDoqtriDocUrl(record.doc_url, origin) ? record.doc_url : null;
+  return {
+    title: record.doc_title,
+    url,
+    host: url ? docUrlHost(url) : "",
+    connection: connectionOf(record.doc_link_connections),
+  };
+}
+
+function toMilestone(
+  row: MilestoneRecord,
+  members: MemberMap,
+  origin: string | null,
+): MilestoneRow {
   const taskCount = countOf(row.tasks);
   const doneCount = countOf(row.done);
 
@@ -864,6 +957,10 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
     ?.proof_hash;
 
   const proofs = row.stellar_proofs ?? [];
+
+  const external = Array.isArray(row.milestone_external_links)
+    ? (row.milestone_external_links[0] ?? null)
+    : row.milestone_external_links;
 
   return {
     id: row.id,
@@ -913,7 +1010,6 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
             projectId: row.project_id,
             title: row.title,
             description: row.description,
-            status: row.status,
             dueDate: row.due_date,
             proofs: proofs.map((proof) => ({
               id: proof.id,
@@ -943,6 +1039,17 @@ function toMilestone(row: MilestoneRecord, members: MemberMap): MilestoneRow {
         reviewerName: members.get(review.reviewer_id ?? "")?.name || "A former member",
         createdAt: review.created_at,
       })),
+    link: external
+      ? {
+          docId: external.doc_id,
+          nodeId: external.node_id,
+          nodeLabel: external.node_label,
+          docVersion: external.doc_version,
+          doc: external.project_doc_links
+            ? toLinkedDoc(external.project_doc_links, origin)
+            : null,
+        }
+      : null,
   };
 }
 
@@ -953,6 +1060,7 @@ export async function listMilestones(
   const supabase = await createClient();
   // Reviews name their reviewer, and a raw uuid names nobody.
   const members = await memberMap();
+  const origin = readDoqtriOrigin();
 
   let totalQuery = supabase.from("milestones").select("id", { count: "exact", head: true });
   if (scope.projectId) totalQuery = totalQuery.eq("project_id", scope.projectId);
@@ -977,7 +1085,7 @@ export async function listMilestones(
 
   const { data, count } = await ordered.limit(filters.limit);
   const rows = ((data ?? []) as unknown as MilestoneRecord[]).map((row) =>
-    toMilestone(row, members),
+    toMilestone(row, members, origin),
   );
 
   if (filters.sort === "progress") rows.sort((a, b) => b.progress - a.progress);
@@ -1019,6 +1127,82 @@ export async function listMilestoneOptionsByProject(): Promise<
   }
 
   return byProject;
+}
+
+// ---------------------------------------------------------------------------
+// Plan docs (doqtri)
+// ---------------------------------------------------------------------------
+
+export type PlanDocRow = LinkedDoc & {
+  id: string;
+  docId: string;
+  /** Milestones in this project linked to one of the doc's headings. */
+  milestoneCount: number;
+  /** Of those, the ones anchored on chain at least once. */
+  anchoredCount: number;
+  /** The newest doc version any of those links was written against. */
+  docVersion: number | null;
+  linkedAt: string;
+};
+
+/**
+ * The doqtri docs linked to a project, oldest first — the order they were
+ * added in, which is the order a team reads its plans in.
+ *
+ * Linking happens in doqtri (POST /api/v1/projects/{id}/docs, D-09/D-10);
+ * qdit only lists them, so this is read-only.
+ */
+export async function listPlanDocs(projectId: string): Promise<PlanDocRow[]> {
+  const origin = readDoqtriOrigin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("project_doc_links")
+    .select(
+      `id, doc_id, doc_title, doc_url, created_at,
+       doc_link_connections(lost_at, lost_reason),
+       milestone_external_links(doc_version, milestones(milestone_anchors(count)))`,
+    )
+    .eq("project_id", projectId)
+    .order("created_at");
+
+  return ((data ?? []) as unknown as (DocLinkRecord & {
+    id: string;
+    doc_id: string;
+    created_at: string;
+    milestone_external_links: {
+      doc_version: number | null;
+      // One-to-one through milestone_id; an array is accepted as well.
+      milestones: { milestone_anchors: EmbeddedCount } | { milestone_anchors: EmbeddedCount }[] | null;
+    }[] | null;
+  })[]).map((row) => {
+    const links = row.milestone_external_links ?? [];
+    const versions = links.flatMap((link) => (link.doc_version === null ? [] : [link.doc_version]));
+    return {
+      ...toLinkedDoc(row, origin),
+      id: row.id,
+      docId: row.doc_id,
+      milestoneCount: links.length,
+      anchoredCount: links.filter((link) => {
+        const milestone = Array.isArray(link.milestones) ? link.milestones[0] : link.milestones;
+        return countOf(milestone?.milestone_anchors) > 0;
+      }).length,
+      docVersion: versions.length > 0 ? Math.max(...versions) : null,
+      linkedAt: row.created_at,
+    };
+  });
+}
+
+/**
+ * `doqtriOrigin()`, or null when `DOQTRI_ORIGIN` is misconfigured: the page
+ * still renders, with no doc links, and the error is logged.
+ */
+function readDoqtriOrigin(): string | null {
+  try {
+    return doqtriOrigin();
+  } catch (error) {
+    console.error("plan docs:", error);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1622,49 @@ export type PublicProof = {
     reason: string | null;
     createdAt: string;
   }[];
+  /**
+   * The doqtri heading the milestone is linked to (WP-3.2). Absent, not
+   * null, for a milestone with no doqtri link: the function sends no key for
+   * it.
+   */
+  docSource?: PublicDocSource;
+};
+
+/**
+ * A linked milestone's doqtri reference, as the public page may use it. It
+ * is the link row's, and a link row is not evidence of what doqtri planned
+ * (contract section 12): the page reads DoqtriRegistry for the doc and node
+ * it names, and shows the node id only on that evidence. No doc title (it is
+ * doqtri's private note title): the function never sends it. No stored
+ * `doc_url` either: the function no longer sends one (D-95), because the
+ * page builds its doqtri link from the doc id (section 12).
+ */
+export type PublicDocSource = {
+  docId: string;
+  /**
+   * The heading's positional id, which the anon function no longer sends
+   * (D-77): read on the server with `readPublicNodeId()`, used to pick the
+   * DoqtriRegistry record to read, and shown only on node evidence. Null
+   * when it could not be looked up; the page then says it could not check
+   * the heading.
+   */
+  nodeId: string | null;
+  /** The heading text, which is the milestone title (D-12). */
+  nodeLabel: string;
+  /** DoqtriRegistry `Document.version` the link was last written against. */
+  docVersion: number | null;
+  /**
+   * `DOQTRI_ORIGIN` + `/d/` + the doc id, built here, never sent by the
+   * function (contract section 12). Null when `DOQTRI_ORIGIN` is unset or
+   * misconfigured: then the block has no doqtri link.
+   */
+  docLink: string | null;
+  /**
+   * The project's id, sent only once the project is registered on chain
+   * (where it is public already). Not shown: the page checks the heading's
+   * `artifact_ref` against it and reads the milestone's record with it.
+   */
+  projectId: string | null;
 };
 
 /**
@@ -1465,7 +1692,38 @@ export async function getPublicProof(
 
   if (error || !data) return null;
 
-  return data as unknown as PublicProof;
+  const proof = data as unknown as PublicProof;
+  const source = proof.docSource;
+  if (!source) return proof;
+
+  // The node id comes from the service-role-only lookup, never from the anon
+  // answer (D-77): an older function that still sends one is not trusted.
+  const node = await readPublicNodeId(slug, milestoneId);
+
+  // Hand-listed, like the function's own fields: the doqtri link is built
+  // from the doc id, and nothing else the answer might carry (an older
+  // function's docUrl among it, D-95) is passed on.
+  return {
+    ...proof,
+    docSource: {
+      docId: source.docId,
+      nodeId: node.ok ? node.nodeId : null,
+      nodeLabel: source.nodeLabel,
+      docVersion: source.docVersion,
+      docLink: readPublicDocLink(source.docId),
+      projectId: source.projectId,
+    },
+  };
+}
+
+/** `publicDocLink()`, or null when `DOQTRI_ORIGIN` is misconfigured (logged). */
+function readPublicDocLink(docId: string): string | null {
+  try {
+    return publicDocLink(docId);
+  } catch (error) {
+    console.error("public proof:", error);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,12 @@ import { notFound } from "next/navigation";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { HashLink } from "@/components/hash-link";
+import { PlannedInDoqtri } from "@/components/planned-in-doqtri";
+import { ProofChain } from "@/components/proof-chain";
 import { StatusBadge } from "@/components/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MILESTONE_STATUS } from "@/lib/constants";
+import { readPublicChain } from "@/lib/public-proof-chain";
 import { getPublicProof, type PublicProof } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
 
@@ -38,6 +41,30 @@ import { NETWORK_LABELS } from "@/lib/stellar";
  * turned publishing on, and which hand-lists the fields it exposes. There is no
  * description here, no task list, no member names — not because they are hidden
  * from the page, but because the function never sends them.
+ *
+ * ---------------------------------------------------------------------------
+ * PLANNED IN DOQTRI (WP-3.2)
+ * ---------------------------------------------------------------------------
+ * A milestone linked to a doqtri heading also gets a "Planned in doqtri"
+ * block. The link row only says which doc and node to read (it is not
+ * evidence, contract section 12); the node, its record and the doc's version
+ * are what DoqtriRegistry says when the page loads, and the doqtri link is
+ * built from the doc id. The function sends the reference only for a linked
+ * milestone, and the registry is read only then, so an unlinked milestone's
+ * page is exactly what it was.
+ *
+ * ---------------------------------------------------------------------------
+ * PROOF CHAIN (WP-3.3)
+ * ---------------------------------------------------------------------------
+ * Above that block, a linked milestone gets the whole chain in four steps:
+ * plan version, submitted, approved, verified in doqtri (contract section
+ * 12). Steps 2 and 3 are milestone_proof's current record, read here, with
+ * the transaction from the anchor history; 1 and 4 are the registry reads
+ * the block already makes. It is what gate G3's outside reader follows. An
+ * unlinked milestone gets no chain: its anchor history already tells steps
+ * 2 and 3, and its page stays exactly what it was. The reads are
+ * lib/public-proof-chain.ts, which reads the milestone's record again,
+ * uncached, before the chain says qdit's record contradicts it (D-97).
  */
 
 export const dynamic = "force-dynamic";
@@ -75,6 +102,14 @@ export default async function PublicProofPage({
   const submissions = proof.anchors.filter((anchor) => anchor.action === "submit");
   const currentHash = submissions.at(-1)?.proofHash ?? null;
 
+  // The registry and milestone_proof reads behind the proof chain and the
+  // Planned in doqtri block (contract section 12), only for a linked
+  // milestone: lib/public-proof-chain.ts.
+  const docSource = proof.docSource ?? null;
+  const read = await readPublicChain(proof);
+  const docCheck = read?.check ?? null;
+  const chain = read?.steps ?? null;
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 py-5">
@@ -109,17 +144,20 @@ export default async function PublicProofPage({
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           Published by its project. The content stays in qdit — only the hash is
           on the ledger, which is what lets you check this page without being
-          asked to trust it. Every hash below opens on stellar.expert.
+          asked to trust it. Every transaction and contract below opens on
+          stellar.expert.
         </p>
 
         {/* The one number a reader is most likely to want to compare against
             something they were sent separately, so it does not make them read
-            the history to find it. */}
+            the history to find it. A digest, not a transaction: copyable, but
+            with no stellar.expert link, which would only open "not found"
+            (D-83). The transaction that anchored it is in the history. */}
         {currentHash ? (
           <section className="surface-primary mt-6 rounded-xl border border-border-strong p-4">
             <h2 className="text-sm font-medium">Current proof hash</h2>
             <div className="mt-2">
-              <HashLink value={currentHash} kind="tx" network={network} lead={10} tail={10} />
+              <HashLink value={currentHash} kind="hash" lead={10} tail={10} />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               SHA-256 of the milestone content as it was submitted. Version{" "}
@@ -165,6 +203,9 @@ export default async function PublicProofPage({
             </ul>
           </div>
         </section>
+
+        {chain ? <ProofChain steps={chain} /> : null}
+        {docSource && docCheck ? <PlannedInDoqtri source={docSource} check={docCheck} /> : null}
 
         <Timeline proof={proof} />
 

@@ -22,11 +22,17 @@ const EMPTY: AuthState = {};
  * So there is nothing here to sign *up* with. `signUp()` still exists in
  * ./actions.ts and nothing imports it; the note above it says why.
  */
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState(signIn, EMPTY);
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
+      {/*
+        Already sanitised by the page, and sanitised again by the action: a
+        hidden field is still a field anyone can edit before posting.
+      */}
+      <input type="hidden" name="next" value={next} />
+
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input

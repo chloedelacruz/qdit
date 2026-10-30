@@ -1,5 +1,8 @@
+import { ExternalLink } from "lucide-react";
+
 import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
+import { FromDoqtriBadge, PlanDocConnectionBadge } from "@/components/doqtri-doc-card";
 import { AnchorBadge } from "@/components/milestone-anchor";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskStatusMenu } from "@/components/task-status-menu";
@@ -15,10 +18,12 @@ import {
   type TaskPriority,
   type Tone,
 } from "@/lib/constants";
+import { milestoneDocCard, planDocCard } from "@/lib/doqtri-doc-card";
 import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import type {
   DeploymentRow,
   MilestoneRow,
+  PlanDocRow,
   ProjectMember,
   ProjectRow,
   ProofRow,
@@ -172,6 +177,31 @@ export function MilestoneListRow({
       <div className={LINE}>
         <span className="shrink-0 truncate font-medium">{milestone.title}</span>
 
+        {/*
+          Says where the title comes from, beside the title it is about: a
+          linked milestone's title is doqtri's (D-12), and the edit form shows
+          it read-only. It opens the doc card (WP-2.6), so it is a control
+          lifted above the row's own link.
+        */}
+        {milestone.link ? (
+          <RowControl>
+            <FromDoqtriBadge
+              card={milestoneDocCard(
+                milestone.link,
+                milestone.anchor
+                  ? {
+                      action: milestone.anchor.action,
+                      version: milestone.anchor.version,
+                      txHash: milestone.anchor.txHash,
+                      network: milestone.anchor.network,
+                    }
+                  : null,
+                milestone.anchorStale,
+              )}
+            />
+          </RowControl>
+        ) : null}
+
         <RowMeta
           className="min-w-0 flex-1"
           items={[
@@ -238,6 +268,71 @@ export function MilestoneListRow({
         </p>
       ) : null}
     </ListRow>
+  );
+}
+
+/**
+ * One doqtri plan linked to the project. Read-only here: docs are linked and
+ * unlinked from doqtri (D-10), so the row offers the plan itself and nothing
+ * to change. The doc URL leaves qdit, so it is a plain anchor in a new tab,
+ * not the row's overlay link.
+ *
+ * Only a URL on doqtri's origin is a link (D-45, `listPlanDocs`); any other
+ * shows the title as plain text and says why. The row still names the host
+ * a link opens, so what it says and where it goes cannot differ.
+ */
+export function PlanDocListRow({ doc }: { doc: PlanDocRow }) {
+  return (
+    <ListRow>
+      <div className={LINE}>
+        {doc.url ? (
+          <PlanDocLink title={doc.title} url={doc.url} host={doc.host} />
+        ) : (
+          <span
+            className="min-w-0 shrink truncate font-medium"
+            title="This URL is not on doqtri, so qdit does not link to it."
+          >
+            {doc.title}
+          </span>
+        )}
+
+        <RowMeta
+          className="min-w-0 flex-1"
+          items={[
+            doc.url ? doc.host : "Not a doqtri link",
+            doc.milestoneCount === 1
+              ? "1 linked milestone"
+              : `${doc.milestoneCount} linked milestones`,
+            `Linked ${doc.linkedAt.slice(0, 10)}`,
+          ]}
+        />
+
+        {/* The doc card (WP-2.6): version, proof state and whether doqtri
+            still keeps this plan linked. */}
+        <RowControl>
+          <PlanDocConnectionBadge card={planDocCard(doc)} />
+        </RowControl>
+      </div>
+    </ListRow>
+  );
+}
+
+/** The doc title as a link out to doqtri, in a new tab. */
+function PlanDocLink({ title, url, host }: { title: string; url: string; host: string }) {
+  return (
+    <RowControl className="min-w-0 shrink">
+      <a
+        href={url}
+        title={url}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="transition-qdit flex min-w-0 items-center gap-1.5 font-medium hover:underline"
+      >
+        <span className="truncate">{title}</span>
+        <ExternalLink aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+        <span className="sr-only">{host ? `(opens ${host} in a new tab)` : "(opens in a new tab)"}</span>
+      </a>
+    </RowControl>
   );
 }
 
