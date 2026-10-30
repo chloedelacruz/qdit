@@ -1010,7 +1010,6 @@ function toMilestone(
             projectId: row.project_id,
             title: row.title,
             description: row.description,
-            status: row.status,
             dueDate: row.due_date,
             proofs: proofs.map((proof) => ({
               id: proof.id,
