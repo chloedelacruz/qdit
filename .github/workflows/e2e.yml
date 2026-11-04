@@ -1,7 +1,11 @@
 name: E2E
 
-# The Playwright suite, on demand and weekly — not on every PR. ci.yml says why
-# it is kept out of the PR check: it runs against a real Supabase project with
+# The Playwright suite, on demand only — not on every PR, and not on a
+# schedule. The owner runs it locally (`npm run test:e2e`) for now; the
+# secrets below are not set, so this workflow fails at its first step until
+# they are. Add them, and a `schedule:` trigger, when it should run here.
+#
+# ci.yml says why it is kept out of the PR check: it runs against a real Supabase project with
 # RLS enforced and write specs that mutate it, so it needs secrets a fork does
 # not have and a database two runs must not share.
 #
@@ -17,9 +21,6 @@ name: E2E
 
 on:
   workflow_dispatch:
-  schedule:
-    # Mondays 02:00 UTC (10:00 in Manila), before the week's work starts.
-    - cron: "0 2 * * 1"
 
 # One database, so one run at a time. Queued rather than cancelled: a run that
 # is cancelled half-way leaves rows its teardown never removed, and the next

@@ -1354,9 +1354,10 @@ Every job green on `main`, each step gated in order — a failed lint never reac
 
 The Playwright suite is deliberately not in the PR check: it runs against the real hosted
 Supabase project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database
-that write specs are allowed to mutate. `.github/workflows/e2e.yml` runs it on demand
-(Actions › E2E › Run workflow) and every Monday, one run at a time; the secrets it needs are
-listed at the top of that file. Besides the secret key, `oauth.spec.ts` needs the e2e
+that write specs are allowed to mutate. For now it is run locally with `npm run test:e2e`
+from `web/`. `.github/workflows/e2e.yml` can run it on demand (Actions › E2E › Run
+workflow), one run at a time, once the secrets listed at the top of that file are set; they
+are not, so until then it stops at its first step. Besides the secret key, `oauth.spec.ts` needs the e2e
 project's OAuth 2.1 server enabled — without it the approve, deny and revoke tests skip and
 say why — and `wallet.spec.ts` needs Friendbot and Horizon on Testnet.
 
