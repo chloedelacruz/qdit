@@ -1,6 +1,6 @@
 import { expect, test as setup } from "@playwright/test";
 
-import { PROJECT, SEEDED_TASKS } from "./seed";
+import { NEVER_DEPLOYED, PROJECT, SEEDED_TASKS } from "./seed";
 
 /**
  * Puts the seeded tasks back in the columns `seed.ts` says they belong in.
@@ -128,4 +128,59 @@ setup("restore the seeded tasks to their columns", async () => {
         "It was deleted from the test database and has to be restored by hand.",
     ).toBe(1);
   }
+});
+
+/**
+ * Makes sure `NEVER_DEPLOYED` exists, belongs to the seeded project's owner,
+ * and has never been deployed.
+ *
+ * An upsert by fixed id rather than a one-off insert, so a fresh database gets
+ * it on the first run and an existing one is left alone — and a deployment row
+ * someone added by hand is removed, because a deployed project would turn the
+ * spec that depends on it into a test of nothing.
+ *
+ * The owner is read from `PROJECT` instead of being written down: the hosted
+ * e2e database and a local `seed.sql` stack have different owners (see
+ * `MEMBERS` in seed.ts), and both must end up with the signed-in account able
+ * to see this project. The `on_project_created` trigger makes that owner a
+ * member on insert.
+ */
+setup("seed the never-deployed project", async () => {
+  const auth = credentials();
+  if (!auth) return;
+
+  const owner = await fetch(
+    `${auth.url}/rest/v1/projects?id=eq.${PROJECT.id}&select=owner_id`,
+    { headers: auth.headers },
+  );
+  expect(owner.ok, `[reseed] reading the seeded owner failed: ${owner.status}`).toBe(true);
+
+  const [row] = (await owner.json()) as { owner_id: string }[];
+  expect(row, `[reseed] seeded project ${PROJECT.id} is missing.`).toBeTruthy();
+
+  const upsert = await fetch(`${auth.url}/rest/v1/projects?on_conflict=id`, {
+    method: "POST",
+    headers: { ...auth.headers, Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({
+      id: NEVER_DEPLOYED.id,
+      owner_id: row.owner_id,
+      name: NEVER_DEPLOYED.name,
+      slug: NEVER_DEPLOYED.slug,
+      description: "Seeded for the e2e suite: a project that has never reached a network.",
+      status: "active",
+    }),
+  });
+  expect(
+    upsert.ok,
+    `[reseed] upserting ${NEVER_DEPLOYED.slug} failed: ${upsert.status} ${await upsert.clone().text()}`,
+  ).toBe(true);
+
+  const cleared = await fetch(`${auth.url}/rest/v1/deployments?project_id=eq.${NEVER_DEPLOYED.id}`, {
+    method: "DELETE",
+    headers: auth.headers,
+  });
+  expect(
+    cleared.ok,
+    `[reseed] clearing deployments of ${NEVER_DEPLOYED.slug} failed: ${cleared.status}`,
+  ).toBe(true);
 });
