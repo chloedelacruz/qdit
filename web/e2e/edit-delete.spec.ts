@@ -243,21 +243,23 @@ test.describe("profile", () => {
     await expect(dialog.getByPlaceholder("G…")).toHaveCount(0);
   });
 
-  test("offers to bind a wallet, and never a box to type one into", async ({ page }) => {
+  test("shows the bound wallet as permanent, and never a box to type one into", async ({ page }) => {
     await page.goto("/settings");
 
     /*
-      The e2e account predates the wallet flow: it signed up with an email and
-      has no address on its profile. That is the case this asserts — the one
-      remaining way an address can be attached, and the only account shape that
-      can still do it.
+      The e2e account registered through the wallet flow (the only way an
+      account is created now), so its address is bound and permanent. That is
+      what this asserts: the address is shown with copy and explorer links,
+      there is no way to attach another, and no box to type one into.
 
-      The opposite state, an account whose address is bound and permanent, is
-      asserted in `wallet-auth.spec.ts` against an account that registers one
-      during the run. Neither test can cover both, because which branch renders
-      is a property of the account, not of the page.
+      The unbound branch ("Connect wallet" on a profile with no address) only
+      exists for accounts that predate the wallet flow; a new e2e account
+      cannot be one.
     */
-    await expect(page.getByRole("button", { name: "Connect wallet" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy account" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View account on stellar.expert" })).toBeVisible();
+    await expect(page.getByText("Signs you in. Cannot be changed.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect wallet" })).toHaveCount(0);
     await expect(page.getByPlaceholder("G…")).toHaveCount(0);
   });
 });

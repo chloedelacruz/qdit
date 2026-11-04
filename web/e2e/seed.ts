@@ -16,6 +16,23 @@ export const PROJECT = {
 } as const;
 
 /**
+ * A project that has never been deployed anywhere: no deployment rows, so no
+ * contract id, so the overview's `project.contractId === null` branch.
+ *
+ * Every other seeded project reached Testnet, which is why
+ * `stellar-proof.spec.ts` once had to skip the test for this branch. The id is
+ * fixed for the same reason `PROJECT.id` is: `reseed.setup.ts` upserts it by id
+ * and keeps it free of deployments before every run, so it cannot drift into
+ * being deployed. It has the same owner as `PROJECT`, which is the signed-in
+ * account, so RLS lets the specs see it.
+ */
+export const NEVER_DEPLOYED = {
+  id: "aaaaaaaa-0000-4000-8000-000000000002",
+  name: "Never Deployed",
+  slug: "never-deployed",
+} as const;
+
+/**
  * The roster, as the hosted e2e database actually has it.
  *
  * `owner` is **the signed-in account** — `E2E_EMAIL` — and that is forced, not
@@ -35,7 +52,7 @@ export const PROJECT = {
  * than on sign-in. `web/.env.example` describes the symptom.
  */
 export const MEMBERS = {
-  owner: { name: "chloedelacruz", initials: "CH" },
+  owner: { name: "tyronlolxdtester", initials: "TY" },
   ben: { name: "Ben Reviewer", initials: "BR" },
   cleo: { name: "Cleo Observer", initials: "CO" },
 } as const;

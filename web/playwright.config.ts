@@ -102,7 +102,7 @@ export default defineConfig({
       dependencies: ["setup", "reseed"],
       // Every write-path spec must also be listed here, or it runs twice —
       // once in this project and again in `mutations`.
-      testIgnore: /(mobile-nav|auth|landing|create-task|edit-delete)\.spec\.ts/,
+      testIgnore: /(mobile-nav|auth|landing|create-task|edit-delete|public-proof|oauth)\.spec\.ts/,
     },
 
     {
@@ -133,6 +133,23 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["mutations"],
       testMatch: /edit-delete\.spec\.ts/,
+    },
+
+    {
+      /**
+       * The specs that build fixtures outside the seeded rows: a published
+       * project and milestone for the public proof page, and an OAuth client
+       * for the consent screen and Authorized apps.
+       *
+       * After `edits`, for the reason `edits` follows `mutations`: the extra
+       * milestone would move the exact count `lists.spec.ts` asserts if the two
+       * overlapped. Signed in, because the consent screen needs a session;
+       * public-proof.spec.ts drops it with its own `test.use`.
+       */
+      name: "publishing",
+      use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
+      dependencies: ["edits"],
+      testMatch: /(public-proof|oauth)\.spec\.ts/,
     },
 
     {

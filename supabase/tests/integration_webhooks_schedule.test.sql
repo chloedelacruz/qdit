@@ -14,8 +14,10 @@
 -- that have a secret missing.
 --
 -- Needs pg_cron, pg_net and Vault: `supabase test db` against a local stack
--- has them; the PGlite harness stands them in with --stub-scheduler. Where
--- they are missing the migration skips the job and this file cannot run.
+-- has them, and CI runs it there (the `database` job). The old PGlite
+-- harness's --stub-scheduler stand-ins have no cron.alter_job() and type
+-- pg_net's method as text, so they no longer run this file. Where the
+-- extensions are missing the migration skips the job and this file cannot run.
 -- Everything happens inside one transaction that is rolled back,
 -- so the secrets stored here never outlive it, and pg_net sends nothing (it
 -- only starts requests after a commit).
@@ -89,7 +91,9 @@ select is(
 select vault.create_secret('cron-secret-for-tests', 'qdit_cron_secret');
 select pg_temp.run_job();
 select results_eq(
-  $$ select method, url, headers ->> 'Authorization', timeout_milliseconds
+  -- pg_net's method column is its own net.http_method enum, so it is cast
+  -- for the comparison.
+  $$ select method::text, url, headers ->> 'Authorization', timeout_milliseconds
        from net.http_request_queue order by id desc limit 1 $$,
   $$ values ('GET'::text, 'https://qdit.test/api/cron/deliver-webhooks'::text,
              'Bearer cron-secret-for-tests'::text, 60000) $$,
@@ -106,13 +110,15 @@ select ok(
   'health names secrets, never their values'
 );
 
-update cron.job set active = false where jobname = 'qdit-deliver-webhooks';
+-- Through cron.alter_job(), not an UPDATE: on Supabase cron.job belongs to
+-- supabase_admin and the role `supabase test db` runs as may not write it.
+select cron.alter_job(jobid, active := false) from cron.job where jobname = 'qdit-deliver-webhooks';
 select is(
   public.webhook_scheduler_health(),
   '{"status": "missing", "job": false, "missing_secrets": []}'::jsonb,
   'health: missing when the job is not active, even with both secrets'
 );
-update cron.job set active = true where jobname = 'qdit-deliver-webhooks';
+select cron.alter_job(jobid, active := true) from cron.job where jobname = 'qdit-deliver-webhooks';
 
 
 -- ----------------------------------------------------------------------------

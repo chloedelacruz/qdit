@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# GitHub Actions runs only on `main` (.github/workflows/ci.yml). Pushing any
+# other branch runs the same jobs locally first, through scripts/ci-local.sh,
+# and a failure stops the push.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip in an emergency:   git push --no-verify
+
+set -euo pipefail
+
+zero=0000000000000000000000000000000000000000
+run=false
+
+# git passes one line per ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref _remote_sha; do
+  [[ "$local_sha" == "$zero" ]] && continue          # a branch deletion
+  [[ "$remote_ref" == "refs/heads/main" ]] && continue  # CI checks main
+  [[ "$remote_ref" == refs/tags/* ]] && continue
+  run=true
+done
+
+if $run; then
+  exec "$(git rev-parse --show-toplevel)/scripts/ci-local.sh"
+fi

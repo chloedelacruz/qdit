@@ -139,6 +139,21 @@ values (
 )
 on conflict (id) do nothing;
 
+-- A project that never reached a network: no deployment rows, so no contract
+-- id. `web/e2e/stellar-proof.spec.ts` asserts the overview renders no proof
+-- chip for it. `web/e2e/reseed.setup.ts` upserts the same row on the hosted
+-- e2e project, where this file is never applied.
+insert into public.projects (id, owner_id, name, slug, description, status)
+values (
+  'aaaaaaaa-0000-4000-8000-000000000002',
+  '11111111-1111-1111-1111-111111111111',
+  'Never Deployed',
+  'never-deployed',
+  'Seeded for the e2e suite: a project that has never reached a network.',
+  'active'
+)
+on conflict (id) do nothing;
+
 -- Ada already has an `owner` row courtesy of on_project_created.
 insert into public.project_members (project_id, user_id, role)
 values

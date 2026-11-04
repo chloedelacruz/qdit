@@ -119,3 +119,57 @@ teardown("remove accounts created by the wallet registration specs", async () =>
     console.log(`[teardown] removed ${mine.length} e2e wallet account(s).`);
   }
 });
+
+/**
+ * Deletes the OAuth clients `oauth.spec.ts` registers.
+ *
+ * That spec deletes its own client in `afterAll`; this catches the run that
+ * crashed before it got there. Matched on the `e2e oauth client ` name prefix,
+ * which is the contract between the two files — every other client, doqtri's
+ * among them, is left alone. Deleting a client removes the grants made to it.
+ *
+ * A 404 on the list means the project's OAuth server is off, in which case the
+ * spec skipped and there is nothing to remove.
+ */
+teardown("remove OAuth clients created by the consent specs", async () => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secret = process.env.SUPABASE_SECRET_KEY;
+
+  if (!url || !secret) {
+    console.warn("[teardown] SUPABASE_SECRET_KEY not set — leaving e2e OAuth clients in place.");
+    return;
+  }
+
+  const headers = { apikey: secret, Authorization: `Bearer ${secret}` };
+  const listed = await fetch(`${url}/auth/v1/admin/oauth/clients?per_page=100`, { headers });
+
+  if (listed.status === 404) return;
+  if (!listed.ok) {
+    console.warn(
+      `[teardown] could not list OAuth clients: ${listed.status} ${await listed.text()}`,
+    );
+    return;
+  }
+
+  const { clients = [] } = (await listed.json()) as {
+    clients?: { client_id: string; client_name?: string }[];
+  };
+  const mine = clients.filter((client) => client.client_name?.startsWith("e2e oauth client "));
+
+  for (const client of mine) {
+    const deleted = await fetch(`${url}/auth/v1/admin/oauth/clients/${client.client_id}`, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!deleted.ok) {
+      console.warn(
+        `[teardown] could not delete OAuth client ${client.client_name}: ${deleted.status}`,
+      );
+    }
+  }
+
+  if (mine.length > 0) {
+    console.log(`[teardown] removed ${mine.length} e2e OAuth client(s).`);
+  }
+});
