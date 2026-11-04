@@ -85,7 +85,9 @@ test.describe("a linked milestone nobody has anchored", () => {
     const proof = (Array.isArray(body) ? body[0] : body) as { docSource?: Record<string, unknown> };
     expect(proof.docSource, "no docSource for a linked milestone").toBeTruthy();
     expect(Object.keys(proof.docSource!).sort()).toEqual(["docId", "docVersion", "nodeLabel", "projectId"]);
-    expect(proof.docSource).toMatchObject({ docId: note.id, nodeLabel: H_BUILD.nodeLabel, projectId: project.id });
+    // projectId is given only for a project registered on chain; the suite's
+    // project is not, so it is null here (public_milestone_doc_source.sql).
+    expect(proof.docSource).toMatchObject({ docId: note.id, nodeLabel: H_BUILD.nodeLabel, projectId: null });
   });
 });
 

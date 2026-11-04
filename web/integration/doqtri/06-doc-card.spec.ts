@@ -10,6 +10,7 @@ import {
   milestoneFromHeading,
   seedNote,
   type QditProject,
+  openPlanDocCard,
 } from "./world";
 
 /**
@@ -44,7 +45,7 @@ test.afterAll(async () => {
 
 test("qdit's project page shows the linked doqtri note with a live connection", async () => {
   await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
-  const card = pair.page.locator('[data-slot="doqtri-doc-card"]');
+  const card = await openPlanDocCard(pair.page, note.title);
   await expect(card).toHaveAttribute("data-state", "loaded");
   await expect(card).toContainText(note.title);
   await expect(card.locator(`a[href="${env().doqtriOrigin}/d/${note.id}"]`)).toBeVisible();

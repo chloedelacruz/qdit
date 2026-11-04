@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { env, issuerOf } from "./env";
-import { doqtriAppsPanel, openPair, startDisconnected, type Pair } from "./pair";
+import { doqtriAppRow, doqtriAppsPanel, openPair, startDisconnected, type Pair } from "./pair";
 import { serviceRest } from "./rest";
 import { api, claims, clientToken, connectThroughDoqtri } from "./world";
 
@@ -54,7 +54,7 @@ test("allowing connects doqtri as the qdit account that consented", async () => 
   // qdit lists the grant under Authorized apps.
   await pair.page.goto(`${env().qditOrigin}/settings`);
   await expect(
-    pair.page.locator("li").filter({ hasText: new URL(env().doqtriOrigin).host }).getByRole("button", { name: "Revoke" }),
+    doqtriAppRow(pair.page).getByRole("button", { name: "Revoke" }),
   ).toBeVisible();
 });
 

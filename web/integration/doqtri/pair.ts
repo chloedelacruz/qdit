@@ -26,14 +26,22 @@ export async function doqtriAppsPanel(page: Page) {
 }
 
 /**
+ * doqtri's row in qdit's Settings > Authorized apps. The row names the app
+ * ("doqtri"); its host shows only when qdit knows one, which production does
+ * not, so the name is what identifies it.
+ */
+export function doqtriAppRow(page: Page) {
+  return page.locator("li").filter({ hasText: "doqtri" });
+}
+
+/**
  * Revokes doqtri in qdit's Settings > Authorized apps, as the user would.
  * Returns false when doqtri is not listed (no live grant).
  */
 export async function revokeInQdit(page: Page): Promise<boolean> {
   const e = env();
   await page.goto(`${e.qditOrigin}/settings`);
-  const doqtriHost = new URL(e.doqtriOrigin).host;
-  const row = page.locator("li").filter({ hasText: doqtriHost }).filter({ has: page.getByRole("button", { name: "Revoke" }) });
+  const row = doqtriAppRow(page).filter({ has: page.getByRole("button", { name: "Revoke" }) });
   if ((await row.count()) === 0) return false;
   await row.first().getByRole("button", { name: "Revoke" }).click();
   const dialog = page.getByRole("alertdialog");

@@ -3,7 +3,7 @@
  * round trip in both of its forms, and cleanup.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 import { callbackOf, env, issuerOf } from "./env";
 import { NAME_PREFIX, SLUG_PREFIX, serviceRest, tag } from "./rest";
@@ -130,9 +130,41 @@ export async function clientToken(context: BrowserContext): Promise<{ access: st
   const page = await context.newPage();
   let landed: URL | null = null;
   try {
-    await page.route(`${redirectUri}*`, async (route) => {
-      landed = new URL(route.request().url());
+    // A route handler sees only the first URL of a redirect chain. With a live
+    // grant, qdit answers the authorize request with server redirects that end
+    // at doqtri's callback, so a handler on the callback URL alone never fires
+    // and doqtri spends the code. Every navigation is therefore fetched one hop
+    // at a time, and the hop that points at the callback is stopped there.
+    const isCallback = (url: string) => url.startsWith(redirectUri);
+    const capture = async (route: Route, url: string) => {
+      landed = new URL(url);
       await route.fulfill({ status: 200, contentType: "text/plain", body: "captured by the integration suite" });
+    };
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (isCallback(request.url())) return capture(route, request.url());
+      if (!request.isNavigationRequest()) return route.continue();
+      const response = await route.fetch({ maxRedirects: 0 });
+      const location = response.headers()["location"];
+      if (location && response.status() >= 300 && response.status() < 400) {
+        const next = new URL(location, request.url()).toString();
+        if (isCallback(next)) return capture(route, next);
+        // Hand the hop back as a page that navigates on, so the next request
+        // is a fresh navigation this handler sees too. The hop's own headers
+        // (its cookies) are kept.
+        const headers = { ...response.headers() };
+        // The redirecting server's own CSP would block the script below.
+        for (const name of ["location", "content-length", "content-security-policy", "content-security-policy-report-only"]) {
+          delete headers[name];
+        }
+        headers["content-type"] = "text/html";
+        return route.fulfill({
+          status: 200,
+          headers,
+          body: `<!doctype html><meta http-equiv="refresh" content="0;url=${next.replace(/"/g, "&quot;")}"><script>location.replace(${JSON.stringify(next)})</script>`,
+        });
+      }
+      await route.fulfill({ response });
     });
     await page.goto(authorize.toString());
     // Either the consent screen, or (a grant already exists) straight to the callback.
@@ -142,7 +174,9 @@ export async function clientToken(context: BrowserContext): Promise<{ access: st
       .then(() => true)
       .catch(() => false);
     if (consentShown) await page.getByRole("button", { name: /^Allow / }).click();
-    await expect.poll(() => landed, { timeout: 30_000 }).not.toBeNull();
+    await expect
+      .poll(() => landed, { timeout: 30_000, message: `the authorize redirect never reached doqtri's callback; the page is at ${page.url()}` })
+      .not.toBeNull();
   } finally {
     await page.close();
   }
@@ -233,4 +267,17 @@ export async function cleanUp(made: { projects?: QditProject[]; notes?: { id: st
       () => undefined,
     );
   }
+}
+
+/**
+ * Opens the doqtri doc card for a plan doc on qdit's project page and returns
+ * it. The card lives in a popover behind the Plan docs row's badge
+ * ("Details", or "Connection lost"), whose accessible name starts with the
+ * doc's title in quotes.
+ */
+export async function openPlanDocCard(page: Page, docTitle: string) {
+  const trigger = page.getByRole("button", { name: new RegExp(`^"${docTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}":`) });
+  await expect(trigger).toBeVisible({ timeout: 20_000 });
+  await trigger.click();
+  return page.locator('[data-slot="doqtri-doc-card"]');
 }

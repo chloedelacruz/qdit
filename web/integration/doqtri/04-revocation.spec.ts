@@ -14,6 +14,7 @@ import {
   milestoneFromHeading,
   seedNote,
   type QditProject,
+  openPlanDocCard,
 } from "./world";
 
 /**
@@ -51,15 +52,16 @@ test.afterAll(async () => {
   await pair?.context.close();
 });
 
-function docCard() {
-  return pair.page.locator('[data-slot="doqtri-doc-card"]');
+async function docCard() {
+  return openPlanDocCard(pair.page, note.title);
 }
 
 test("before the revoke, the token works and the doc card is live", async () => {
   expect((await api(token, "GET", "/me")).status).toBe(200);
   await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
-  await expect(docCard()).toHaveAttribute("data-state", "loaded");
-  await expect(docCard()).toContainText(note.title);
+  const card = await docCard();
+  await expect(card).toHaveAttribute("data-state", "loaded");
+  await expect(card).toContainText(note.title);
 });
 
 test("revoking in qdit refuses the app's live token at once, on /api/v1 and on writes (D-59, D-75)", async () => {
@@ -94,13 +96,14 @@ test("revoking in qdit refuses the app's live token at once, on /api/v1 and on w
 
 test("doqtri turns the revoked grant into Reconnect; qdit's doc card says the connection is lost", async () => {
   const projects = await pair.context.request.get(`${env().doqtriOrigin}/api/integrations/qdit/projects`);
-  expect(projects.status()).toBe(409);
+  expect(projects.status(), await projects.text()).toBe(409);
   expect(((await projects.json()) as { code: string }).code).toBe("QDIT_NOT_CONNECTED");
   await expect(await doqtriAppsPanel(pair.page)).toHaveText("Reconnect needed");
 
   await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
-  await expect(docCard()).toHaveAttribute("data-state", "not-connected");
-  await expect(docCard()).toContainText("Connection to doqtri lost");
+  const card = await docCard();
+  await expect(card).toHaveAttribute("data-state", "not-connected");
+  await expect(card).toContainText("Connection to doqtri lost");
 });
 
 test("reconnecting after the revoke works again", async () => {
@@ -113,5 +116,5 @@ test("reconnecting after the revoke works again", async () => {
   expect((await api((await clientToken(pair.context)).access, "GET", "/me")).status).toBe(200);
 
   await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
-  await expect(docCard()).toHaveAttribute("data-state", "loaded");
+  await expect(await docCard()).toHaveAttribute("data-state", "loaded");
 });
