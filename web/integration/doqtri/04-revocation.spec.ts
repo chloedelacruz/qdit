@@ -115,6 +115,14 @@ test("reconnecting after the revoke works again", async () => {
   expect(projects.status(), await projects.text()).toBe(200);
   expect((await api((await clientToken(pair.context)).access, "GET", "/me")).status).toBe(200);
 
+  // Reconnecting alone does not revive the doc card: qdit marks a doc link
+  // live again on doqtri's next write under the new grant
+  // (20261025120600_doc_link_connections.sql). Saving the link from doqtri is
+  // that write.
+  await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
+  await expect(await docCard()).toHaveAttribute("data-state", "not-connected");
+  await linkNoteToProject(pair.context, note.id, project.id);
+
   await pair.page.goto(`${env().qditOrigin}/projects/${project.slug}`);
   await expect(await docCard()).toHaveAttribute("data-state", "loaded");
 });
