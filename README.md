@@ -1217,6 +1217,17 @@ npx playwright install chromium   # once
 npm run test:e2e
 ```
 
+qdit against a **real doqtri** is a separate, on-demand suite. It drives both
+deployed apps, a non-production pair only, through OAuth, `/api/v1`, webhooks,
+revocation and both public proof pages. It refuses production hosts. Setup,
+variables and cleanup are in
+[`web/integration/doqtri/README.md`](web/integration/doqtri/README.md).
+
+```bash
+cd web
+npm run test:doqtri
+```
+
 ### Network selection
 
 The app defaults to **testnet**. Two env vars decide the chain layer:
