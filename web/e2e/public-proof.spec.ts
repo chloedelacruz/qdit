@@ -89,13 +89,30 @@ test.beforeAll(async () => {
   const milestoneId = await makeMilestone(svc, publishedId, milestoneTitle);
   const hiddenId = await makeMilestone(svc, unpublishedId, `e2e milestone private ${t}`);
 
+  // A milestone link points into a doc linked to the same project (the
+  // composite foreign key to project_doc_links), so the doc link comes first.
+  // Clients may not write it (D-48); the secret key may. The URL is on
+  // doqtri's origin, as link_project_doc() would require (D-95).
+  const docId = randomUUID();
+  const doqtriOrigin = (process.env.DOQTRI_ORIGIN ?? "https://www.doqtri.xyz").replace(/\/+$/, "");
+  await rest(svc, "project_doc_links", {
+    method: "POST",
+    body: {
+      project_id: publishedId,
+      doc_id: docId,
+      doc_title: `e2e plan ${t}`,
+      doc_url: `${doqtriOrigin}/d/${docId}`,
+      linked_by: owner,
+    },
+  });
+
   // node_label must equal the milestone title (D-12); the trigger checks it.
   await rest(svc, "milestone_external_links", {
     method: "POST",
     body: {
       milestone_id: milestoneId,
       project_id: publishedId,
-      doc_id: randomUUID(),
+      doc_id: docId,
       node_id: `e2e-node-${t}`,
       node_label: milestoneTitle,
       doc_version: 1,

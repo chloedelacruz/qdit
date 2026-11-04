@@ -52,7 +52,7 @@ export const NEVER_DEPLOYED = {
  * than on sign-in. `web/.env.example` describes the symptom.
  */
 export const MEMBERS = {
-  owner: { name: "chloedelacruz", initials: "CH" },
+  owner: { name: "tyronlolxdtester", initials: "TY" },
   ben: { name: "Ben Reviewer", initials: "BR" },
   cleo: { name: "Cleo Observer", initials: "CO" },
 } as const;

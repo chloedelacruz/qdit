@@ -221,7 +221,9 @@ test.describe("deciding a real request", () => {
     await page.goto(`/oauth/consent?authorization_id=${authorizationId}`);
 
     await expect(page.getByText("Signed in as")).toBeVisible();
-    await expect(page.getByText(process.env.E2E_EMAIL!, { exact: true })).toBeVisible();
+    // Supabase Auth stores emails lowercased, so match without case.
+    const email = process.env.E2E_EMAIL!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await expect(page.getByText(new RegExp(`^${email}$`, "i"))).toBeVisible();
     await expect(page.getByRole("heading", { name: "It will be able to" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "It will not be able to" })).toBeVisible();
     await expect(page.getByText(new URL(client!.redirectUri).host).first()).toBeVisible();
