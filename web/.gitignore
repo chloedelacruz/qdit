@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Playwright signed-in session state
 e2e/.auth/
+
+# The doqtri integration suite (integration/doqtri): run output.
+/integration/doqtri/.results/

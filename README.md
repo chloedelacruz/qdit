@@ -1196,7 +1196,11 @@ Database, with the Supabase CLI:
 ```bash
 supabase start           # local stack
 supabase db reset        # apply migrations + seed
+supabase test db         # pgTAP: every file under supabase/tests/
 ```
+
+`supabase test db` needs only the database, so `supabase db start` is enough if the
+rest of the stack is not wanted; CI runs exactly that pair (the `database` job).
 
 Migrations are plain SQL under `supabase/migrations/`. Apply new ones with the CLI, which
 writes `supabase_migrations.schema_migrations`; pasting SQL into the dashboard editor does
@@ -1215,6 +1219,17 @@ Supabase project with RLS enforced — there are no fixtures, and credentials co
 cd web
 npx playwright install chromium   # once
 npm run test:e2e
+```
+
+qdit against a **real doqtri** is a separate, on-demand suite. It drives both
+deployed apps, a non-production pair only, through OAuth, `/api/v1`, webhooks,
+revocation and both public proof pages. It refuses production hosts. Setup,
+variables and cleanup are in
+[`web/integration/doqtri/README.md`](web/integration/doqtri/README.md).
+
+```bash
+cd web
+npm run test:doqtri
 ```
 
 ### Network selection
@@ -1342,25 +1357,46 @@ cp /tmp/qdit-bindings/src/index.ts web/src/lib/chain/bindings.ts
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`), three jobs:
+GitHub Actions (`.github/workflows/ci.yml`) runs on pushes to `main` only, four jobs:
 
 1. **web** — `npm ci`, `npm run lint`, `npm run typecheck`, `npm test` (Vitest), `npm run build` with an empty contract id, so the build never depends on a deployed contract
 2. **contracts** — `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 3. **wasm** — pinned Stellar CLI, `stellar contract build`, upload the artifact
+4. **database** — pinned Supabase CLI, `supabase db start` (local Postgres only: migrations in order, then the seed; never the hosted project, no secrets), `supabase test db` (every pgTAP file under `supabase/tests/`)
 
 Every job green on `main`, each step gated in order — a failed lint never reaches a build:
 
 ![GitHub Actions run with all three jobs green: web lint/typecheck/build, contracts fmt/clippy/test, contracts build wasm](docs/screenshots/submission/ci.png)
 
-The Playwright suite is deliberately not in CI: it runs against the real hosted Supabase
-project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database that
-write specs are allowed to mutate.
+Every other branch runs the same jobs on your machine before it is pushed. The
+`.githooks/pre-push` hook calls `scripts/ci-local.sh`, which picks the jobs for the paths
+the branch changed since `origin/main` (any change to the workflow, the hook or the script
+picks all four) and stops the push if one fails. The database job uses the Supabase CLI
+version pinned in `ci.yml` through `npx` and needs Docker running. Enable the hook once
+per clone:
+
+```bash
+git config core.hooksPath .githooks
+scripts/ci-local.sh --all        # or name jobs: scripts/ci-local.sh web database
+```
+
+`git push --no-verify` skips it; don't, unless the branch is going nowhere near `main`.
+
+The Playwright suite is deliberately not in CI: it runs against the real hosted
+Supabase project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database
+that write specs are allowed to mutate. For now it is run locally with `npm run test:e2e`
+from `web/`. `.github/workflows/e2e.yml` can run it on demand (Actions › E2E › Run
+workflow), one run at a time, once the secrets listed at the top of that file are set; they
+are not, so until then it stops at its first step. Besides the secret key, `oauth.spec.ts` needs the e2e
+project's OAuth 2.1 server enabled — without it the approve, deny and revoke tests skip and
+say why — and `wallet.spec.ts` needs Friendbot and Horizon on Testnet.
 
 ### Test output
 
 ```bash
 cd web && npm test          # Vitest — pure logic, no browser or database
 cd contracts && cargo test  # Soroban contract, registered natively
+supabase db start && supabase test db  # pgTAP — migrations on a local Postgres
 ```
 
 ![Terminal output: Vitest 183 passed across 9 files, then cargo test 26 passed](docs/screenshots/submission/tests.png)
