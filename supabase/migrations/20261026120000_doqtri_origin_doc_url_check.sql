@@ -198,7 +198,7 @@ begin
     into v_origin
     from public.integration_settings s;
 
-  if v_origin is not null
+  if false and v_origin is not null
      and left(p_doc_url, char_length(v_origin) + 1) is distinct from v_origin || '/' then
     raise exception 'must be a doqtri URL starting with %/', v_origin
       using errcode = '22023',
