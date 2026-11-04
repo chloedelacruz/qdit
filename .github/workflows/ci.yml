@@ -145,3 +145,42 @@ jobs:
           path: contracts/target/wasm32v1-none/release/milestone_proof.wasm
           # A silently empty artifact would let a broken build look green.
           if-no-files-found: error
+
+  database:
+    name: database — migrations, pgTAP
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SQL guards are where the integration's security actually lives:
+      # RLS, the D-03 OAuth write guards, revocation (D-59, D-75, D-96), the
+      # doc-link origin check (D-95) and the webhook scheduler (D-57). The
+      # pgTAP files under supabase/tests/ pin them, but until this job they ran
+      # by hand on a PGlite stand-in, so a migration could break one and the PR
+      # still go green.
+      #
+      # Both versions are pinned, as with the Stellar CLI above: the CLI
+      # decides which Postgres, Auth and pg_prove images the run uses, and an
+      # unpinned upgrade would change the database under the tests without a
+      # commit to explain it. 2.121.0 is the first pin chosen; it knows the
+      # [auth.oauth_server] section in config.toml.
+      - uses: supabase/setup-cli@v2.1.2
+        with:
+          version: 2.121.0
+
+      # Only Postgres, and never the hosted project: no `supabase link`, no
+      # access token, no secrets. `db start` builds the local database the way
+      # `supabase start` does — Supabase's own auth, storage and extension
+      # schemas (pg_cron, pg_net and Vault are real here, not the PGlite
+      # stand-ins), then supabase/migrations/ in filename order, then
+      # supabase/seed.sql. A migration that fails to apply fails this step.
+      - run: supabase db start
+
+      # Every file under supabase/tests/ through pg_prove. Each file is one
+      # transaction that ends in a rollback, so the files cannot leak state
+      # into each other and their order does not matter.
+      - run: supabase test db
+
+      - if: always()
+        run: supabase stop --no-backup
