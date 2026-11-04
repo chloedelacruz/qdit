@@ -143,13 +143,13 @@ export function WalletSetup({ className }: { className?: string }) {
               qdit signs in with your wallet.{" "}
               <a
                 className="underline underline-offset-2"
-                href="https://www.freighter.app/"
+                href="https://varialwallet.com/"
                 target="_blank"
                 rel="noreferrer noopener"
               >
-                Freighter
+                Varial
               </a>{" "}
-              is the usual choice — install it, then reload this page.
+              (formerly Freighter) is the usual choice — install it, then reload this page.
             </>
           )}
         </Step>
