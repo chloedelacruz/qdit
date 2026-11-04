@@ -1221,6 +1221,17 @@ npx playwright install chromium   # once
 npm run test:e2e
 ```
 
+qdit against a **real doqtri** is a separate, on-demand suite. It drives both
+deployed apps, a non-production pair only, through OAuth, `/api/v1`, webhooks,
+revocation and both public proof pages. It refuses production hosts. Setup,
+variables and cleanup are in
+[`web/integration/doqtri/README.md`](web/integration/doqtri/README.md).
+
+```bash
+cd web
+npm run test:doqtri
+```
+
 ### Network selection
 
 The app defaults to **testnet**. Two env vars decide the chain layer:
@@ -1371,9 +1382,14 @@ scripts/ci-local.sh --all        # or name jobs: scripts/ci-local.sh web databas
 
 `git push --no-verify` skips it; don't, unless the branch is going nowhere near `main`.
 
-The Playwright suite is deliberately not in CI: it runs against the real hosted Supabase
-project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database that
-write specs are allowed to mutate.
+The Playwright suite is deliberately not in CI: it runs against the real hosted
+Supabase project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database
+that write specs are allowed to mutate. For now it is run locally with `npm run test:e2e`
+from `web/`. `.github/workflows/e2e.yml` can run it on demand (Actions › E2E › Run
+workflow), one run at a time, once the secrets listed at the top of that file are set; they
+are not, so until then it stops at its first step. Besides the secret key, `oauth.spec.ts` needs the e2e
+project's OAuth 2.1 server enabled — without it the approve, deny and revoke tests skip and
+say why — and `wallet.spec.ts` needs Friendbot and Horizon on Testnet.
 
 ### Test output
 

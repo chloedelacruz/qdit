@@ -61,7 +61,15 @@ test.describe("cross-project lists", () => {
   test("milestone rows carry progress and proof state", async ({ page }) => {
     await page.goto(`/projects/${PROJECT.slug}/milestones`);
 
-    const row = page.locator("a", { hasText: MILESTONES.proposed }).first();
+    // On the project's own milestones page a row has no link (RowLink drops a
+    // link to the page it is on), so the row is the innermost block holding
+    // this milestone's title and its meta line, and no other milestone's.
+    const row = page
+      .locator("div")
+      .filter({ hasText: MILESTONES.proposed })
+      .filter({ hasText: /tasks ·/ })
+      .filter({ hasNotText: MILESTONES.submitted })
+      .last();
     // "Dashboard MVP" has no tasks and no proof yet.
     await expect(row).toContainText("No proof");
   });

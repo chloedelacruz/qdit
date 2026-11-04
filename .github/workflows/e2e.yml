@@ -1,0 +1,89 @@
+name: E2E
+
+# The Playwright suite, on demand only — not on every PR, and not on a
+# schedule. The owner runs it locally (`npm run test:e2e`) for now; the
+# secrets below are not set, so this workflow fails at its first step until
+# they are. Add them, and a `schedule:` trigger, when it should run here.
+#
+# ci.yml says why it is kept out of the PR check: it runs against a real Supabase project with
+# RLS enforced and write specs that mutate it, so it needs secrets a fork does
+# not have and a database two runs must not share.
+#
+# Secrets (repository → Settings → Secrets and variables → Actions):
+#   E2E_SUPABASE_URL            the e2e project's URL — never production
+#   E2E_SUPABASE_PUBLISHABLE_KEY
+#   E2E_SUPABASE_SECRET_KEY     cleanup, reseed and the fixture specs
+#   E2E_EMAIL, E2E_PASSWORD     the seeded owner account (see web/e2e/seed.ts)
+#   E2E_STELLAR_AUTH_SERVER_SECRET  signs SEP-10 challenges for wallet-auth.spec.ts
+#
+# Network: the wallet spec funds a throwaway account with Friendbot and sends
+# test lumens on Testnet; nothing here touches Mainnet.
+
+on:
+  workflow_dispatch:
+
+# One database, so one run at a time. Queued rather than cancelled: a run that
+# is cancelled half-way leaves rows its teardown never removed, and the next
+# run's counts start wrong.
+concurrency:
+  group: e2e-database
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    name: Playwright against the e2e Supabase project
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.E2E_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.E2E_SUPABASE_SECRET_KEY }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      STELLAR_AUTH_SERVER_SECRET: ${{ secrets.E2E_STELLAR_AUTH_SERVER_SECRET }}
+      NEXT_PUBLIC_STELLAR_NETWORK: testnet
+      # Anchoring off, as in ci.yml: the suite must not depend on a deployed
+      # contract.
+      NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 for the same lock-file reason as ci.yml.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Check the secrets are there
+        run: |
+          missing=""
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY E2E_EMAIL E2E_PASSWORD STELLAR_AUTH_SERVER_SECRET; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets for:$missing. See the comment at the top of .github/workflows/e2e.yml."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      # playwright.config.ts builds and starts the app itself (webServer).
+      - run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 14

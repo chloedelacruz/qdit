@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { PROJECT } from "./seed";
+import { NEVER_DEPLOYED, PROJECT } from "./seed";
 
 /**
  * Nothing here hardcodes a strkey or a hash: each test reads the real value out
@@ -88,15 +88,17 @@ test.describe("stellar proof fields", () => {
   });
 
   /**
-   * Skipped rather than deleted, so the coverage gap stays visible: every
-   * seeded project has been deployed, so there is no contract-less project to
-   * assert against. Seed one that has never reached Testnet and remove the
-   * skip — the branch it covers (`project.contractId === null`) is live code in
-   * the project overview.
+   * The `project.contractId === null` branch of the overview. `NEVER_DEPLOYED`
+   * is kept free of deployment rows by `reseed.setup.ts`, which is what makes
+   * it contract-less.
+   *
+   * The heading is asserted first: a zero count of hashes is also what a 404
+   * or an empty shell renders, and this test must not pass on either.
    */
-  test.skip("projects without a contract render no proof chip", async ({ page }) => {
-    await page.goto("/projects/never-deployed");
+  test("projects without a contract render no proof chip", async ({ page }) => {
+    await page.goto(`/projects/${NEVER_DEPLOYED.slug}`);
 
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(NEVER_DEPLOYED.name);
     await expect(page.locator('[data-slot="hash"]')).toHaveCount(0);
   });
 });
