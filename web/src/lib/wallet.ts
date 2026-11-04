@@ -42,8 +42,37 @@ let initialized = false;
 
 type Kit = typeof import("@creit.tech/stellar-wallets-kit/sdk").StellarWalletsKit;
 
+/**
+ * Freighter was renamed Varial, and kit 2.8 renamed its module id from
+ * `freighter` to `varial`. The kit restores the selected wallet from
+ * localStorage when its state module is first evaluated, so a returning user
+ * whose browser still holds `freighter` would match no module and look
+ * disconnected. Rewrite the stored ids before the first kit import.
+ */
+function migrateFreighterWalletId(): void {
+  try {
+    const selectedKey = "@StellarWalletsKit/selectedModuleId";
+    if (localStorage.getItem(selectedKey) === "freighter") {
+      localStorage.setItem(selectedKey, "varial");
+    }
+
+    const usedKey = "@StellarWalletsKit/usedWalletsIds";
+    const used = localStorage.getItem(usedKey);
+    if (used?.includes('"freighter"')) {
+      const ids = (JSON.parse(used) as string[]).map((id) =>
+        id === "freighter" ? "varial" : id,
+      );
+      localStorage.setItem(usedKey, JSON.stringify([...new Set(ids)]));
+    }
+  } catch {
+    // Storage blocked or malformed: the user just reconnects once.
+  }
+}
+
 async function kit(): Promise<Kit | null> {
   if (typeof window === "undefined") return null;
+
+  if (!initialized) migrateFreighterWalletId();
 
   const [{ StellarWalletsKit }, { defaultModules }, types] = await Promise.all([
     import("@creit.tech/stellar-wallets-kit/sdk"),
@@ -163,7 +192,7 @@ export async function onWalletState(
  * with `isAvailable`. Asked before connecting, so it can only report on wallets
  * that announce themselves to the page — an extension is one, a hardware wallet
  * behind a bridge is not. False therefore means "we cannot see one", which is
- * the same advice either way: install Freighter.
+ * the same advice either way: install Varial.
  */
 export async function hasWalletInstalled(): Promise<boolean> {
   const wallets = await kit();
