@@ -7,12 +7,15 @@ name: CI
 # on missing secrets and let two concurrent runs fight over one database.
 # See the end-to-end tests note in README.md.
 
+# Only `main` runs here. Every other branch is checked before it leaves the
+# machine: .githooks/pre-push runs scripts/ci-local.sh, which runs these same
+# jobs locally for the parts of the tree the push touches. Enable it once per
+# clone with `git config core.hooksPath .githooks`.
 on:
   push:
     branches: [main]
-  pull_request:
 
-# A second push to the same branch makes the first run irrelevant.
+# A second push to main makes the first run irrelevant.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

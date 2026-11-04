@@ -1346,7 +1346,7 @@ cp /tmp/qdit-bindings/src/index.ts web/src/lib/chain/bindings.ts
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`), four jobs:
+GitHub Actions (`.github/workflows/ci.yml`) runs on pushes to `main` only, four jobs:
 
 1. **web** — `npm ci`, `npm run lint`, `npm run typecheck`, `npm test` (Vitest), `npm run build` with an empty contract id, so the build never depends on a deployed contract
 2. **contracts** — `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
@@ -1356,6 +1356,20 @@ GitHub Actions (`.github/workflows/ci.yml`), four jobs:
 Every job green on `main`, each step gated in order — a failed lint never reaches a build:
 
 ![GitHub Actions run with all three jobs green: web lint/typecheck/build, contracts fmt/clippy/test, contracts build wasm](docs/screenshots/submission/ci.png)
+
+Every other branch runs the same jobs on your machine before it is pushed. The
+`.githooks/pre-push` hook calls `scripts/ci-local.sh`, which picks the jobs for the paths
+the branch changed since `origin/main` (any change to the workflow, the hook or the script
+picks all four) and stops the push if one fails. The database job uses the Supabase CLI
+version pinned in `ci.yml` through `npx` and needs Docker running. Enable the hook once
+per clone:
+
+```bash
+git config core.hooksPath .githooks
+scripts/ci-local.sh --all        # or name jobs: scripts/ci-local.sh web database
+```
+
+`git push --no-verify` skips it; don't, unless the branch is going nowhere near `main`.
 
 The Playwright suite is deliberately not in CI: it runs against the real hosted Supabase
 project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database that
