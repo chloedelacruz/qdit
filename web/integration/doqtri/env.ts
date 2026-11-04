@@ -15,6 +15,13 @@
  *    same rule), so a ref that is not listed there is refused, whichever
  *    project it is.
  *
+ * Production is allowed only by an explicit opt-in: DOQTRI_IT_ALLOW_PRODUCTION
+ * set to the literal `i-know-this-writes-to-production` lifts guard 1. Guard 2
+ * still applies, so the production refs must be listed as well. The owner chose
+ * this on 4 Nov 2026 (QDIT-1) to avoid paying for a second Supabase pair; the
+ * suite's own accounts, project and notes are named `qdit-it …` and removed by
+ * the teardown.
+ *
  * The suite writes real rows in both apps: accounts, a qdit project, doqtri
  * notes, links, milestones, an OAuth grant. That is why it never runs by
  * accident (it is not in `npm test` or `npm run test:e2e`), and why these
@@ -85,6 +92,8 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   out.doqtriOrigin = trimOrigin(out.doqtriOrigin);
   out.seed ||= "doqtri-it";
 
+  const allowProduction =
+    process.env.DOQTRI_IT_ALLOW_PRODUCTION === "i-know-this-writes-to-production";
   for (const [name, value] of [
     ["DOQTRI_IT_QDIT_ORIGIN", out.qditOrigin],
     ["DOQTRI_IT_DOQTRI_ORIGIN", out.doqtriOrigin],
@@ -98,11 +107,14 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
       problems.push(`${name} is not a URL`);
       continue;
     }
-    if ((PRODUCTION_HOSTS as readonly string[]).includes(url.hostname)) {
+    if ((PRODUCTION_HOSTS as readonly string[]).includes(url.hostname) && !allowProduction) {
       problems.push(`${name} points at production (${url.hostname}). This suite writes data; run it against a non-production pair only.`);
     }
   }
   if (problems.length > 0) throw new Error(`Refusing to run:\n- ${problems.join("\n- ")}`);
+  if (allowProduction) {
+    console.warn("[doqtri-it] DOQTRI_IT_ALLOW_PRODUCTION is set: running against production.");
+  }
 
   const allowed = out.allowedRefs.split(",").map((ref) => ref.trim()).filter(Boolean);
   for (const [name, url] of [

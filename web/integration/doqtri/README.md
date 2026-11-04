@@ -103,7 +103,8 @@ either Supabase project is not listed in `DOQTRI_IT_ALLOWED_SUPABASE_REFS`.
 | `DOQTRI_IT_DOQTRI_SUPABASE_SERVICE_ROLE_KEY` | its service role key: seeding notes, read-back, cleanup |
 | `DOQTRI_IT_DOQTRI_OAUTH_CLIENT_ID` | doqtri's client id on this qdit (doqtri's `QDIT_OAUTH_CLIENT_ID`) |
 | `DOQTRI_IT_DOQTRI_OAUTH_CLIENT_SECRET` | that client's secret (doqtri's `QDIT_CLIENT_SECRET`) |
-| `DOQTRI_IT_ALLOWED_SUPABASE_REFS` | comma-separated refs of the two projects above; never production |
+| `DOQTRI_IT_ALLOWED_SUPABASE_REFS` | comma-separated refs of the two projects above; production only together with `DOQTRI_IT_ALLOW_PRODUCTION` |
+| `DOQTRI_IT_ALLOW_PRODUCTION` | optional; exactly `i-know-this-writes-to-production` lifts the production-host check (owner decision, 4 Nov 2026, to avoid a second Supabase pair). The teardown removes the suite's `qdit-it` rows |
 | `DOQTRI_IT_SEED` | optional; salt for the test wallets (default `doqtri-it`) |
 | `DOQTRI_IT_WALKED_QDIT_PAGE` | optional; `/p/<slug>/<milestone id>` of the hand-walked milestone |
 | `DOQTRI_IT_WALKED_DOC_ID` | optional; the doqtri doc it is linked to |
