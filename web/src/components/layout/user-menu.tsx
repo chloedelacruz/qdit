@@ -1,6 +1,5 @@
 "use client";
 
-import { LogOut, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useRef } from "react";
 
@@ -15,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ICON } from "@/lib/icons";
 
 /** Initials from an email local part, for the trigger. */
 function initials(email: string): string {
@@ -70,7 +70,7 @@ export function UserMenu({ email }: { email: string }) {
 
         <DropdownMenuItem asChild>
           <Link href="/settings">
-            <Settings2 className="size-4" />
+            <ICON.settings className="size-4" />
             Settings
           </Link>
         </DropdownMenuItem>
@@ -86,7 +86,7 @@ export function UserMenu({ email }: { email: string }) {
             onClick={(event) => void signOutEverywhere(event)}
             className="relative flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
           >
-            <LogOut className="size-4" />
+            <ICON.signOut className="size-4" />
             Sign out
           </button>
         </form>

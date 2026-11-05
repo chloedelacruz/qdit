@@ -1,4 +1,3 @@
-import { ExternalLink, Lock, Unplug } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +27,7 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
     // the "From doqtri" badge has already said.
     return (
       <div data-slot="doqtri-doc-card" data-state="no-access" className={cn("flex gap-2", className)}>
-        <Lock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <ICON.locked aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-1">
           <p className="font-medium">Linked doqtri plan</p>
           <p className="text-xs text-muted-foreground">
@@ -51,7 +50,7 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
       {lost ? (
         <div role="status" className="space-y-1 rounded-md border border-warning/40 px-2 py-1.5 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-warning">
-            <Unplug aria-hidden className="size-3.5 shrink-0" />
+            <ICON.disconnected aria-hidden className="size-3.5 shrink-0" />
             Connection to doqtri lost
           </p>
           <p className="text-muted-foreground">
@@ -96,7 +95,7 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
           className="transition-qdit inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
         >
           Open in doqtri
-          <ExternalLink aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <ICON.external aria-hidden className="size-3 shrink-0 text-muted-foreground" />
           <span className="sr-only">{card.host ? `(opens ${card.host} in a new tab)` : "(opens in a new tab)"}</span>
         </a>
       ) : (
@@ -184,7 +183,7 @@ export function FromDoqtriBadge({ card }: { card: DocCardData }) {
         variant="outline"
         className={cn("cursor-pointer font-normal text-muted-foreground hover:bg-muted", lost && "border-warning/50")}
       >
-        {lost ? <Unplug aria-hidden className="text-warning" /> : null}
+        {lost ? <ICON.disconnected aria-hidden className="text-warning" /> : null}
         From doqtri
       </Badge>
     </DoqtriDocCardPopover>
@@ -208,7 +207,7 @@ export function PlanDocConnectionBadge({ card }: { card: DocCardData }) {
           lost ? "border-warning/50 text-warning" : "text-muted-foreground",
         )}
       >
-        {lost ? <Unplug aria-hidden /> : null}
+        {lost ? <ICON.disconnected aria-hidden /> : null}
         {lost ? "Connection lost" : "Details"}
       </Badge>
     </DoqtriDocCardPopover>

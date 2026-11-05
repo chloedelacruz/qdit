@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { Download } from "lucide-react";
 
 import { CreateProofDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
@@ -61,7 +60,7 @@ export default async function ProjectProofsPage({
                 Content-Disposition, so it saves rather than navigates. */}
             <Button asChild variant="outline" size="sm">
               <a href={`/api/export/anchors?project=${project.slug}`} download>
-                <Download data-icon="inline-start" />
+                <ICON.download data-icon="inline-start" />
                 Anchor history (CSV)
               </a>
             </Button>

@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Bell } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { markNotificationsRead } from "@/lib/actions";
 import type { NotificationRow } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * What happened while you were not looking.
@@ -78,7 +78,7 @@ export function NotificationBell({
             count > 0 ? `Notifications, ${count} unread` : "Notifications, none unread"
           }
         >
-          <Bell />
+          <ICON.notification />
           {count > 0 ? (
             <span
               aria-hidden

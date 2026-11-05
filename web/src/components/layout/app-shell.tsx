@@ -1,6 +1,5 @@
 "use client";
 
-import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +15,7 @@ import { FOOTER_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
 import { ProjectSwitcher, type ProjectOption } from "./project-switcher";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
+import { ICON } from "@/lib/icons";
 
 /** The project slug the current route is scoped to, if any. */
 function useActiveSlug(): string | undefined {
@@ -91,7 +91,7 @@ export function AppShell({
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                <Menu />
+                <ICON.menu />
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0 pt-14">

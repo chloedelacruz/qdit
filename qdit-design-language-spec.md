@@ -79,8 +79,32 @@ picks an icon inline.
 -   Default to `muted-foreground`. An icon takes the accent only when it
     marks the page's primary object --- otherwise colour stops meaning
     anything.
--   An icon never appears without its label. It reinforces a word; it
-    does not replace one.
+-   An icon reinforces a word by default. It may **replace** the word
+    only where the word would repeat on every row or say again what the
+    surface already says (amended for QDIT-34):
+    -   repeated row actions (share, history, certificate, the ⋯ menu),
+    -   status marks (anchored, stale, pending, unregistered, public),
+    -   info bubbles (the ⓘ beside a title that opens its explainer).
+
+    An icon-only control always carries an `aria-label` and a tooltip
+    that names it, and the tooltip opens on hover, on keyboard focus and
+    on tap. Primary actions, form buttons and navigation keep their
+    visible label on desktop; the mobile tab bar keeps a short one.
+
+### Explainers and disabled controls
+
+-   An explanation longer than one short line goes behind an ⓘ info
+    bubble beside the heading it explains, not in the body.
+-   A control the person cannot use right now stays visible, disabled,
+    with a tooltip saying why and, where there is one, a link to the
+    place that fixes it. Never open a dialog only to say no.
+
+### Custom glyphs
+
+qdit draws its own glyph for every concept it owns (`components/icons/
+glyphs.tsx`), to the rules above. Pure mechanics with no qdit meaning —
+a spinner, a chevron, close, copy — may come from lucide. Both are
+imported only through `lib/icons.ts`.
 
 ## UI Principles
 

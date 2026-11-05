@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 
 import { DataList } from "@/components/data-list";
 import { ProofRowActions } from "@/components/entity-row-actions";
@@ -168,7 +167,7 @@ function IdentifierResult({
               {hit.context} · {NETWORK_LABELS[hit.network]}
             </span>
           </span>
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+          <ICON.next className="size-4 shrink-0 text-muted-foreground" />
         </Link>
       ))}
     </div>

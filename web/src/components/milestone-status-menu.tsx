@@ -1,7 +1,6 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
@@ -33,6 +32,7 @@ import {
 } from "@/lib/constants";
 import { updateMilestoneStatus } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * Moves a milestone through the approval flow.
@@ -118,7 +118,7 @@ export function MilestoneStatusMenu({
           disabled={pending}
           onClick={() => change("submitted")}
         >
-          {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
+          {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : null}
           Re-submit
         </Button>
       </span>
@@ -256,7 +256,7 @@ function DecisionDialog({
               setReason("");
             }}
           >
-            {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
+            {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : null}
             {decision ? milestoneActionLabel(from, decision) : ""}
           </Button>
         </DialogFooter>

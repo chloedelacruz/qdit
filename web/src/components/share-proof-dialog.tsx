@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Check, Copy } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ICON } from "@/lib/icons";
 
 /**
  * The link you can send to somebody who does not have an account.
@@ -98,7 +98,7 @@ export function ShareProofDialog({
                 setCopied(true);
               }}
             >
-              {copied ? <Check className="text-success" /> : <Copy />}
+              {copied ? <ICON.copied className="text-success" /> : <ICON.copy />}
             </Button>
           </div>
 

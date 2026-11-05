@@ -1,9 +1,9 @@
-import { CircleAlert, CircleCheck, CircleDashed, CircleHelp } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import { currentStep, type ChainStep, type ChainStepState } from "@/lib/proof-chain";
 import { NETWORK_LABELS } from "@/lib/stellar";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * The proof chain on a public milestone page (WP-3.3, contract section 12):
@@ -55,11 +55,11 @@ export function ProofChain({ steps }: { steps: ChainStep[] }) {
   );
 }
 
-const STATE: Record<ChainStepState, { label: string; icon: typeof CircleCheck; tone: string }> = {
-  done: { label: "Done", icon: CircleCheck, tone: "text-success" },
-  pending: { label: "Pending", icon: CircleDashed, tone: "text-muted-foreground" },
-  mismatch: { label: "Does not match", icon: CircleAlert, tone: "text-warning" },
-  unchecked: { label: "Could not check", icon: CircleHelp, tone: "text-muted-foreground" },
+const STATE: Record<ChainStepState, { label: string; icon: typeof ICON.verified; tone: string }> = {
+  done: { label: "Done", icon: ICON.verified, tone: "text-success" },
+  pending: { label: "Pending", icon: ICON.pending, tone: "text-muted-foreground" },
+  mismatch: { label: "Does not match", icon: ICON.mismatch, tone: "text-warning" },
+  unchecked: { label: "Could not check", icon: ICON.unchecked, tone: "text-muted-foreground" },
 };
 
 const utc = (iso: string) => `${new Date(iso).toISOString().replace("T", " ").slice(0, 16)} UTC`;

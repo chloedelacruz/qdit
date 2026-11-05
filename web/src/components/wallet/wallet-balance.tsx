@@ -1,12 +1,12 @@
 "use client";
 
-import { Loader2, RefreshCw } from "lucide-react";
 
 import type { AccountBalance } from "@/app/api/balance/route";
 import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/stat-tile";
 import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import { formatXlm } from "@/lib/stellar";
+import { ICON } from "@/lib/icons";
 
 /**
  * The connected wallet's XLM balance.
@@ -44,9 +44,9 @@ export function WalletBalance({
           aria-label="Refresh balance"
         >
           {loading ? (
-            <Loader2 className="animate-spin" data-icon="inline-start" />
+            <ICON.spinner className="animate-spin" data-icon="inline-start" />
           ) : (
-            <RefreshCw data-icon="inline-start" />
+            <ICON.refresh data-icon="inline-start" />
           )}
           Refresh
         </Button>

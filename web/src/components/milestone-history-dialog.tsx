@@ -1,6 +1,5 @@
 "use client";
 
-import { Download } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import {
@@ -14,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NETWORK_LABELS } from "@/lib/stellar";
 import type { MilestoneRow } from "@/lib/queries";
+import { ICON } from "@/lib/icons";
 
 /**
  * Everything that has happened to one milestone, oldest first.
@@ -145,7 +145,7 @@ export function MilestoneHistoryDialog({
                 href={`/api/export/certificate?project=${milestone.projectSlug}&milestone=${milestone.id}`}
                 download
               >
-                <Download data-icon="inline-start" />
+                <ICON.download data-icon="inline-start" />
                 Download certificate
               </a>
             </Button>

@@ -1,6 +1,5 @@
 "use client";
 
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useState } from "react";
 
 import { HashLink } from "@/components/hash-link";
@@ -10,6 +9,7 @@ import { SelectField } from "@/components/form-dialog";
 import type { VerifiedTx } from "@/app/api/verify-tx/route";
 import { isTxHash, NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * Spec §8. Checks a hash against Horizon and reports what is actually on the
@@ -86,7 +86,7 @@ export function VerifyTx() {
         </SelectField>
 
         <Button type="submit" disabled={!valid || pending}>
-          {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+          {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
           Verify
         </Button>
       </form>
@@ -99,7 +99,7 @@ export function VerifyTx() {
 
       {error ? (
         <p role="alert" className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
-          <XCircle className="size-3.5 shrink-0" />
+          <ICON.failed className="size-3.5 shrink-0" />
           {error}
         </p>
       ) : null}
@@ -119,9 +119,9 @@ export function VerifyTx() {
               )}
             >
               {result.successful ? (
-                <CheckCircle2 className="size-3.5" />
+                <ICON.verified className="size-3.5" />
               ) : (
-                <XCircle className="size-3.5" />
+                <ICON.failed className="size-3.5" />
               )}
               {result.successful ? "Succeeded" : "Failed on-chain"}
             </span>

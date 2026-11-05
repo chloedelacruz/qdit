@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 export type Crumb = { label: string; href?: string };
 
@@ -29,7 +29,7 @@ export function PageHeader({
           <ol className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
             {breadcrumb.map((crumb, index) => (
               <li key={`${crumb.label}-${index}`} className="flex items-center gap-1">
-                {index > 0 ? <ChevronRight className="size-3 opacity-50" /> : null}
+                {index > 0 ? <ICON.chevronRight className="size-3 opacity-50" /> : null}
                 {crumb.href ? (
                   <Link href={crumb.href} className="transition-qdit hover:text-foreground">
                     {crumb.label}

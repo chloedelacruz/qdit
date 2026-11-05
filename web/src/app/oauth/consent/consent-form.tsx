@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { decideAuthorization, type ConsentState } from "./actions";
+import { ICON } from "@/lib/icons";
 
 const EMPTY: ConsentState = {};
 
@@ -43,7 +43,7 @@ export function ConsentForm({
           Deny
         </Button>
         <Button type="submit" name="decision" value="approve" disabled={pending}>
-          {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+          {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
           Allow {clientName}
         </Button>
       </div>

@@ -1,4 +1,3 @@
-import { ExternalLink } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import { ListRow, MemberChip, RowControl, RowMeta } from "@/components/data-list";
@@ -29,6 +28,7 @@ import type {
   ProofRow,
   TaskRow,
 } from "@/lib/queries";
+import { ICON } from "@/lib/icons";
 
 /**
  * A member's wallet is on whatever network this deployment runs on — there is no
@@ -329,7 +329,7 @@ function PlanDocLink({ title, url, host }: { title: string; url: string; host: s
         className="transition-qdit flex min-w-0 items-center gap-1.5 font-medium hover:underline"
       >
         <span className="truncate">{title}</span>
-        <ExternalLink aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+        <ICON.external aria-hidden className="size-3 shrink-0 text-muted-foreground" />
         <span className="sr-only">{host ? `(opens ${host} in a new tab)` : "(opens in a new tab)"}</span>
       </a>
     </RowControl>

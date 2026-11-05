@@ -1,6 +1,5 @@
 "use client";
 
-import { Check, Copy, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,7 @@ import {
   txUrl,
   type StellarNetwork,
 } from "@/lib/stellar";
+import { ICON } from "@/lib/icons";
 
 type Kind = "contract" | "tx" | "account";
 
@@ -80,7 +80,7 @@ export function HashLink({
         aria-label={copied ? "Copied" : `Copy ${LABEL[kind]}`}
         onClick={copy}
       >
-        {copied ? <Check className="text-success" /> : <Copy />}
+        {copied ? <ICON.copied className="text-success" /> : <ICON.copy />}
       </Button>
 
       {kind !== "hash" && network ? (
@@ -91,7 +91,7 @@ export function HashLink({
             rel="noreferrer noopener"
             aria-label={`View ${LABEL[kind]} on stellar.expert`}
           >
-            <ExternalLink />
+            <ICON.external />
           </a>
         </Button>
       ) : null}

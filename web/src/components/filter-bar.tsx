@@ -1,6 +1,5 @@
 "use client";
 
-import { ListFilter, Search, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
@@ -29,6 +28,7 @@ import {
   type SortKey,
 } from "@/lib/filters";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 export type Facet = {
   key: FacetKey;
@@ -108,7 +108,7 @@ export function FilterBar({
 
       {hasActiveFilters(filters) ? (
         <Button variant="ghost" size="sm" onClick={() => apply(clearFilters(filters))}>
-          <X data-icon="inline-start" />
+          <ICON.close data-icon="inline-start" />
           Clear
           <span className="ml-0.5 tabular-nums opacity-60">
             {activeFilterCount(filters)}
@@ -154,7 +154,7 @@ function SearchField({
 
   return (
     <div className="relative min-w-52 flex-1 sm:max-w-xs">
-      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <ICON.search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="search"
         role="searchbox"
@@ -201,7 +201,7 @@ function FacetMenu({
           // A facet that is narrowing results should look like it is.
           className={cn(count > 0 && "border-primary/40 text-foreground")}
         >
-          <ListFilter data-icon="inline-start" />
+          <ICON.filter data-icon="inline-start" />
           {facet.label}
           {count > 0 ? (
             <span className="ml-0.5 rounded bg-accent px-1 text-accent-foreground tabular-nums">

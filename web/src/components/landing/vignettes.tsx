@@ -1,4 +1,3 @@
-import { Check, ChevronDown, Search } from "lucide-react";
 
 import { ICON } from "@/lib/icons";
 import { TONE_BADGE, TONE_DOT } from "@/lib/constants";
@@ -92,7 +91,7 @@ export function AnchorVignette() {
       </div>
 
       <div className="flex items-center gap-1.5 px-0.5 text-success">
-        <Check className="size-3 shrink-0" strokeWidth={2.5} />
+        <ICON.selected className="size-3 shrink-0" strokeWidth={2.5} />
         <span className="truncate text-xs font-medium">Written to the ledger</span>
         <span
           data-slot="hash"
@@ -111,14 +110,14 @@ export function VerifyVignette() {
     <Frame>
       <div className="flex items-center gap-1.5">
         <div className="surface flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border/70 px-2 py-1.5">
-          <Search className="size-3 shrink-0 text-muted-foreground/70" />
+          <ICON.search className="size-3 shrink-0 text-muted-foreground/70" />
           <span data-slot="hash" className="truncate-hash text-xs">
             8b304006aa61517e988bcfd8565978fb
           </span>
         </div>
         <div className="surface hidden items-center gap-1 rounded-lg border border-border/70 px-2 py-1.5 text-xs sm:flex">
           Testnet
-          <ChevronDown className="size-3 text-muted-foreground" />
+          <ICON.chevronDown className="size-3 text-muted-foreground" />
         </div>
         <span className="rounded-lg bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground">
           Verify

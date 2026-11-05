@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import React, { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import type { ActionState } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 const EMPTY: ActionState = {};
 
@@ -120,7 +120,7 @@ export function FormDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               {submitLabel}
             </Button>
           </DialogFooter>

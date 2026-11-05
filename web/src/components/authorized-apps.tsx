@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -17,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { revokeAuthorizedApp } from "@/lib/actions";
 import type { AuthorizedApp } from "@/lib/auth/oauth-grants";
+import { ICON } from "@/lib/icons";
 
 /**
  * Apps connected to this account through qdit's OAuth server, each with a way
@@ -124,7 +124,7 @@ export function AuthorizedApps({ apps }: { apps: AuthorizedApp[] | null }) {
                 if (confirming) revoke(confirming);
               }}
             >
-              {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               Revoke
             </AlertDialogAction>
           </AlertDialogFooter>

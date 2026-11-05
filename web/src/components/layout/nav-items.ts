@@ -1,11 +1,11 @@
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/lib/icons";
 
 import { ICON } from "@/lib/icons";
 
 export type NavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   /** Match this href only, not its descendants. */
   exact?: boolean;
 };

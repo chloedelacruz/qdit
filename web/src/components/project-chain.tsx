@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -129,7 +128,7 @@ export function ProjectChainRegistration({
   return (
     <div className="space-y-2">
       <Button variant="outline" size="sm" onClick={register} disabled={pending}>
-        {pending ? <Loader2 className="animate-spin" aria-hidden /> : <ICON.anchor aria-hidden />}
+        {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : <ICON.anchor aria-hidden />}
         Register on chain
       </Button>
       <p className="text-sm text-muted-foreground">

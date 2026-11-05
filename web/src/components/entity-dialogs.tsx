@@ -1,6 +1,5 @@
 "use client";
 
-import { Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Field, FieldRow, FormDialog, SelectField } from "@/components/form-dialog";
@@ -35,6 +34,7 @@ import {
 } from "@/lib/actions";
 import { ASSIGNABLE_ROLES, slugify } from "@/lib/schemas";
 import { NETWORK_LABELS } from "@/lib/stellar";
+import { ICON } from "@/lib/icons";
 
 /**
  * Every create and edit form in the app, built on the shared `FormDialog` shell
@@ -66,7 +66,7 @@ function TriggerButton({
 }: { label: string } & React.ComponentProps<typeof Button>) {
   return (
     <Button {...props}>
-      <Plus data-icon="inline-start" />
+      <ICON.add data-icon="inline-start" />
       {label}
     </Button>
   );
@@ -981,7 +981,7 @@ export function AddMemberDialog({
     <FormDialog
       trigger={
         <Button size="sm">
-          <Plus data-icon="inline-start" />
+          <ICON.add data-icon="inline-start" />
           {label}
         </Button>
       }

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ProjectRowActions } from "@/components/entity-row-actions";
@@ -79,7 +78,7 @@ export default async function ProjectOverviewPage({
               <Button asChild variant="outline" size="sm">
                 <a href={project.repoUrl} target="_blank" rel="noreferrer noopener">
                   Repo
-                  <ExternalLink data-icon="inline-end" />
+                  <ICON.external data-icon="inline-end" />
                 </a>
               </Button>
             ) : null}
@@ -87,7 +86,7 @@ export default async function ProjectOverviewPage({
               <Button asChild variant="outline" size="sm">
                 <a href={project.docsUrl} target="_blank" rel="noreferrer noopener">
                   Docs
-                  <ExternalLink data-icon="inline-end" />
+                  <ICON.external data-icon="inline-end" />
                 </a>
               </Button>
             ) : null}
@@ -95,14 +94,14 @@ export default async function ProjectOverviewPage({
               <Button asChild variant="outline" size="sm">
                 <a href={project.demoUrl} target="_blank" rel="noreferrer noopener">
                   Demo
-                  <ExternalLink data-icon="inline-end" />
+                  <ICON.external data-icon="inline-end" />
                 </a>
               </Button>
             ) : null}
             <Button asChild size="sm">
               <Link href={`/projects/${slug}/board`}>
                 Open board
-                <ArrowRight data-icon="inline-end" />
+                <ICON.next data-icon="inline-end" />
               </Link>
             </Button>
             {/* Editing and deleting the project itself live here rather than on

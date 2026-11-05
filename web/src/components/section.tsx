@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/lib/icons";
 
 import { cn } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ export function Section({
   className,
   children,
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   title: string;
   /** Total available, shown beside the title. Omit when it adds nothing. */
   count?: number;

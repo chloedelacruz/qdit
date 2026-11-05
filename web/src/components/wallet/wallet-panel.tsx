@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2, Unplug } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -142,7 +141,7 @@ export function WalletPanel({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {!ready ? (
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
+              <ICON.spinner className="size-4 animate-spin" aria-hidden />
               Checking for a wallet…
             </span>
           ) : address ? (
@@ -152,7 +151,7 @@ export function WalletPanel({
                 Connected on {NETWORK_LABELS[network]}
               </span>
               <Button variant="outline" size="sm" onClick={() => void disconnect()}>
-                <Unplug data-icon="inline-start" aria-hidden />
+                <ICON.disconnected data-icon="inline-start" aria-hidden />
                 Disconnect
               </Button>
             </>
@@ -161,7 +160,7 @@ export function WalletPanel({
               <span className="text-sm text-muted-foreground">No wallet connected.</span>
               <Button size="sm" onClick={() => void connect()} disabled={connecting}>
                 {connecting ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                  <ICON.spinner className="animate-spin" data-icon="inline-start" />
                 ) : (
                   <ICON.wallet data-icon="inline-start" aria-hidden />
                 )}

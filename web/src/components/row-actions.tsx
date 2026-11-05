@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2, MoreHorizontal } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ActionState } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * The edit/delete affordance on a list row or a board card.
@@ -130,7 +130,7 @@ export function RowActions({
               "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
           )}
         >
-          <MoreHorizontal className="size-4" />
+          <ICON.more className="size-4" />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent
@@ -194,7 +194,7 @@ export function RowActions({
                 confirmDelete();
               }}
             >
-              {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

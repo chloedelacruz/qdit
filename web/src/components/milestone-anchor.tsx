@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -301,7 +300,7 @@ export function MilestoneAnchorDialog({
 
           {stage !== "idle" ? (
             <p className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
+              <ICON.spinner className="size-4 animate-spin" aria-hidden />
               {stage === "preparing"
                 ? "Checking the rules and simulating the transaction…"
                 : stage === "signing"
@@ -412,7 +411,7 @@ export function MilestoneAnchorDialog({
               // than signing anything new.
               <Button onClick={recheck} disabled={busy}>
                 {busy ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  <ICON.spinner className="size-4 animate-spin" aria-hidden />
                 ) : null}
                 Check status
               </Button>
