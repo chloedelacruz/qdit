@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { ICON } from "@/lib/icons";
 import { cn } from "@/lib/utils";
+import { LinkPending } from "./link-pending";
 import { isActive, mobileTabs } from "./nav-items";
 
 /**
@@ -54,7 +55,11 @@ export function MobileTabBar({
                   active ? "text-sidebar-primary" : "text-muted-foreground",
                 )}
               >
-                <Icon className="size-5" />
+                <span className="relative">
+                  <Icon className="size-5" />
+                  {/* Over the glyph's corner, so the label never shifts. */}
+                  <LinkPending className="absolute -top-1 -right-2.5 text-sidebar-primary" />
+                </span>
                 {tab.label}
               </Link>
             </li>

@@ -29,7 +29,8 @@ import type { PublicProof } from "@/lib/queries";
  *
  * QDIT-34 regenerated the file for markup only, no words: the explorer icon is
  * qdit's own glyph instead of lucide's, and the hash buttons grow to a 44px
- * target under a coarse pointer (`pointer-coarse:size-11`).
+ * target under a coarse pointer (`pointer-coarse:size-11`). QDIT-35 again for
+ * markup only: buttons gained a press state (`active:…:brightness-95`).
  */
 
 const stub = vi.hoisted(() => ({

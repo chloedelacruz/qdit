@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import type { NotificationRow } from "@/lib/queries";
 import { NotificationBell } from "./notification-bell";
 import { MobileTabBar } from "./mobile-tab-bar";
+import { NavigationProgress } from "./navigation-progress";
 import { FOOTER_NAV, HELP_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
 import { ProjectSwitcher, type ProjectOption } from "./project-switcher";
 import { SidebarNav } from "./sidebar-nav";
@@ -94,6 +95,12 @@ export function AppShell({
     // `viewportFit: "cover"` (root layout) hands the whole screen to the page,
     // so the shell keeps clear of the notch and the status bar itself.
     <div className="flex min-h-screen flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
+      {/* Its own Suspense: it reads the search params, which would otherwise
+          suspend the whole shell. */}
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
+
       {/* Solid, not translucent — the spec rules out glass, and depth here
           comes from the surface ladder instead. */}
       <header className="bg-sidebar sticky top-0 z-40 border-b pt-[env(safe-area-inset-top)]">
