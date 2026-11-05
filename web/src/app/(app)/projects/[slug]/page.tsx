@@ -225,7 +225,7 @@ export default async function ProjectOverviewPage({
         icon={ICON.planDoc}
         title="Plan docs"
         count={planDocs.length}
-        empty="No doqtri plans linked yet."
+        empty="No doqtri plans linked yet. Link one from its doc in doqtri."
       >
         {planDocs.map((doc) => (
           <PlanDocListRow key={doc.id} doc={doc} />

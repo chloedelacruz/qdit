@@ -162,6 +162,7 @@ export function MilestoneRowActions({
           projectSlug={milestone.projectSlug}
           milestoneId={milestone.id}
           anchored={Boolean(milestone.anchor)}
+          anchoring={anchoring}
         />
       ) : null}
 

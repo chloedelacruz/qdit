@@ -175,6 +175,9 @@ export default async function MilestonePage({ params }: { params: Params }) {
             ) : null}
           </Fact>
 
+          {/* Only where this deployment can anchor at all — without a contract
+              there is no registration step to point at. */}
+          {ANCHORING ? (
           <Fact icon={ICON.anchor} label="On chain">
             {milestone.anchor ? (
               <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
@@ -195,6 +198,7 @@ export default async function MilestonePage({ params }: { params: Params }) {
               </span>
             ) : null}
           </Fact>
+          ) : null}
 
           <Fact icon={ICON.public} label="Public link" className="@2xl:col-span-2">
             {milestone.publicProofs ? (
@@ -202,6 +206,7 @@ export default async function MilestonePage({ params }: { params: Params }) {
                 projectSlug={slug}
                 milestoneId={milestone.id}
                 anchored={Boolean(milestone.anchor)}
+                anchoring={ANCHORING}
                 className="min-w-0 flex-1"
               />
             ) : (
@@ -223,7 +228,9 @@ export default async function MilestonePage({ params }: { params: Params }) {
         icon={ICON.task}
         title="Tasks"
         count={tasks.matched}
-        href={`/projects/${slug}/board`}
+        // The board filtered to this milestone, so "View all" shows exactly
+        // what the count counts — this section lists at most 50.
+        href={`/projects/${slug}/board?milestone=${milestone.id}`}
         empty="No tasks in this milestone yet."
       >
         {tasks.rows.map((task) => (
@@ -301,7 +308,7 @@ export default async function MilestonePage({ params }: { params: Params }) {
                 </a>
               </Button>
             </Hint>
-          ) : (
+          ) : !ANCHORING ? null : (
             // The wrapper takes the pointer for a disabled button, so it is the
             // one that grows; the negative margin keeps the heading line from
             // growing with it.

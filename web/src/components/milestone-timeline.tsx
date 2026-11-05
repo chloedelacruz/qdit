@@ -1,4 +1,5 @@
 import { HashLink } from "@/components/hash-link";
+import { LocalTime } from "@/components/local-time";
 import { ICON } from "@/lib/icons";
 import type { MilestoneRow } from "@/lib/queries";
 import { NETWORK_LABELS } from "@/lib/stellar";
@@ -89,7 +90,7 @@ export function MilestoneTimeline({ milestone }: { milestone: MilestoneRow }) {
               )}
 
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                {new Date(entry.at).toLocaleString()}
+                <LocalTime iso={entry.at} />
                 {entry.kind === "anchor" ? ` · ${NETWORK_LABELS[entry.anchor.network]}` : ""}
               </p>
             </div>

@@ -91,10 +91,12 @@ export function AppShell({
   const activeSlug = useActiveSlug();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    // `viewportFit: "cover"` (root layout) hands the whole screen to the page,
+    // so the shell keeps clear of the notch and the status bar itself.
+    <div className="flex min-h-screen flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       {/* Solid, not translucent — the spec rules out glass, and depth here
           comes from the surface ladder instead. */}
-      <header className="bg-sidebar sticky top-0 z-40 border-b">
+      <header className="bg-sidebar sticky top-0 z-40 border-b pt-[env(safe-area-inset-top)]">
         <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
           <Link href="/dashboard" className="transition-qdit shrink-0 hover:opacity-80">
             <QditLogo />

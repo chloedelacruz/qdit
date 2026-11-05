@@ -358,12 +358,13 @@ export function PlanDocListRow({ doc }: { doc: PlanDocRow }) {
             // and this one is the only place the row says *why* it is not a
             // link. Focusable so the keyboard can reach the reason too.
             <Hint label="This URL is not on doqtri, so qdit does not link to it.">
-              <span
-                tabIndex={0}
-                className="focus-ring max-w-full min-w-0 shrink truncate rounded-sm font-medium @max-md:self-start"
+              <button
+                type="button"
+                className="focus-ring max-w-full min-w-0 shrink truncate rounded-sm text-left font-medium @max-md:self-start"
               >
                 {doc.title}
-              </span>
+                <span className="sr-only"> (not a doqtri link)</span>
+              </button>
             </Hint>
           )}
 

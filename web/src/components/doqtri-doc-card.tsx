@@ -134,10 +134,10 @@ function ProofState({ proof }: { proof: DocCardProof }) {
       <HashLink value={proof.anchor.txHash} kind="tx" network={proof.anchor.network} lead={4} tail={4} />
       {proof.stale ? (
         <CardHint label="The milestone changed after this was anchored.">
-          <span tabIndex={0} className="focus-ring rounded-sm text-warning">
+          <button type="button" className="focus-ring rounded-sm text-warning">
             stale
             <span className="sr-only"> — the milestone changed after this was anchored</span>
-          </span>
+          </button>
         </CardHint>
       ) : null}
     </span>

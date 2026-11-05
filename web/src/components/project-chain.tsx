@@ -112,9 +112,13 @@ export function ProjectChainRegistration({
         </span>
         <HashLink value={registration.contractId} kind="contract" network={network} />
         <Hint label="Owner account — the only one that can approve or reject on chain">
-          <span tabIndex={0} className="focus-ring flex items-center gap-1 rounded-sm">
-            <ICON.assignedToMe aria-label="Owner" className="size-3.5 text-muted-foreground" />
-          </span>
+          <button
+            type="button"
+            aria-label="Owner account"
+            className="focus-ring flex items-center gap-1 rounded-sm"
+          >
+            <ICON.assignedToMe className="size-3.5 text-muted-foreground" />
+          </button>
         </Hint>
         <HashLink value={registration.ownerAddress} kind="account" network={network} />
       </div>

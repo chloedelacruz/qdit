@@ -287,12 +287,14 @@ export function MilestoneAnchorDialog({
         <DialogHeader>
           {/* The explainer is one tap away rather than a paragraph in the way
               of the action (QDIT-34). */}
-          <DialogTitle className="flex items-center gap-1.5">
-            {VERB[action]}
+          {/* Beside the title rather than inside it, so the dialog's name
+              stays "Anchor proof" and not "Anchor proof About Anchor proof". */}
+          <div className="flex items-center gap-1.5">
+            <DialogTitle>{VERB[action]}</DialogTitle>
             <InfoBubble label={VERB[action]}>
               <p>{EXPLAINER[action]}</p>
             </InfoBubble>
-          </DialogTitle>
+          </div>
           <DialogDescription>{milestoneTitle}</DialogDescription>
         </DialogHeader>
 
@@ -463,9 +465,8 @@ export function AnchorBadge({
           milestone changed after it was anchored — and says it on hover, focus
           or tap. */}
       <Hint label={stale ? "Stale — the milestone changed after it was anchored" : "Anchored on the ledger"}>
-        <span
-          tabIndex={0}
-          role="img"
+        <button
+          type="button"
           aria-label={stale ? "Stale anchor" : "Anchored"}
           className="focus-ring grid place-items-center rounded-sm"
         >
@@ -474,7 +475,7 @@ export function AnchorBadge({
           ) : (
             <ICON.anchor className="size-3.5 text-success" />
           )}
-        </span>
+        </button>
       </Hint>
       <HashLink
         value={anchor.txHash}

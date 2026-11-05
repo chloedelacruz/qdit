@@ -64,7 +64,6 @@ export default async function ProjectProofsPage({
               <a
                 href={`/api/export/anchors?project=${project.slug}`}
                 download
-                aria-label="Anchor history (CSV)"
               >
                 <ICON.download data-icon="inline-start" />
                 Anchors CSV

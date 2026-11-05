@@ -1106,13 +1106,18 @@ export async function getMilestone(
   const members = await memberMap();
   const origin = readDoqtriOrigin();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("milestones")
     .select(MILESTONE_SELECT)
     .eq("id", milestoneId)
     .eq("project_id", projectId)
     .eq("done.status", "done")
     .maybeSingle();
+
+  // Zero rows is `data: null` with no error — that is the 404. A malformed id
+  // is too (Postgres rejects it as a uuid); anything else is an outage, and
+  // must reach the error boundary rather than read as "no such milestone".
+  if (error && error.code !== "22P02") throw new Error(error.message);
 
   return data ? toMilestone(data as unknown as MilestoneRecord, members, origin) : null;
 }

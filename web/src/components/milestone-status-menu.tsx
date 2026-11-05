@@ -108,10 +108,10 @@ export function MilestoneStatusMenu({
   if (optimistic === "submitted" && !isOwner) {
     return (
       <Hint label="Waiting for the project owner to approve or reject it.">
-        <span tabIndex={0} className={cn("focus-ring inline-flex rounded-md", className)}>
+        <button type="button" className={cn("focus-ring inline-flex rounded-md", className)}>
           {badge}
           <span className="sr-only">, waiting for the project owner to decide</span>
-        </span>
+        </button>
       </Hint>
     );
   }

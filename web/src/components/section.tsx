@@ -52,6 +52,9 @@ export function Section({
           line, and the controls drop under the title instead of pushing the
           page sideways. On a desktop it never wraps. */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
+        {/* The ⓘ sits beside the heading, not inside it, so it stays out of the
+            heading's — and this region's — accessible name. */}
+        <div className="flex min-w-0 items-center gap-1.5">
         <h2 id={headingId} className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
           {/* Inline at 14px, never a tinted chip stacked above the heading
               (spec §Iconography). Accent only when this is the primary object. */}
@@ -68,8 +71,9 @@ export function Section({
               {count}
             </span>
           ) : null}
-          {info}
         </h2>
+        {info}
+        </div>
 
         {actions || href ? (
           <div className="ml-auto flex shrink-0 items-center gap-3">

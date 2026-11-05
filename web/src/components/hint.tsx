@@ -23,15 +23,13 @@ import { cn } from "@/lib/utils";
 
 type Side = "top" | "right" | "bottom" | "left";
 
-const TAP_GRACE_MS = 400;
-
 export function Hint({
   label,
   side = "top",
   children,
   className,
 }: {
-  /** What the tooltip says. A node so a reason can carry a link. */
+  /** What the tooltip says. Text only — nothing in a tooltip can take focus. */
   label: React.ReactNode;
   side?: Side;
   /** The trigger. Must be a single element that can hold a ref. */
@@ -39,31 +37,47 @@ export function Hint({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  // When a tap opened it. Radix follows a touch with its own close requests —
-  // the trigger's click and the pointerleave that fires after pointerup — which
-  // would shut the tooltip the instant it appeared. Those arrive within a few
-  // hundred milliseconds; a later tap outside still closes it as normal.
-  const tappedAt = useRef(0);
+  /*
+    True from a touch pointerdown until the click that ends that same tap.
+
+    Radix answers a tap with its own close requests — the trigger's
+    pointerdown, the pointerleave that follows pointerup, and the trigger's
+    click — which would shut the tooltip the instant the tap opened it. Only
+    those are ignored, and only while this tap is in flight: a swipe ends in
+    pointercancel and clears it without toggling, and any later close (a tap
+    elsewhere, a scroll, Escape) goes through as normal.
+  */
+  const tapping = useRef(false);
 
   return (
     <Tooltip
       open={open}
       onOpenChange={(next) => {
-        if (!next && Date.now() - tappedAt.current < TAP_GRACE_MS) return;
+        if (!next && tapping.current) return;
         setOpen(next);
       }}
     >
       <TooltipTrigger
         asChild
-        // A touch has no hover. Toggle on tap, and stop Radix from treating the
-        // same pointerdown as "dismiss" — it closes a tooltip on trigger press.
         onPointerDown={(event) => {
           if (event.pointerType !== "touch") return;
+          tapping.current = true;
+          // Stops Radix's own pointerdown handler, which closes on press.
           event.preventDefault();
-          setOpen((current) => {
-            tappedAt.current = current ? 0 : Date.now();
-            return !current;
-          });
+        }}
+        onPointerCancel={() => {
+          tapping.current = false;
+        }}
+        // A touch has no hover, so the tap itself toggles — on click, once the
+        // browser has decided it was a tap and not the start of a scroll.
+        onClick={() => {
+          if (!tapping.current) return;
+          setOpen((current) => !current);
+          // Radix's click handler runs after this one; let it be ignored, then
+          // go back to honouring every close request.
+          setTimeout(() => {
+            tapping.current = false;
+          }, 0);
         }}
       >
         {children}
@@ -182,26 +196,26 @@ export function InfoBubble({
  * A disabled control that says why.
  *
  * A disabled `<button>` takes no pointer or focus events, so the hint hangs on
- * a focusable wrapper instead — which is also what keeps it reachable from the
- * keyboard. `fix` points at the place that resolves it ("Register on the
- * overview"), so the reason is never a dead end either.
+ * a wrapper that does: a `role="button"` focus stop marked `aria-disabled`, so
+ * a screen reader announces an unavailable button and its reason, and the
+ * keyboard reaches it like any other control. The reason is text only — where
+ * there is a fix, the surrounding UI offers it as its own focusable link.
  */
 export function DisabledReason({
   reason,
-  fix,
   side,
   children,
   className,
 }: {
   reason: string;
-  fix?: { href: string; label: string };
   side?: Side;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <Hint side={side} label={<ReasonText reason={reason} fix={fix} />}>
+    <Hint side={side} label={reason}>
       <span
+        role="button"
         tabIndex={0}
         aria-disabled="true"
         data-slot="disabled-reason"
@@ -212,25 +226,5 @@ export function DisabledReason({
         <span className="sr-only">{reason}</span>
       </span>
     </Hint>
-  );
-}
-
-/** The reason line, with its fix as a link. Shared by menus and buttons. */
-export function ReasonText({
-  reason,
-  fix,
-}: {
-  reason: string;
-  fix?: { href: string; label: string };
-}) {
-  return (
-    <span className="flex flex-col gap-1">
-      <span>{reason}</span>
-      {fix ? (
-        <Link href={fix.href} className="font-medium underline underline-offset-2">
-          {fix.label}
-        </Link>
-      ) : null}
-    </span>
   );
 }

@@ -54,17 +54,23 @@ export function ShareLinkButton({
   projectSlug,
   milestoneId,
   anchored,
+  anchoring = true,
   className,
 }: {
   projectSlug: string;
   milestoneId: string;
   anchored: boolean;
+  /**
+   * Whether this deployment can anchor at all. Without a contract there is no
+   * "anchor first" to ask for, so the link is offered as it always was.
+   */
+  anchoring?: boolean;
   className?: string;
 }) {
   const origin = useOrigin();
   const url = `${origin}${publicProofPath(projectSlug, milestoneId)}`;
 
-  if (!anchored) {
+  if (!anchored && anchoring) {
     return (
       <DisabledReason reason={NOT_ANCHORED} className={className}>
         <span className="grid size-6 place-items-center rounded-md text-muted-foreground/50 pointer-coarse:size-11">
@@ -91,11 +97,14 @@ export function ShareLinkField({
   projectSlug,
   milestoneId,
   anchored,
+  anchoring = true,
   className,
 }: {
   projectSlug: string;
   milestoneId: string;
   anchored: boolean;
+  /** See `ShareLinkButton`. */
+  anchoring?: boolean;
   className?: string;
 }) {
   const origin = useOrigin();
@@ -113,7 +122,7 @@ export function ShareLinkField({
       <span data-slot="hash" className="min-w-0 flex-1 truncate text-xs">
         {url}
       </span>
-      {anchored ? (
+      {anchored || !anchoring ? (
         <>
           <Hint label="Copy public link">
             <Button variant="ghost" size="icon-xs" aria-label="Copy public link" onClick={() => copy(url)}>
