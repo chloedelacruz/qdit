@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/page-header";
+import { Hint } from "@/components/hint";
 import { RowLink } from "@/components/row-link";
 import {
   DEFAULT_LIMIT,
@@ -118,7 +119,13 @@ export function RowMeta({
   );
 }
 
-/** Initials chip for an assignee. Unassigned reads as a dashed outline. */
+/**
+ * Initials chip for an assignee. Unassigned reads as a dashed outline.
+ *
+ * The name rides in a `Hint`, not `title=`: a native tooltip never appears
+ * under a finger, and initials alone do not say who "JD" is. `role="img"` is
+ * what makes the `aria-label` count — on a bare span it is ignored.
+ */
 export function MemberChip({
   initials,
   name,
@@ -129,19 +136,21 @@ export function MemberChip({
   className?: string;
 }) {
   return (
-    <span
-      title={name}
-      aria-label={name}
-      className={cn(
-        "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[0.625rem] font-medium",
-        initials
-          ? "bg-accent text-accent-foreground"
-          : "border border-dashed border-border-strong text-muted-foreground",
-        className,
-      )}
-    >
-      {initials ?? "–"}
-    </span>
+    <Hint label={name}>
+      <span
+        role="img"
+        aria-label={name}
+        className={cn(
+          "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[0.625rem] font-medium",
+          initials
+            ? "bg-accent text-accent-foreground"
+            : "border border-dashed border-border-strong text-muted-foreground",
+          className,
+        )}
+      >
+        {initials ?? "–"}
+      </span>
+    </Hint>
   );
 }
 
@@ -186,7 +195,9 @@ export function DataList({
     return (
       <EmptyState
         title={`No ${noun} match these filters`}
-        description={`All ${total} ${noun} in this view were filtered out. Try widening or clearing your filters.`}
+        // Short: it is read once on the way to the button below it, and the
+        // long version wrapped to four lines on a phone.
+        description={`${total} ${noun} hidden by filters.`}
         action={
           <Button asChild variant="outline" size="sm">
             <Link href="?">Clear filters</Link>
@@ -217,7 +228,8 @@ export function DataList({
         </p>
 
         {remaining > 0 ? (
-          <Button asChild variant="outline" size="sm">
+          // 44px under a finger; the mouse keeps the compact button.
+          <Button asChild variant="outline" size="sm" className="pointer-coarse:h-11">
             {/* Query-only href keeps the current pathname. */}
             <Link href={`?${nextQuery}`} scroll={false}>
               Load {Math.min(remaining, DEFAULT_LIMIT)} more

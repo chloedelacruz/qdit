@@ -26,7 +26,7 @@ export default async function WalletPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Wallet"
-        description={`Connect a Stellar wallet, check its balance, and send XLM on ${NETWORK_LABELS[NETWORK]}.`}
+        info={`Connect a Stellar wallet, check its balance, and send XLM on ${NETWORK_LABELS[NETWORK]}.`}
       />
 
       <Card>

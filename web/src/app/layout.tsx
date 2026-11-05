@@ -29,6 +29,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Lets the mobile tab bar pad itself clear of the home indicator with
+  // env(safe-area-inset-bottom) instead of sitting under it.
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F8FAFC" },
     { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
@@ -54,7 +57,8 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider>{children}</TooltipProvider>
-          <Toaster position="bottom-right" />
+          {/* Lifted clear of the mobile tab bar; on a desktop there is none. */}
+          <Toaster position="bottom-right" mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }} />
           {/*
             Page views only, and no cookie: @vercel/analytics identifies a
             visit with a hash that is not stored on the device, so this needs no

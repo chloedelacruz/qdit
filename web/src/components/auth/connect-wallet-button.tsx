@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -168,7 +167,7 @@ export function ConnectWalletButton({
       onClick={() => void run()}
     >
       {busy ? (
-        <Loader2 className="animate-spin" data-icon="inline-start" />
+        <ICON.spinner className="animate-spin" data-icon="inline-start" />
       ) : (
         <ICON.wallet data-icon="inline-start" aria-hidden />
       )}

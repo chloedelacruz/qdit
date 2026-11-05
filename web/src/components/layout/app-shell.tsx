@@ -1,21 +1,21 @@
 "use client";
 
-import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import type { NotificationRow } from "@/lib/queries";
 import { NotificationBell } from "./notification-bell";
-import { FOOTER_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
+import { MobileTabBar } from "./mobile-tab-bar";
+import { FOOTER_NAV, HELP_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
 import { ProjectSwitcher, type ProjectOption } from "./project-switcher";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
+import { ICON } from "@/lib/icons";
 
 /** The project slug the current route is scoped to, if any. */
 function useActiveSlug(): string | undefined {
@@ -27,9 +27,12 @@ function useActiveSlug(): string | undefined {
 function SidebarBody({
   projects,
   onNavigate,
+  withHelp = false,
 }: {
   projects: ProjectOption[];
   onNavigate?: () => void;
+  /** The More sheet carries help too; on a desktop it is in the account menu. */
+  withHelp?: boolean;
 }) {
   const activeSlug = useActiveSlug();
 
@@ -55,14 +58,18 @@ function SidebarBody({
       <SidebarNav items={WORKSPACE_NAV} label="Workspace" onNavigate={onNavigate} />
 
       <div className="mt-auto pt-4">
-        <SidebarNav items={FOOTER_NAV} onNavigate={onNavigate} />
+        <SidebarNav items={FOOTER_NAV} label={withHelp ? "You" : undefined} onNavigate={onNavigate} />
+        {withHelp ? (
+          <SidebarNav items={HELP_NAV} label="Help" onNavigate={onNavigate} />
+        ) : null}
       </div>
     </div>
   );
 }
 
 /**
- * Fixed sidebar on desktop, sheet on mobile. The shell carries no colour of
+ * Fixed sidebar on desktop; on a phone, a bottom tab bar whose More opens the
+ * same nav as a sheet (QDIT-34). The shell carries no colour of
  * its own beyond the active nav item — it sits one rung below the page on the
  * surface ladder so content reads as raised.
  */
@@ -81,25 +88,16 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const activeSlug = useActiveSlug();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    // `viewportFit: "cover"` (root layout) hands the whole screen to the page,
+    // so the shell keeps clear of the notch and the status bar itself.
+    <div className="flex min-h-screen flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       {/* Solid, not translucent — the spec rules out glass, and depth here
           comes from the surface ladder instead. */}
-      <header className="bg-sidebar sticky top-0 z-40 border-b">
+      <header className="bg-sidebar sticky top-0 z-40 border-b pt-[env(safe-area-inset-top)]">
         <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                <Menu />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0 pt-14">
-              <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <SidebarBody projects={projects} onNavigate={() => setOpen(false)} />
-            </SheetContent>
-          </Sheet>
-
           <Link href="/dashboard" className="transition-qdit shrink-0 hover:opacity-80">
             <QditLogo />
           </Link>
@@ -121,8 +119,24 @@ export function AppShell({
 
         {/* Gutters stay generous; only the vertical rhythm tightens. Density is
             a property of the content, not the frame (spec §Density). */}
-        <main className="min-w-0 flex-1 px-4 py-6 lg:px-8">{children}</main>
+        {/* Bottom padding clears the tab bar and the home indicator on a
+            phone; from `lg` there is no tab bar to clear. */}
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-6">
+          {children}
+        </main>
       </div>
+
+      <MobileTabBar slug={activeSlug} moreOpen={open} onMore={() => setOpen(true)} />
+
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[85vh] overflow-y-auto rounded-t-2xl p-0 pt-4 pb-[env(safe-area-inset-bottom)] lg:hidden"
+        >
+          <SheetTitle className="sr-only">More</SheetTitle>
+          <SidebarBody projects={projects} onNavigate={() => setOpen(false)} withHelp />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

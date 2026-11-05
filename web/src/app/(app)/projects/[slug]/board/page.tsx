@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { CreateTaskDialog } from "@/components/entity-dialogs";
 import { FilterBar } from "@/components/filter-bar";
+import { CreateGate } from "@/components/create-gate";
 import { PageHeader } from "@/components/page-header";
 import { TaskBoard } from "@/components/task-board";
 import { TASK_PRIORITY, TASK_PRIORITY_ORDER } from "@/lib/constants";
@@ -45,13 +46,15 @@ export default async function ProjectBoardPage({
           { label: project.name, href: `/projects/${slug}` },
         ]}
         title="Board"
-        description="Todo → In Progress → Done."
+        info="Todo → In Progress → Done."
         actions={
-          <CreateTaskDialog
-            projectId={project.id}
-            milestones={milestones}
-            members={members}
-          />
+          <CreateGate allowed={canContribute(role)} label="New task">
+            <CreateTaskDialog
+              projectId={project.id}
+              milestones={milestones}
+              members={members}
+            />
+          </CreateGate>
         }
       />
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { Check } from "lucide-react";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +15,7 @@ import {
 import { TASK_STATUS, TASK_STATUS_ORDER, type TaskStatus } from "@/lib/constants";
 import { updateTaskStatus } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * Moves a task between columns.
@@ -77,7 +77,7 @@ export function TaskStatusMenu({
 
         {TASK_STATUS_ORDER.map((option) => (
           <DropdownMenuItem key={option} onSelect={() => change(option)}>
-            <Check
+            <ICON.selected
               className={cn(
                 "size-4 shrink-0",
                 option === optimistic ? "opacity-100" : "opacity-0",

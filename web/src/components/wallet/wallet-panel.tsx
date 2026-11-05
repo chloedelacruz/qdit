@@ -1,11 +1,11 @@
 "use client";
 
-import { Loader2, Unplug } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import type { AccountBalance } from "@/app/api/balance/route";
 import { HashLink } from "@/components/hash-link";
+import { InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { SendPayment } from "@/components/wallet/send-payment";
 import { WalletBalance } from "@/components/wallet/wallet-balance";
@@ -142,7 +142,7 @@ export function WalletPanel({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {!ready ? (
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
+              <ICON.spinner className="size-4 animate-spin" aria-hidden />
               Checking for a wallet…
             </span>
           ) : address ? (
@@ -152,7 +152,7 @@ export function WalletPanel({
                 Connected on {NETWORK_LABELS[network]}
               </span>
               <Button variant="outline" size="sm" onClick={() => void disconnect()}>
-                <Unplug data-icon="inline-start" aria-hidden />
+                <ICON.disconnected data-icon="inline-start" aria-hidden />
                 Disconnect
               </Button>
             </>
@@ -161,7 +161,7 @@ export function WalletPanel({
               <span className="text-sm text-muted-foreground">No wallet connected.</span>
               <Button size="sm" onClick={() => void connect()} disabled={connecting}>
                 {connecting ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                  <ICON.spinner className="animate-spin" data-icon="inline-start" />
                 ) : (
                   <ICON.wallet data-icon="inline-start" aria-hidden />
                 )}
@@ -172,10 +172,17 @@ export function WalletPanel({
         </div>
 
         {drifted ? (
-          <p className="text-sm text-warning">
-            This is not the address you sign in with. It can still send XLM — it is your
-            wallet — but proofs signed from it will be refused.
-          </p>
+          // The warning stays one line; what it means is behind the ⓘ (QDIT-34).
+          <div className="flex items-center gap-1.5 text-sm text-warning">
+            Not the address you sign in with.
+            <InfoBubble label="a different wallet account">
+              <p>
+                It can still send XLM — it is your wallet — but proofs signed from it
+                will be refused. Switch your wallet back to your sign-in address to
+                sign proofs.
+              </p>
+            </InfoBubble>
+          </div>
         ) : null}
       </section>
 

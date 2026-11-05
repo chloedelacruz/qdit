@@ -1,8 +1,9 @@
-import { ExternalLink, Lock, Unplug } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
+import { Hint } from "@/components/hint";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { LOSS_TEXT, type DocCardData, type DocCardProof } from "@/lib/doqtri-doc-card";
 import { ICON } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,11 @@ import { cn } from "@/lib/utils";
  * `lib/doqtri-doc-card.ts`.
  *
  * A server component; the popover wrappers below are the only interactive
- * part, and they only open and close it.
+ * part, and they only open and close it — apart from the two hints, which
+ * replaced native `title=` tooltips (QDIT-34: `title` never shows on touch or
+ * to the keyboard). Each hint brings its own `TooltipProvider` so the card
+ * still renders on its own, as the unit tests render it, outside the app's
+ * root provider.
  */
 export function DoqtriDocCard({ card, className }: { card: DocCardData; className?: string }) {
   if (card.state === "no-access") {
@@ -28,12 +33,10 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
     // the "From doqtri" badge has already said.
     return (
       <div data-slot="doqtri-doc-card" data-state="no-access" className={cn("flex gap-2", className)}>
-        <Lock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <ICON.locked aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-1">
           <p className="font-medium">Linked doqtri plan</p>
-          <p className="text-xs text-muted-foreground">
-            You don&apos;t have access to the plan this milestone is linked to.
-          </p>
+          <p className="text-xs text-muted-foreground">You don&apos;t have access to this plan.</p>
         </div>
       </div>
     );
@@ -51,12 +54,12 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
       {lost ? (
         <div role="status" className="space-y-1 rounded-md border border-warning/40 px-2 py-1.5 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-warning">
-            <Unplug aria-hidden className="size-3.5 shrink-0" />
+            <ICON.disconnected aria-hidden className="size-3.5 shrink-0" />
             Connection to doqtri lost
           </p>
           <p className="text-muted-foreground">
-            {LOSS_TEXT[card.loss ?? "unknown"]} This is the last copy doqtri sent, and it
-            stays read-only until someone reconnects doqtri and saves the plan.
+            {LOSS_TEXT[card.loss ?? "unknown"]} Showing doqtri&apos;s last copy, read-only
+            until someone reconnects doqtri and saves the plan.
           </p>
         </div>
       ) : null}
@@ -88,22 +91,21 @@ export function DoqtriDocCard({ card, className }: { card: DocCardData; classNam
       </dl>
 
       {card.url ? (
-        <a
-          href={card.url}
-          title={card.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="transition-qdit inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
-        >
-          Open in doqtri
-          <ExternalLink aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-          <span className="sr-only">{card.host ? `(opens ${card.host} in a new tab)` : "(opens in a new tab)"}</span>
-        </a>
+        <CardHint label={<span className="break-all">{card.url}</span>}>
+          <a
+            href={card.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="transition-qdit inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
+          >
+            Open in doqtri
+            <ICON.external aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+            <span className="sr-only">{card.host ? `(opens ${card.host} in a new tab)` : "(opens in a new tab)"}</span>
+          </a>
+        </CardHint>
       ) : (
         // D-45: only a doc_url on doqtri's origin is a link.
-        <p className="text-xs text-muted-foreground">
-          The stored link is not on doqtri, so qdit does not open it.
-        </p>
+        <p className="text-xs text-muted-foreground">The stored link is not on doqtri, so qdit does not open it.</p>
       )}
     </div>
   );
@@ -131,11 +133,23 @@ function ProofState({ proof }: { proof: DocCardProof }) {
       </span>
       <HashLink value={proof.anchor.txHash} kind="tx" network={proof.anchor.network} lead={4} tail={4} />
       {proof.stale ? (
-        <span className="text-warning" title="The milestone changed after this was anchored.">
-          stale
-        </span>
+        <CardHint label="The milestone changed after this was anchored.">
+          <button type="button" className="focus-ring rounded-sm text-warning">
+            stale
+            <span className="sr-only"> — the milestone changed after this was anchored</span>
+          </button>
+        </CardHint>
       ) : null}
     </span>
+  );
+}
+
+/** A `Hint` that carries its own provider; see the note on `DoqtriDocCard`. */
+function CardHint({ label, children }: { label: React.ReactNode; children: React.ReactElement }) {
+  return (
+    <TooltipProvider>
+      <Hint label={label}>{children}</Hint>
+    </TooltipProvider>
   );
 }
 
@@ -184,7 +198,7 @@ export function FromDoqtriBadge({ card }: { card: DocCardData }) {
         variant="outline"
         className={cn("cursor-pointer font-normal text-muted-foreground hover:bg-muted", lost && "border-warning/50")}
       >
-        {lost ? <Unplug aria-hidden className="text-warning" /> : null}
+        {lost ? <ICON.disconnected aria-hidden className="text-warning" /> : null}
         From doqtri
       </Badge>
     </DoqtriDocCardPopover>
@@ -208,7 +222,7 @@ export function PlanDocConnectionBadge({ card }: { card: DocCardData }) {
           lost ? "border-warning/50 text-warning" : "text-muted-foreground",
         )}
       >
-        {lost ? <Unplug aria-hidden /> : null}
+        {lost ? <ICON.disconnected aria-hidden /> : null}
         {lost ? "Connection lost" : "Details"}
       </Badge>
     </DoqtriDocCardPopover>

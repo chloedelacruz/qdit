@@ -23,7 +23,8 @@ const STORAGE_STATE = path.join(__dirname, "e2e/.auth/user.json");
  *   reseed   restores the seeded tasks to the columns `seed.ts` claims
  *   anon     runs *without* that session, to prove the auth gate works
  *   chromium desktop, signed in
- *   mobile   Pixel 7, signed in — the sidebar becomes a sheet below `lg`
+ *   mobile   Pixel 7, signed in — below `lg` the sidebar becomes a bottom tab
+ *            bar whose More opens it as a sheet; runs every `mobile-*.spec.ts`
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -102,7 +103,9 @@ export default defineConfig({
       dependencies: ["setup", "reseed"],
       // Every write-path spec must also be listed here, or it runs twice —
       // once in this project and again in `mutations`.
-      testIgnore: /(mobile-nav|auth|landing|create-task|edit-delete|public-proof|oauth)\.spec\.ts/,
+      // `mobile-*` is the `mobile` project's: those specs assert a phone
+      // layout (tab bar, touch targets) that a desktop viewport does not have.
+      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth)\.spec\.ts/,
     },
 
     {
@@ -156,7 +159,10 @@ export default defineConfig({
       name: "mobile",
       use: { ...devices["Pixel 7"], storageState: STORAGE_STATE },
       dependencies: ["setup"],
-      testMatch: /mobile-nav\.spec\.ts/,
+      // Every phone spec, not one file by name: a second `mobile-*.spec.ts`
+      // would otherwise be ignored by `chromium` *and* never matched here,
+      // and pass by never running.
+      testMatch: /[\\/]mobile-[\w-]+\.spec\.ts$/,
     },
   ],
 

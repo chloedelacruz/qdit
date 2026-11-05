@@ -1,6 +1,5 @@
 "use client";
 
-import { Check, ChevronsUpDown, Folder } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PROJECT_STATUS, type ProjectStatus } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 export type ProjectOption = {
   id: string;
@@ -55,9 +55,9 @@ export function ProjectSwitcher({
           className="h-9 w-full justify-start gap-2 px-2.5 font-medium"
           aria-label={active ? `Project: ${active.name}` : "Choose a project"}
         >
-          <Folder className={cn("size-4 shrink-0", active && "text-primary")} />
+          <ICON.project className={cn("size-4 shrink-0", active && "text-primary")} />
           <span className="truncate">{active ? active.name : "All projects"}</span>
-          <ChevronsUpDown className="ml-auto size-3.5 shrink-0 opacity-50" />
+          <ICON.chooser className="ml-auto size-3.5 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
 
@@ -73,7 +73,7 @@ export function ProjectSwitcher({
               router.push(`/projects/${project.slug}`);
             }}
           >
-            <Check
+            <ICON.selected
               className={cn(
                 "size-4 shrink-0",
                 project.slug === activeSlug ? "opacity-100" : "opacity-0",
@@ -91,7 +91,7 @@ export function ProjectSwitcher({
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/projects" onClick={onNavigate}>
-            <Folder className="size-4" />
+            <ICON.project className="size-4" />
             Browse all projects
           </Link>
         </DropdownMenuItem>

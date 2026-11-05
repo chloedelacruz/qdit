@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { fundTestnetAccount } from "@/lib/wallet";
+import { ICON } from "@/lib/icons";
 
 /**
  * Funds a Testnet account with Friendbot, in place.
@@ -73,7 +73,7 @@ export function FundTestnetButton({
       disabled={busy}
       onClick={() => void run()}
     >
-      {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+      {busy ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
       {busy ? "Funding…" : label}
     </Button>
   );

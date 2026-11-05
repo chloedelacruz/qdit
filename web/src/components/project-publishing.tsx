@@ -3,7 +3,9 @@
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
+import { DisabledReason, InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { ICON } from "@/lib/icons";
 import { setProjectPublicProofs } from "@/lib/actions";
 
 /**
@@ -38,34 +40,56 @@ export function ProjectPublishing({
       const result = await setProjectPublicProofs(projectId, next);
 
       if (result.error) toast.error(result.error);
-      else toast.success(next ? "Proofs are now public" : "Proofs are private again");
+      // The explainer is behind the ⓘ now, so the moment of publishing says
+      // what was published — the sentence that matters, when it matters.
+      else if (next)
+        toast.success("Proofs are now public", {
+          description:
+            "Title, status, hashes and decisions. Never tasks, descriptions or member names.",
+        });
+      else toast.success("Proofs are private again");
     });
   }
 
+  const State = optimistic ? ICON.public : ICON.private;
+  const button = (
+    <Button variant="outline" size="sm" onClick={toggle} disabled={pending || !canEdit}>
+      {optimistic ? "Make private" : "Publish proofs"}
+    </Button>
+  );
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="text-xs font-medium text-muted-foreground">Public proofs</span>
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <State
+          aria-hidden
+          className={optimistic ? "size-3.5 text-success" : "size-3.5"}
+        />
+        {optimistic ? "Public proofs" : "Private proofs"}
+      </span>
 
-      <p className="min-w-0 flex-1 text-sm">
+      <InfoBubble label="public proofs">
         {optimistic ? (
-          <>
-            <span className="text-success">On.</span> Anyone with a milestone
-            link can open its proof — title, status, hashes and decisions. Tasks,
-            descriptions and member names are never included.
-          </>
+          <p>
+            Anyone with a milestone link can open its proof — title, status,
+            hashes and decisions. Tasks, descriptions and member names are never
+            included.
+          </p>
         ) : (
-          <>
-            <span className="text-muted-foreground">Off.</span> Proof pages need
-            a sign-in, so anyone outside the project has to be sent a screenshot.
-          </>
+          <p>
+            Proof pages need a sign-in, so anyone outside the project has to be
+            sent a screenshot. Publishing gives each milestone a public link.
+          </p>
         )}
-      </p>
+      </InfoBubble>
 
-      {canEdit ? (
-        <Button variant="outline" size="sm" onClick={toggle} disabled={pending}>
-          {optimistic ? "Make private" : "Publish proofs"}
-        </Button>
-      ) : null}
+      <span className="ml-auto">
+        {canEdit ? (
+          button
+        ) : (
+          <DisabledReason reason="Only a project admin can change this.">{button}</DisabledReason>
+        )}
+      </span>
     </div>
   );
 }

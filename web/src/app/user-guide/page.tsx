@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
+import { IconLegend } from "@/components/icon-legend";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ICON, type IconName } from "@/lib/icons";
 
@@ -26,9 +27,19 @@ import { ICON, type IconName } from "@/lib/icons";
  * The steps name real controls only. Every button, screen and label quoted here
  * is one that exists in the product — the status actions ("Submit for
  * approval", "Approve", "Reject"), the row-menu items ("Anchor proof on chain"),
- * the anchor dialog's two buttons, the share control, and the wallet page. Where
- * a detail could not be confirmed, the instruction stays general and correct
- * rather than inventing a screen.
+ * the anchor dialog's two buttons, the public link's copy and open buttons,
+ * the mobile tab bar, and the wallet page. Where a detail could not be
+ * confirmed, the instruction stays general and correct rather than inventing a
+ * screen.
+ *
+ * ---------------------------------------------------------------------------
+ * THE LONG-FORM HOME FOR WHAT THE APP NO LONGER PRINTS (QDIT-34)
+ * ---------------------------------------------------------------------------
+ * The app now puts its explanations behind ⓘ bubbles and lets a glyph stand in
+ * for its word on repeated controls (spec §Iconography, amended). This page is
+ * where those explanations are written out in full: how to find your way on a
+ * phone and on a desktop, how to read a bubble or a disabled control, what is
+ * on a milestone's page, and a legend of every concept glyph.
  */
 
 export const metadata: Metadata = {
@@ -43,6 +54,12 @@ export const metadata: Metadata = {
  */
 type Step = ReactNode | { before: ReactNode; do: ReactNode };
 
+/**
+ * A labelled part of a screen, for sections that describe rather than
+ * instruct. Rendered as a definition list: label and icon, then the text.
+ */
+type Part = { label: string; icon?: IconName; text: ReactNode };
+
 type Section = {
   id: string;
   icon: IconName;
@@ -51,7 +68,12 @@ type Section = {
   lead: ReactNode;
   /** A condition or a warning for the whole procedure, shown before the steps. */
   warn?: ReactNode;
-  steps: Step[];
+  /** The numbered procedure. Optional for a section that only describes. */
+  steps?: Step[];
+  /** A small label above `parts`, when steps come first. */
+  partsLabel?: string;
+  /** What is where, after the steps. */
+  parts?: Part[];
   /** A closing note, for reference detail that is not itself an instruction. */
   note?: ReactNode;
 };
@@ -69,18 +91,20 @@ const SECTIONS: Section[] = [
     ),
     steps: [
       <>
-        Use a desktop browser. The Freighter wallet does not run on most phones.
+        Use a desktop browser to sign in for the first time. The Varial wallet
+        does not run on most phones.
       </>,
       <>
-        Install the <strong>Freighter</strong> extension. Freighter is a browser
-        extension that holds your Stellar account.
+        Install the <strong>Varial</strong> extension. Varial was called
+        Freighter before. It is a browser extension that holds your Stellar
+        account.
       </>,
-      <>Create a Stellar account in the Freighter extension.</>,
+      <>Create a Stellar account in the Varial extension.</>,
       {
         before: <>You pay a small network fee for each on-chain action.</>,
         do: <>Fund your account with XLM.</>,
       },
-      <>Set the Freighter extension to the same network as qdit.</>,
+      <>Set the Varial extension to the same network as qdit.</>,
     ],
     note: (
       <>
@@ -97,7 +121,7 @@ const SECTIONS: Section[] = [
     lead: <>qdit uses your wallet as your identity. You do not type a password to sign in.</>,
     warn: (
       <>
-        Set the Freighter extension to the same network as qdit. A wrong network
+        Set the Varial extension to the same network as qdit. A wrong network
         stops the sign-in.
       </>
     ),
@@ -106,10 +130,10 @@ const SECTIONS: Section[] = [
       <>
         Click <strong>Connect wallet</strong>.
       </>,
-      <>Choose the Freighter extension in the wallet list.</>,
-      <>Approve the connection in the Freighter extension.</>,
+      <>Choose Varial in the wallet list.</>,
+      <>Approve the connection in the Varial extension.</>,
       <>
-        Sign the sign-in request in the Freighter extension. This request is free
+        Sign the sign-in request in the Varial extension. This request is free
         and never reaches the network.
       </>,
       {
@@ -118,11 +142,139 @@ const SECTIONS: Section[] = [
       },
       <>Wait for the dashboard to open.</>,
     ],
+    note: (
+      <>
+        The email and password are your way back in if you lose the wallet. You
+        can also use them to sign in on a phone. On-chain actions still need the
+        wallet.
+      </>
+    ),
+  },
+  {
+    id: "find-your-way",
+    icon: "dashboard",
+    title: "3. Find your way around",
+    lead: (
+      <>
+        qdit has two places: the workspace, which covers all your projects, and
+        one project. The navigation follows the place you are in.
+      </>
+    ),
+    parts: [
+      {
+        label: "On a desktop",
+        text: (
+          <>
+            Use the sidebar on the left. At the top, choose a project in the
+            project switcher. Inside a project, the sidebar lists{" "}
+            <strong>Overview</strong>, <strong>Board</strong>,{" "}
+            <strong>Milestones</strong>, <strong>Deployments</strong>,{" "}
+            <strong>Proofs</strong>, and <strong>Members</strong>. Below them are
+            the workspace pages, such as <strong>Dashboard</strong> and the{" "}
+            <strong>Proof registry</strong>. <strong>Wallet</strong> and{" "}
+            <strong>Settings</strong> are at the bottom.
+          </>
+        ),
+      },
+      {
+        label: "On a phone",
+        text: (
+          <>
+            Use the tab bar at the bottom of the screen. In the workspace it shows{" "}
+            <strong>Dashboard</strong>, <strong>Projects</strong>,{" "}
+            <strong>Tasks</strong>, <strong>Milestones</strong>, and{" "}
+            <strong>More</strong>. Inside a project it shows{" "}
+            <strong>Overview</strong>, <strong>Board</strong>,{" "}
+            <strong>Milestones</strong>, <strong>Proofs</strong>, and{" "}
+            <strong>More</strong>. Tap <strong>More</strong> for every other
+            page, the project switcher, and help. A narrow browser window on a
+            desktop shows the tab bar too.
+          </>
+        ),
+      },
+      {
+        label: "Help",
+        text: (
+          <>
+            On a desktop, open the account menu: your initials, top right. It
+            links to <strong>Settings</strong>, the <strong>User guide</strong>,
+            and the <strong>API docs</strong>. On a phone, the same links are
+            under <strong>More</strong>.
+          </>
+        ),
+      },
+      {
+        label: "Notifications",
+        text: (
+          <>
+            Click the bell at the top of the screen. A notification about a
+            milestone opens that milestone&apos;s page.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "hints",
+    icon: "info",
+    title: "4. Read icons, ⓘ bubbles, and greyed-out buttons",
+    lead: (
+      <>
+        qdit prints little text on screen. A tooltip or a bubble holds the rest.
+        This guide holds the long version.
+      </>
+    ),
+    parts: [
+      {
+        label: "Icon buttons",
+        icon: "share",
+        text: (
+          <>
+            Some buttons show an icon and no word, such as the share icon on a
+            milestone row. To read the name, point at the button, move to it with
+            the Tab key, or tap it. The{" "}
+            <Link href="#icons" className="underline underline-offset-2 hover:text-foreground">
+              icon legend
+            </Link>{" "}
+            at the end of this guide lists every icon.
+          </>
+        ),
+      },
+      {
+        label: "ⓘ bubbles",
+        icon: "info",
+        text: (
+          <>
+            An ⓘ beside a page title or a heading opens an explanation. Click or
+            tap it. Press Escape or click outside to close it.
+          </>
+        ),
+      },
+      {
+        label: "Greyed-out buttons",
+        text: (
+          <>
+            A greyed-out button is one you cannot use yet. Point at it, move to
+            it with the Tab key, or tap it to read why. Often the reason has a
+            link to the place that fixes it.
+          </>
+        ),
+      },
+    ],
+    note: (
+      <>
+        Examples: <strong>Anchor proof on chain</strong> is greyed out until the
+        project is registered, and its reason links to the project overview.{" "}
+        <strong>Certificate</strong> is greyed out until the milestone is
+        anchored. A viewer sees the create buttons greyed out. An admin cannot
+        edit the owner&apos;s row or their own row on the Members page.
+      </>
+    ),
   },
   {
     id: "create-a-project",
     icon: "project",
-    title: "3. Create a project",
+    title: "5. Create a project",
     lead: <>A project holds your tasks, milestones, and proof trail. You register it on the network once.</>,
     steps: [
       <>
@@ -145,7 +297,7 @@ const SECTIONS: Section[] = [
         do: (
           <>
             On the project overview, click <strong>Register on chain</strong>, then
-            sign the transaction in the Freighter extension.
+            sign the transaction in the Varial extension.
           </>
         ),
       },
@@ -153,15 +305,21 @@ const SECTIONS: Section[] = [
     note: (
       <>
         You must register the project before you anchor any milestone. Choose the
-        wallet you intend to keep.
+        wallet you intend to keep. The ⓘ beside the registration explains it.
       </>
     ),
   },
   {
     id: "board",
     icon: "board",
-    title: "4. Add tasks and move them on the board",
+    title: "6. Add tasks and move them on the board",
     lead: <>The board shows your tasks in three columns: Todo, In Progress, and Done.</>,
+    warn: (
+      <>
+        A viewer cannot create tasks. If <strong>New task</strong> is greyed out,
+        ask a project admin for the member role.
+      </>
+    ),
     steps: [
       <>
         Open the project <strong>Board</strong> page.
@@ -176,11 +334,17 @@ const SECTIONS: Section[] = [
       </>,
       <>Drag a task card to another column to change its state.</>,
     ],
+    note: (
+      <>
+        A task row anywhere in qdit, such as on a milestone&apos;s page, opens
+        that task&apos;s panel on the board.
+      </>
+    ),
   },
   {
     id: "create-a-milestone",
     icon: "milestone",
-    title: "5. Create a milestone",
+    title: "7. Create a milestone",
     lead: <>A milestone groups tasks into one result. You submit and prove a milestone, not a single task.</>,
     steps: [
       <>
@@ -198,9 +362,104 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    id: "milestone-page",
+    icon: "milestone",
+    title: "8. Open a milestone's page",
+    lead: (
+      <>
+        Every milestone has its own page. It holds everything about the
+        milestone in one place.
+      </>
+    ),
+    steps: [
+      <>
+        Click a milestone row. Every milestone row opens its page: on the
+        dashboard, on the project overview, and on both milestone lists.
+      </>,
+      <>Or click a notification about the milestone.</>,
+    ],
+    partsLabel: "On the page",
+    parts: [
+      {
+        label: "Header",
+        icon: "milestone",
+        text: (
+          <>
+            The title, the status control, and the actions menu (⋯). They work
+            the same as on a milestone row.
+          </>
+        ),
+      },
+      {
+        label: "Progress",
+        icon: "task",
+        text: <>How many tasks are done, as a count and a percentage, and the due date.</>,
+      },
+      {
+        label: "On chain",
+        icon: "anchor",
+        text: (
+          <>
+            Whether the proof is anchored, and on which network. A stale anchor
+            means the milestone changed after it was anchored. If the project is
+            not registered, the line links to the project overview.
+          </>
+        ),
+      },
+      {
+        label: "Public link",
+        icon: "public",
+        text: (
+          <>
+            The milestone&apos;s public proof link, with a copy button and an
+            open button. If publishing is off, the line says Private and links to
+            the setting.
+          </>
+        ),
+      },
+      {
+        label: "Tasks",
+        icon: "task",
+        text: <>The tasks in this milestone. A task row opens the task on the board.</>,
+      },
+      {
+        label: "Proof",
+        icon: "proof",
+        text: (
+          <>
+            The proof records for this milestone. Click{" "}
+            <strong>Record proof</strong> to add one.
+          </>
+        ),
+      },
+      {
+        label: "History",
+        icon: "history",
+        text: (
+          <>
+            Every anchor and decision, oldest first. The anchor mark means the
+            entry is on the ledger, and anyone can check it. The person mark
+            means the entry is recorded in qdit only.
+          </>
+        ),
+      },
+      {
+        label: "Certificate",
+        icon: "certificate",
+        text: (
+          <>
+            Click <strong>Certificate</strong> beside the History heading to
+            download it. It is one file that anyone can check against the ledger
+            without qdit. It is greyed out until the milestone is anchored.
+          </>
+        ),
+      },
+    ],
+  },
+  {
     id: "submit-a-milestone",
     icon: "anchor",
-    title: "6. Submit a milestone for approval",
+    title: "9. Submit a milestone for approval",
     lead: (
       <>
         A submit does two things. First you move the milestone to Submitted. Then
@@ -215,24 +474,29 @@ const SECTIONS: Section[] = [
       </>
     ),
     steps: [
-      <>
-        Open the project <strong>Milestones</strong> page.
-      </>,
-      <>Find the milestone. Its status is Proposed.</>,
+      <>Open the milestone&apos;s page. Its status is Proposed.</>,
       <>
         Open the status control and choose <strong>Submit for approval</strong>.
         The status becomes Submitted.
       </>,
-      <>Open the milestone&apos;s actions menu.</>,
+      <>Open the actions menu (⋯) beside the title.</>,
+      {
+        before: <>The item is greyed out if the project is not registered. Its reason links to the overview.</>,
+        do: (
+          <>
+            Click <strong>Anchor proof on chain</strong>.
+          </>
+        ),
+      },
       <>
-        Click <strong>Anchor proof on chain</strong>.
+        In the dialog, click <strong>Anchor proof</strong>. qdit checks the rules
+        and simulates the transaction.
       </>,
-      <>Click the anchor button. qdit checks the rules and simulates the transaction.</>,
       <>Read the network fee that qdit shows. Nothing is sent yet.</>,
       <>
         Click <strong>Sign and submit</strong>.
       </>,
-      <>Sign the transaction in the Freighter extension.</>,
+      <>Sign the transaction in the Varial extension.</>,
       <>
         Wait for the ledger to record the proof. qdit shows the transaction hash
         when it is done.
@@ -241,21 +505,19 @@ const SECTIONS: Section[] = [
     note: (
       <>
         The milestone content stays in qdit. Only the hash goes on the network,
-        which is what lets someone else check it later.
+        which is what lets someone else check it later. You can also do every
+        step from the milestone&apos;s row on the Milestones page.
       </>
     ),
   },
   {
     id: "approve-or-reject",
     icon: "awaiting",
-    title: "7. Approve or reject a milestone",
+    title: "10. Approve or reject a milestone",
     lead: <>Only the project owner can approve or reject a milestone. A member cannot.</>,
     warn: <>Sign an on-chain approval or rejection with the wallet that registered the project.</>,
     steps: [
-      <>
-        Open the project <strong>Milestones</strong> page.
-      </>,
-      <>Find a milestone with the Submitted status.</>,
+      <>Open the milestone&apos;s page. Its status is Submitted.</>,
       <>Open its status control.</>,
       <>
         Choose <strong>Approve</strong> or <strong>Reject</strong>.
@@ -266,17 +528,22 @@ const SECTIONS: Section[] = [
       },
       <>Confirm the decision. qdit saves it. The reason stays in qdit, not on the ledger.</>,
       <>
-        To record the decision on the network, open the actions menu and click{" "}
-        <strong>Approve on chain</strong> or <strong>Reject on chain</strong>.
+        To record the decision on the network, open the actions menu (⋯) and
+        click <strong>Approve on chain</strong> or <strong>Reject on chain</strong>.
       </>,
-      <>Sign the transaction in the Freighter extension.</>,
+      <>Sign the transaction in the Varial extension.</>,
     ],
-    note: <>An approved milestone is final on the ledger. A rejected milestone can be re-submitted.</>,
+    note: (
+      <>
+        An approved milestone is final on the ledger. A rejected milestone can be
+        re-submitted. Each decision appears in the milestone&apos;s History.
+      </>
+    ),
   },
   {
     id: "verify-a-proof",
     icon: "proof",
-    title: "8. Verify a proof on the ledger",
+    title: "11. Verify a proof on the ledger",
     lead: (
       <>
         Anyone can check a proof against the ledger. The ledger is the public
@@ -285,7 +552,8 @@ const SECTIONS: Section[] = [
     ),
     steps: [
       <>
-        Open the <strong>Proof registry</strong> page.
+        Open the <strong>Proof registry</strong> page. On a phone, it is under{" "}
+        <strong>More</strong>.
       </>,
       <>Paste a contract ID or a transaction hash into the search box.</>,
       <>Read the answer. qdit shows which record the identifier belongs to.</>,
@@ -298,8 +566,8 @@ const SECTIONS: Section[] = [
   },
   {
     id: "publish-and-share",
-    icon: "proof",
-    title: "9. Publish a milestone and share the public proof link",
+    icon: "public",
+    title: "12. Publish a milestone and share the public proof link",
     lead: (
       <>
         A public proof page opens with no account. You send the link to a grant
@@ -309,43 +577,41 @@ const SECTIONS: Section[] = [
     steps: [
       <>Open the project overview.</>,
       <>
-        Find the <strong>Public proofs</strong> setting. Only an owner or an admin
-        can change it.
+        Find the <strong>Private proofs</strong> setting. Only an owner or an
+        admin can change it.
       </>,
       <>
-        Click <strong>Publish proofs</strong>. Now anyone with a link can open a
-        milestone&apos;s proof.
-      </>,
-      <>
-        Open the project <strong>Milestones</strong> page.
+        Click <strong>Publish proofs</strong>. The setting now reads Public
+        proofs. Anyone with a link can open a milestone&apos;s proof.
       </>,
       {
-        before: <>Anchor the milestone first, so the public page can show a hash.</>,
-        do: (
-          <>
-            Click <strong>Share public link</strong> on the milestone.
-          </>
-        ),
+        before: <>Anchor the milestone first, so the public page can show a hash. Until then, the copy buttons are greyed out.</>,
+        do: <>Open the milestone&apos;s page.</>,
       },
-      <>Copy the link from the dialog.</>,
+      <>
+        In the <strong>Public link</strong> line, click the copy button. Click the
+        open button to see the public page first.
+      </>,
       <>Send the link to your reviewer or client.</>,
     ],
     note: (
       <>
-        The public page shows the title, status, hashes, and decisions. It never
-        shows tasks, descriptions, or member names.
+        The share icon on a milestone row copies the same link. The public page
+        shows the title, status, hashes, and decisions. It never shows tasks,
+        descriptions, or member names.
       </>
     ),
   },
   {
     id: "wallet-page",
     icon: "wallet",
-    title: "10. Use the wallet page",
+    title: "13. Use the wallet page",
     lead: <>The wallet page shows your account and lets you send XLM. It reads your balance from the network.</>,
     warn: <>On mainnet you send real XLM. Check the address and the amount before you send.</>,
     steps: [
       <>
-        Open the <strong>Wallet</strong> page.
+        Open the <strong>Wallet</strong> page. On a phone, it is under{" "}
+        <strong>More</strong>.
       </>,
       <>Connect your wallet if it is not connected.</>,
       <>Read your XLM balance.</>,
@@ -355,26 +621,34 @@ const SECTIONS: Section[] = [
       <>
         Click <strong>Send XLM</strong>.
       </>,
-      <>Sign the transaction in the Freighter extension.</>,
+      <>Sign the transaction in the Varial extension.</>,
       <>Wait for the receipt. qdit shows the transaction hash and the ledger number.</>,
     ],
   },
 ];
 
+/** The legend's entry in "On this page"; its body is `IconLegend`. */
+const LEGEND = { id: "icons", icon: "guide", title: "Icon legend" } as const satisfies Pick<
+  Section,
+  "id" | "icon" | "title"
+>;
+
 /** The words a first-time reader meets in the steps, explained once. */
 const TERMS: { term: string; meaning: ReactNode }[] = [
-  { term: "wallet", meaning: <>The Freighter extension. It holds your Stellar account and signs for you.</> },
+  { term: "wallet", meaning: <>The Varial extension. It holds your Stellar account and signs for you.</> },
   { term: "milestone", meaning: <>A group of tasks that you submit and prove as one result.</> },
   { term: "proof hash", meaning: <>A SHA-256 fingerprint of a milestone. qdit writes it to the network.</> },
   { term: "anchor", meaning: <>To write a proof hash to the Stellar network.</> },
   { term: "ledger", meaning: <>The public record that the Stellar network keeps.</> },
   { term: "fee", meaning: <>A small amount of XLM that you pay for an on-chain action.</> },
+  { term: "ⓘ bubble", meaning: <>A small button beside a heading. It opens an explanation.</> },
+  { term: "certificate", meaning: <>One file that proves a milestone without qdit.</> },
 ];
 
 export default function UserGuidePage() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 py-5">
+      <header className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-5 sm:px-6">
         <Link href="/" className="transition-qdit shrink-0 hover:opacity-80">
           <QditLogo />
         </Link>
@@ -383,7 +657,7 @@ export default function UserGuidePage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-16">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-16 sm:px-6">
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           User guide
         </p>
@@ -391,9 +665,10 @@ export default function UserGuidePage() {
 
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           qdit is a task hub for Stellar teams. You track your work in a project.
-          You anchor a proof of each milestone on the Stellar network. This guide
-          covers ten tasks. Each task is a short, numbered procedure. Follow the
-          steps in order.
+          You anchor a proof of each milestone on the Stellar network. Sections 1
+          to 4 cover setup and how to find your way. The rest are short, numbered
+          procedures. Follow the steps in order. The icon legend at the end names
+          every icon in qdit.
         </p>
 
         {/* Reference material recedes: the glossary sits on the sunken plane,
@@ -420,7 +695,7 @@ export default function UserGuidePage() {
             On this page
           </h2>
           <ol className="mt-3 space-y-1.5">
-            {SECTIONS.map((section) => {
+            {[...SECTIONS, LEGEND].map((section) => {
               const Icon = ICON[section.icon];
               return (
                 <li key={section.id}>
@@ -441,6 +716,22 @@ export default function UserGuidePage() {
           {SECTIONS.map((section) => (
             <Procedure key={section.id} section={section} />
           ))}
+
+          {/* Reference, like the glossary: looked up, not followed, so it has
+              no steps — just every concept glyph with its name. */}
+          <section id={LEGEND.id} aria-labelledby={`${LEGEND.id}-title`} className="scroll-mt-20 py-8">
+            <h2 id={`${LEGEND.id}-title`} className="flex items-center gap-2 text-base font-semibold">
+              <ICON.guide className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              {LEGEND.title}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Each icon in qdit means one thing, everywhere it appears. Where an
+              icon has no word beside it, its tooltip shows the name below.
+            </p>
+            <div className="mt-5">
+              <IconLegend />
+            </div>
+          </section>
         </div>
 
         <p className="mt-10 text-xs text-muted-foreground">
@@ -475,20 +766,53 @@ function Procedure({ section }: { section: Section }) {
         <p className="mt-3 text-sm leading-6 text-warning">{section.warn}</p>
       ) : null}
 
-      <ol className="mt-4 list-decimal space-y-2.5 pl-5 text-sm leading-6 marker:text-xs marker:font-medium marker:text-muted-foreground">
-        {section.steps.map((step, index) => (
-          <li key={index} className="pl-1">
-            {isConditional(step) ? (
-              <>
-                <span className="text-muted-foreground">{step.before}</span>{" "}
-                {step.do}
-              </>
-            ) : (
-              step
-            )}
-          </li>
-        ))}
-      </ol>
+      {section.steps ? (
+        <ol className="mt-4 list-decimal space-y-2.5 pl-5 text-sm leading-6 marker:text-xs marker:font-medium marker:text-muted-foreground">
+          {section.steps.map((step, index) => (
+            <li key={index} className="pl-1">
+              {isConditional(step) ? (
+                <>
+                  <span className="text-muted-foreground">{step.before}</span>{" "}
+                  {step.do}
+                </>
+              ) : (
+                step
+              )}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
+      {section.parts ? (
+        <>
+          {section.partsLabel ? (
+            <h3 className="mt-6 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {section.partsLabel}
+            </h3>
+          ) : null}
+          {/* Label beside text from `sm` up, stacked on a phone. The label
+              column is a fixed rem width and the text column shrinks, so it
+              never scrolls sideways. */}
+          <dl
+            className={`${section.partsLabel ? "mt-3" : "mt-4"} grid gap-x-4 text-sm leading-6 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:gap-y-3`}
+          >
+            {section.parts.map((part) => {
+              const PartIcon = part.icon ? ICON[part.icon] : null;
+              return (
+                <div key={part.label} className="contents">
+                  <dt className="flex items-center gap-2 font-medium">
+                    {PartIcon ? (
+                      <PartIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    ) : null}
+                    {part.label}
+                  </dt>
+                  <dd className="mb-3 text-muted-foreground sm:mb-0">{part.text}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </>
+      ) : null}
 
       {section.note ? (
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{section.note}</p>

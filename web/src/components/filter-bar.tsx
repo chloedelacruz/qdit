@@ -1,8 +1,7 @@
 "use client";
 
-import { ListFilter, Search, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +28,7 @@ import {
   type SortKey,
 } from "@/lib/filters";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 export type Facet = {
   key: FacetKey;
@@ -67,6 +67,20 @@ export function FilterBar({
     });
   };
 
+  /**
+   * Below `sm` the facets and the sort fold behind one "Filters" button.
+   *
+   * Four facet buttons and a sort wrap to three rows on a phone, which is a
+   * third of the screen spent on controls before the first row of results.
+   * Folded, the bar is one line — search and a button — and opens to the full
+   * set on demand. The facets are rendered once either way: from `sm` up the
+   * group is `display: contents`, so the desktop bar is exactly the flat row
+   * it always was, and the toggle is not there at all.
+   */
+  const [expanded, setExpanded] = useState(false);
+  const groupId = useId();
+  const facetCount = facets.reduce((sum, facet) => sum + filters[facet.key].length, 0);
+
   return (
     <div className={cn("mb-3 flex flex-wrap items-center gap-2", className)}>
       <SearchField
@@ -76,39 +90,74 @@ export function FilterBar({
         onChange={(q) => apply({ ...filters, q, limit: filters.limit })}
       />
 
-      {facets.map((facet) => (
-        <FacetMenu
-          key={facet.key}
-          facet={facet}
-          selected={filters[facet.key]}
-          onToggle={(value) => apply(toggleFacet(filters, facet.key, value))}
-        />
-      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        aria-expanded={expanded}
+        aria-controls={groupId}
+        onClick={() => setExpanded((open) => !open)}
+        className={cn(
+          "sm:hidden pointer-coarse:h-11",
+          // Same signal as a narrowing facet: the folded bar must still say
+          // that something is being filtered out.
+          facetCount > 0 && "border-primary/40 text-foreground",
+        )}
+      >
+        <ICON.filter data-icon="inline-start" />
+        Filters
+        {facetCount > 0 ? (
+          <span className="ml-0.5 rounded bg-accent px-1 text-accent-foreground tabular-nums">
+            {facetCount}
+          </span>
+        ) : null}
+      </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            {SORT_LABELS[filters.sort]}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={filters.sort}
-            onValueChange={(sort) => apply({ ...filters, sort: sort as SortKey })}
-          >
-            {sorts.map((key) => (
-              <DropdownMenuRadioItem key={key} value={key}>
-                {SORT_LABELS[key]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div
+        id={groupId}
+        className={cn(
+          "items-center gap-2 sm:contents",
+          expanded ? "flex basis-full flex-wrap" : "hidden",
+        )}
+      >
+        {facets.map((facet) => (
+          <FacetMenu
+            key={facet.key}
+            facet={facet}
+            selected={filters[facet.key]}
+            onToggle={(value) => apply(toggleFacet(filters, facet.key, value))}
+          />
+        ))}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="pointer-coarse:h-11">
+              {SORT_LABELS[filters.sort]}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={filters.sort}
+              onValueChange={(sort) => apply({ ...filters, sort: sort as SortKey })}
+            >
+              {sorts.map((key) => (
+                <DropdownMenuRadioItem key={key} value={key}>
+                  {SORT_LABELS[key]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {hasActiveFilters(filters) ? (
-        <Button variant="ghost" size="sm" onClick={() => apply(clearFilters(filters))}>
-          <X data-icon="inline-start" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="pointer-coarse:h-11"
+          onClick={() => apply(clearFilters(filters))}
+        >
+          <ICON.close data-icon="inline-start" />
           Clear
           <span className="ml-0.5 tabular-nums opacity-60">
             {activeFilterCount(filters)}
@@ -153,8 +202,10 @@ function SearchField({
   }, [draft, onChange]);
 
   return (
-    <div className="relative min-w-52 flex-1 sm:max-w-xs">
-      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+    // `min-w-40` below `sm` so search, the Filters toggle and Clear still
+    // share one line at 375px.
+    <div className="relative min-w-40 flex-1 sm:max-w-xs sm:min-w-52">
+      <ICON.search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="search"
         role="searchbox"
@@ -163,7 +214,7 @@ function SearchField({
         aria-label={placeholder}
         data-pending={pending ? "true" : undefined}
         onChange={(event) => setDraft(event.target.value)}
-        className="h-8 pl-8"
+        className="h-8 pl-8 pointer-coarse:h-11"
       />
     </div>
   );
@@ -199,9 +250,9 @@ function FacetMenu({
               : `Filter by ${facet.label.toLowerCase()}`
           }
           // A facet that is narrowing results should look like it is.
-          className={cn(count > 0 && "border-primary/40 text-foreground")}
+          className={cn("pointer-coarse:h-11", count > 0 && "border-primary/40 text-foreground")}
         >
-          <ListFilter data-icon="inline-start" />
+          <ICON.filter data-icon="inline-start" />
           {facet.label}
           {count > 0 ? (
             <span className="ml-0.5 rounded bg-accent px-1 text-accent-foreground tabular-nums">

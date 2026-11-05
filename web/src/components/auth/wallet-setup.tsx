@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { InfoBubble } from "@/components/hint";
 import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import { ICON } from "@/lib/icons";
 import { NETWORK_LABELS, type StellarNetwork } from "@/lib/stellar";
@@ -46,6 +47,10 @@ import { cn } from "@/lib/utils";
  * may be unreachable — so every check has an "unknown" state and unknown reads
  * as neutral. The instruction is still on screen either way, which is the part
  * that was actually missing.
+ *
+ * QDIT-34 kept that rule and cut the words around it: each step shows one
+ * short line — what is true, or what to do — and the reason behind the step
+ * (why a wallet, why Testnet, why funding) sits in the ⓘ beside its title.
  */
 
 type StepState = "unknown" | "pending" | "done";
@@ -135,12 +140,22 @@ export function WalletSetup({ className }: { className?: string }) {
       <h2 className="text-sm font-medium">Before you connect</h2>
 
       <ol className="space-y-2.5">
-        <Step index={1} state={installed} title="Install a Stellar wallet">
+        <Step
+          index={1}
+          state={installed}
+          title="Install a Stellar wallet"
+          info={
+            <p>
+              qdit signs you in with a Stellar wallet extension, and the same wallet
+              signs your proofs. Varial (formerly Freighter) is the usual choice.
+            </p>
+          }
+        >
           {installed === "done" ? (
-            "A wallet is available in this browser."
+            "Found in this browser."
           ) : (
             <>
-              qdit signs in with your wallet.{" "}
+              Install{" "}
               <a
                 className="underline underline-offset-2"
                 href="https://varialwallet.com/"
@@ -149,7 +164,7 @@ export function WalletSetup({ className }: { className?: string }) {
               >
                 Varial
               </a>{" "}
-              (formerly Freighter) is the usual choice — install it, then reload this page.
+              (formerly Freighter), then reload this page.
             </>
           )}
         </Step>
@@ -158,30 +173,42 @@ export function WalletSetup({ className }: { className?: string }) {
           index={2}
           state={networkState}
           title={`Switch it to ${NETWORK_LABELS[APP_NETWORK]}`}
+          info={
+            <p>
+              qdit runs on {NETWORK_LABELS[APP_NETWORK]}. Wallets ship set to Mainnet,
+              where this app&apos;s contract does not exist.
+            </p>
+          }
         >
           {wrongNetwork
-            ? `Your wallet is on ${network ? NETWORK_LABELS[network] : "another network"}. Nothing here will work until it is on ${NETWORK_LABELS[APP_NETWORK]}.`
+            ? `Your wallet is on ${network ? NETWORK_LABELS[network] : "another network"}. Nothing works until it is on ${NETWORK_LABELS[APP_NETWORK]}.`
             : networkState === "done"
               ? `Your wallet is on ${NETWORK_LABELS[APP_NETWORK]}.`
-              : `qdit runs on ${NETWORK_LABELS[APP_NETWORK]}. Wallets ship set to Mainnet, where this app's contract does not exist.`}
+              : "Wallets start on Mainnet."}
         </Step>
 
-        <Step index={3} state={fundedState} title="Fund your account">
+        <Step
+          index={3}
+          state={fundedState}
+          title="Fund your account"
+          info={
+            <p>
+              A brand-new account holds nothing until it is funded, and anchoring a
+              milestone costs a fee.
+              {APP_NETWORK === "testnet" ? " Friendbot hands out test XLM for free." : null}
+            </p>
+          }
+        >
           {fundedState === "done" ? (
-            "Your account exists on the network and can pay fees."
+            "Your account can pay fees."
           ) : address ? (
-            <div className="space-y-2">
-              <p>
-                A brand-new account holds nothing until it is funded, and
-                anchoring a milestone costs a fee. Friendbot hands out test XLM
-                for free.
-              </p>
-              {APP_NETWORK === "testnet" ? (
-                <FundTestnetButton address={address} onFunded={recheckFunding} />
-              ) : null}
-            </div>
+            APP_NETWORK === "testnet" ? (
+              <FundTestnetButton address={address} onFunded={recheckFunding} />
+            ) : (
+              "Send it some XLM before anchoring."
+            )
           ) : (
-            "A brand-new account holds nothing until it is funded. Once you connect, this step funds it for you."
+            "Connect first — this step then funds it for you."
           )}
         </Step>
       </ol>
@@ -197,11 +224,14 @@ function Step({
   index,
   state,
   title,
+  info,
   children,
 }: {
   index: number;
   state: StepState;
   title: string;
+  /** Why the step exists, behind an ⓘ beside the title. */
+  info?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -219,10 +249,13 @@ function Step({
       </span>
 
       <div className="min-w-0 space-y-1">
-        <p className="text-sm leading-5">
-          {title}
-          {state === "done" ? <span className="sr-only"> — done</span> : null}
-        </p>
+        <div className="flex items-center gap-1 text-sm leading-5">
+          <p>
+            {title}
+            {state === "done" ? <span className="sr-only"> — done</span> : null}
+          </p>
+          {info ? <InfoBubble label={title}>{info}</InfoBubble> : null}
+        </div>
         <div className="text-xs leading-5 text-muted-foreground">{children}</div>
       </div>
     </li>

@@ -1,12 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { completeWalletRegistration, type RegisterState } from "./actions";
+import { ICON } from "@/lib/icons";
 
 const EMPTY: RegisterState = {};
 
@@ -113,7 +113,7 @@ export function RegisterForm({
       ) : null}
 
       <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+        {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
         {mode === "create" ? "Create account" : "Save"}
       </Button>
     </form>
