@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+import { LinkPending } from "./link-pending";
 import { isActive, type NavItem } from "./nav-items";
 
 export function SidebarNav({
@@ -50,6 +51,8 @@ export function SidebarNav({
               )}
             />
             {text}
+            {/* Right edge, fixed size: says "on its way" without moving the label. */}
+            <LinkPending className="ml-auto text-muted-foreground" />
           </Link>
         );
       })}

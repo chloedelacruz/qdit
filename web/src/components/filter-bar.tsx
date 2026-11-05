@@ -29,6 +29,7 @@ import {
 } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 import { ICON } from "@/lib/icons";
+import { startNavigationTo } from "@/lib/navigation-progress";
 
 export type Facet = {
   key: FacetKey;
@@ -62,8 +63,11 @@ export function FilterBar({
 
   const apply = (next: Filters) => {
     const query = serialiseFilters(next);
+    const href = query ? `${pathname}?${query}` : pathname;
+    // The list re-renders on the server; the bar says so straight away.
+    startNavigationTo(href);
     startTransition(() => {
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      router.replace(href, { scroll: false });
     });
   };
 

@@ -15,6 +15,7 @@ import { markNotificationsRead } from "@/lib/actions";
 import type { NotificationRow } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { ICON } from "@/lib/icons";
+import { startNavigationTo } from "@/lib/navigation-progress";
 
 /**
  * What happened while you were not looking.
@@ -118,12 +119,14 @@ export function NotificationBell({
                     type="button"
                     onClick={() => {
                       setOpen(false);
+                      // `router.push` is not a link click, so the progress
+                      // bar is started by hand (QDIT-35).
                       // To the milestone itself, not the list it is somewhere in.
-                      router.push(
-                        notification.milestoneId
-                          ? `/projects/${notification.projectSlug}/milestones/${notification.milestoneId}`
-                          : `/projects/${notification.projectSlug}/milestones`,
-                      );
+                      const href = notification.milestoneId
+                        ? `/projects/${notification.projectSlug}/milestones/${notification.milestoneId}`
+                        : `/projects/${notification.projectSlug}/milestones`;
+                      startNavigationTo(href);
+                      router.push(href);
                     }}
                     className={cn(
                       "focus-ring transition-qdit w-full border-b px-3 py-2.5 text-left last:border-b-0",

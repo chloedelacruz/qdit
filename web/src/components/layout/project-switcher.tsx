@@ -16,6 +16,7 @@ import {
 import { PROJECT_STATUS, type ProjectStatus } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { ICON } from "@/lib/icons";
+import { startNavigationTo } from "@/lib/navigation-progress";
 
 export type ProjectOption = {
   id: string;
@@ -70,6 +71,7 @@ export function ProjectSwitcher({
             key={project.id}
             onSelect={() => {
               onNavigate?.();
+              startNavigationTo(`/projects/${project.slug}`);
               router.push(`/projects/${project.slug}`);
             }}
           >
