@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink } from "lucide-react";
 
 import { ICON } from "@/lib/icons";
 import { TONE_BADGE, TONE_DOT } from "@/lib/constants";
@@ -80,10 +79,10 @@ export function ProofRecord({ className }: { className?: string }) {
                     {value}
                   </span>
                   {action === "copy" ? (
-                    <Copy className="size-3 shrink-0 text-muted-foreground/60" />
+                    <ICON.copy className="size-3 shrink-0 text-muted-foreground/60" />
                   ) : null}
                   {action === "open" ? (
-                    <ExternalLink className="size-3 shrink-0 text-muted-foreground/60" />
+                    <ICON.external className="size-3 shrink-0 text-muted-foreground/60" />
                   ) : null}
                 </dd>
               </div>
@@ -102,7 +101,7 @@ export function ProofRecord({ className }: { className?: string }) {
           )}
         >
           {verified ? (
-            <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
+            <ICON.copied className="size-3.5 shrink-0" strokeWidth={2.5} />
           ) : (
             <ICON.anchor className="size-3.5 shrink-0 animate-pulse" />
           )}

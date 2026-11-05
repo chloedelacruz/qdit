@@ -26,7 +26,7 @@ export default async function ProjectsPage({
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Projects"
-        description="Every build, with its milestones, deployment state and on-chain proof."
+        info="Every build, with its milestones, deployment state and on-chain proof."
         actions={<CreateProjectDialog />}
       />
 
@@ -63,8 +63,7 @@ export default async function ProjectsPage({
         empty={{
           icon: ICON.project,
           title: "No projects yet",
-          description:
-            "A project holds your tasks, milestones and the proof trail you will hand to a grant reviewer.",
+          description: "Tasks, milestones and the proof trail for a grant reviewer.",
           action: <CreateProjectDialog label="Create your first project" />,
         }}
       >

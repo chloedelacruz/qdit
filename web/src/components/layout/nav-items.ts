@@ -1,11 +1,11 @@
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/lib/icons";
 
 import { ICON } from "@/lib/icons";
 
 export type NavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   /** Match this href only, not its descendants. */
   exact?: boolean;
 };
@@ -51,3 +51,44 @@ export const FOOTER_NAV: NavItem[] = [
   { href: "/wallet", label: "Wallet", icon: ICON.wallet },
   { href: "/settings", label: "Settings", icon: ICON.settings },
 ];
+
+/**
+ * The mobile tab bar (QDIT-34). Four destinations and More, chosen from the
+ * daily loop qdit is built around — task, milestone, proof — and following the
+ * scope the person is in, as the sidebar does. Everything else is in More.
+ * Short labels: a tab bar keeps a word under each glyph, but only one.
+ */
+export function mobileTabs(slug: string | undefined): NavItem[] {
+  if (slug) {
+    return [
+      { href: `/projects/${slug}`, label: "Overview", icon: ICON.overview, exact: true },
+      { href: `/projects/${slug}/board`, label: "Board", icon: ICON.board },
+      { href: `/projects/${slug}/milestones`, label: "Milestones", icon: ICON.milestone },
+      { href: `/projects/${slug}/proofs`, label: "Proofs", icon: ICON.proof },
+    ];
+  }
+
+  return [
+    { href: "/dashboard", label: "Dashboard", icon: ICON.dashboard },
+    { href: "/projects", label: "Projects", icon: ICON.project, exact: true },
+    { href: "/tasks", label: "Tasks", icon: ICON.task },
+    { href: "/milestones", label: "Milestones", icon: ICON.milestone },
+  ];
+}
+
+/** Help, reachable from More on a phone and from the account menu on a desktop. */
+export const HELP_NAV: NavItem[] = [
+  { href: "/user-guide", label: "User guide", icon: ICON.guide },
+  { href: "/docs", label: "API docs", icon: ICON.api },
+];
+
+/**
+ * Descendants light up their parent by default, so `/projects/acme/board`
+ * keeps "Board" active. `exact` opts out where a route is the ancestor of a
+ * whole section (project Overview, the Projects index).
+ */
+export function isActive(pathname: string, item: NavItem): boolean {
+  return item.exact
+    ? pathname === item.href
+    : pathname === item.href || pathname.startsWith(`${item.href}/`);
+}

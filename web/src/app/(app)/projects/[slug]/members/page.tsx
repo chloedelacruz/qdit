@@ -9,6 +9,7 @@ import { Section } from "@/components/section";
 import { ICON } from "@/lib/icons";
 import {
   canAdminister,
+  getCurrentUserId,
   getProject,
   getProjectRole,
   listAddableMembers,
@@ -39,9 +40,10 @@ export default async function ProjectMembersPage({
   const project = await getProject(slug);
   if (!project) notFound();
 
-  const [members, role] = await Promise.all([
+  const [members, role, userId] = await Promise.all([
     listProjectMembers(project.id),
     getProjectRole(project.id),
+    getCurrentUserId(),
   ]);
 
   const canManage = canAdminister(role);
@@ -58,7 +60,7 @@ export default async function ProjectMembersPage({
           { label: project.name, href: `/projects/${slug}` },
         ]}
         title="Members"
-        description="Who can see this project, and what each of them may do."
+        info="Who can see this project, and what each of them may do."
         actions={
           canManage ? (
             <AddMemberDialog projectId={project.id} candidates={candidates} />
@@ -82,6 +84,7 @@ export default async function ProjectMembersPage({
                 projectId={project.id}
                 member={member}
                 canManage={canManage}
+                isSelf={member.id === userId}
               />
             }
           />

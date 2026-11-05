@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
-import type { NavItem } from "./nav-items";
+import { isActive, type NavItem } from "./nav-items";
 
 export function SidebarNav({
   items,
@@ -26,12 +26,7 @@ export function SidebarNav({
       ) : null}
 
       {items.map(({ href, label: text, icon: Icon, exact }) => {
-        // Descendants light up their parent by default, so `/projects/acme/board`
-        // keeps "Board" active. `exact` opts out where a route is the ancestor
-        // of a whole section (project Overview, the Projects index).
-        const active = exact
-          ? pathname === href
-          : pathname === href || pathname.startsWith(`${href}/`);
+        const active = isActive(pathname, { href, label: text, icon: Icon, exact });
 
         return (
           <Link

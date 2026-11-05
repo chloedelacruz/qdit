@@ -1,12 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signIn, type AuthState } from "./actions";
+import { ICON } from "@/lib/icons";
 
 const EMPTY: AuthState = {};
 
@@ -84,7 +84,7 @@ export function LoginForm({ next }: { next: string }) {
       ) : null}
 
       <Button type="submit" variant="outline" className="w-full" disabled={pending}>
-        {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+        {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
         Sign in
       </Button>
     </form>

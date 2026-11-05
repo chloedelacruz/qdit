@@ -26,6 +26,10 @@ import type { PublicProof } from "@/lib/queries";
  * says "Every transaction and contract below opens on stellar.expert." (the
  * history's signers are not links). Those two sentences are the only other
  * difference from the pre-WP-3.2 markup.
+ *
+ * QDIT-34 regenerated the file for markup only, no words: the explorer icon is
+ * qdit's own glyph instead of lucide's, and the hash buttons grow to a 44px
+ * target under a coarse pointer (`pointer-coarse:size-11`).
  */
 
 const stub = vi.hoisted(() => ({

@@ -49,7 +49,7 @@ export default async function ProjectDeploymentsPage({
           { label: project.name, href: `/projects/${slug}` },
         ]}
         title="Deployments"
-        description="The full release history, newest first."
+        info="The full release history, newest first."
         meta={<StatusBadge state={DEPLOYMENT_STATUS[project.deployment]} dot={false} />}
         actions={canRecord ? <CreateDeploymentDialog projectId={project.id} /> : undefined}
       />

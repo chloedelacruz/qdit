@@ -44,7 +44,7 @@ export default async function AllMilestonesPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="All milestones"
-        description="Every milestone across the workspace, and whether it carries proof."
+        info="Every milestone across the workspace, and whether it carries proof."
       />
 
       <FilterBar
@@ -80,7 +80,7 @@ export default async function AllMilestonesPage({
         empty={{
           icon: ICON.milestone,
           title: "No milestones yet",
-          description: "Milestones you create inside a project will all show up here.",
+          description: "Create one inside a project and it shows up here.",
         }}
       >
         {page.rows.map((milestone) => (

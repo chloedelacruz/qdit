@@ -1,12 +1,13 @@
 "use client";
 
-import { Loader2, RefreshCw } from "lucide-react";
 
 import type { AccountBalance } from "@/app/api/balance/route";
+import { InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/stat-tile";
 import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
 import { formatXlm } from "@/lib/stellar";
+import { ICON } from "@/lib/icons";
 
 /**
  * The connected wallet's XLM balance.
@@ -44,9 +45,9 @@ export function WalletBalance({
           aria-label="Refresh balance"
         >
           {loading ? (
-            <Loader2 className="animate-spin" data-icon="inline-start" />
+            <ICON.spinner className="animate-spin" data-icon="inline-start" />
           ) : (
-            <RefreshCw data-icon="inline-start" />
+            <ICON.refresh data-icon="inline-start" />
           )}
           Refresh
         </Button>
@@ -60,10 +61,17 @@ export function WalletBalance({
 
       {balance && !balance.funded ? (
         <div className="space-y-2">
-          <p className="text-sm text-warning">
-            This account does not exist on {balance.network} yet, so it holds nothing
-            and cannot pay a fee.
-          </p>
+          {/* The consequence sits one tap away; the fact and its fix stay in
+              view (QDIT-34). */}
+          <div className="flex items-center gap-1.5 text-sm text-warning">
+            This account does not exist on {balance.network} yet.
+            <InfoBubble label="accounts that do not exist yet">
+              <p>
+                Until it is funded it holds nothing, so it cannot pay a fee — not for
+                a payment, and not for anchoring a milestone.
+              </p>
+            </InfoBubble>
+          </div>
           {balance.network === "testnet" ? (
             /*
               A button rather than the link this used to be. Friendbot's reply

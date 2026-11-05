@@ -61,15 +61,13 @@ test.describe("cross-project lists", () => {
   test("milestone rows carry progress and proof state", async ({ page }) => {
     await page.goto(`/projects/${PROJECT.slug}/milestones`);
 
-    // On the project's own milestones page a row has no link (RowLink drops a
-    // link to the page it is on), so the row is the innermost block holding
-    // this milestone's title and its meta line, and no other milestone's.
+    // Every milestone row links to the milestone's own page (QDIT-34), and
+    // the overlay link carries the title as its name — so the row is the one
+    // holding that link, whatever its layout does at this width.
     const row = page
-      .locator("div")
-      .filter({ hasText: MILESTONES.proposed })
-      .filter({ hasText: /tasks ·/ })
-      .filter({ hasNotText: MILESTONES.submitted })
-      .last();
+      .locator('[data-slot="list-row"]')
+      .filter({ has: page.getByRole("link", { name: MILESTONES.proposed, exact: true }) });
+    await expect(row).toHaveCount(1);
     // "Dashboard MVP" has no tasks and no proof yet.
     await expect(row).toContainText("No proof");
   });

@@ -6,6 +6,7 @@ import { DataList } from "@/components/data-list";
 import { MilestoneRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
 import { MilestoneStatusMenu } from "@/components/milestone-status-menu";
+import { CreateGate } from "@/components/create-gate";
 import { PageHeader } from "@/components/page-header";
 import { MilestoneListRow } from "@/components/rows";
 import { MILESTONE_STATUS } from "@/lib/constants";
@@ -57,8 +58,12 @@ export default async function ProjectMilestonesPage({
           { label: project.name, href: `/projects/${slug}` },
         ]}
         title="Milestones"
-        description="Proposed → Submitted → Approved. Each one carries its own proof of work."
-        actions={<CreateMilestoneDialog projectId={project.id} />}
+        info="Proposed → Submitted → Approved. Each one carries its own proof of work."
+        actions={
+          <CreateGate allowed={canEdit} label="New milestone">
+            <CreateMilestoneDialog projectId={project.id} />
+          </CreateGate>
+        }
       />
 
       <FilterBar
@@ -86,13 +91,14 @@ export default async function ProjectMilestonesPage({
         empty={{
           icon: ICON.milestone,
           title: "No milestones yet",
-          description:
-            "Group tasks into a milestone so its completion can be submitted and proved on-chain.",
+          description: "Group tasks to submit and prove them together.",
           action: (
-            <CreateMilestoneDialog
-              projectId={project.id}
-              label="Create your first milestone"
-            />
+            <CreateGate allowed={canEdit} label="Create your first milestone">
+              <CreateMilestoneDialog
+                projectId={project.id}
+                label="Create your first milestone"
+              />
+            </CreateGate>
           ),
         }}
       >

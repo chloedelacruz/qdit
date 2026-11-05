@@ -356,7 +356,10 @@ function Column({
       <div
         ref={ref}
         className={cn(
-          "transition-qdit flex max-h-[min(60vh,34rem)] flex-col gap-2 overflow-y-auto p-2",
+          // `dvh`, not `vh`: on a phone `vh` is the viewport with the browser
+          // bars retracted, so a stacked column capped at 60vh ran under the
+          // address bar until the first scroll.
+          "transition-qdit flex max-h-[min(60dvh,34rem)] flex-col gap-2 overflow-y-auto p-2",
           isOver && "bg-accent/40",
         )}
       >
@@ -371,7 +374,8 @@ function Column({
             URL like it does for the lists, so a board opened two pages deep is
             shareable and the back button pages back out of it. */}
         {hidden > 0 ? (
-          <Button asChild variant="outline" size="sm" className="w-full">
+          // 44px under a finger; the mouse keeps the compact button.
+          <Button asChild variant="outline" size="sm" className="w-full pointer-coarse:h-11">
             {/* Query-only href keeps the current pathname. */}
             <Link
               href={`?${nextQuery}`}
@@ -533,7 +537,9 @@ function Card({
         <p className="text-sm">{task.title}</p>
       )}
 
-      <div className="mt-1.5 flex items-center gap-2">
+      {/* `gap-3` under a finger: the status menu, the chip and the ⋯ button
+          are three separate targets on one short line. */}
+      <div className="mt-1.5 flex items-center gap-2 pointer-coarse:gap-3">
         {/* Stops a press on the menu from being read as the start of a drag. */}
         <span {...stopActivation}>
           <TaskStatusMenu taskId={task.id} status={task.status} />
@@ -560,7 +566,13 @@ function Card({
         ) : null}
 
         <RowMeta className="min-w-0 flex-1" items={[task.milestoneTitle, task.dueDate]} />
-        <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
+
+        {/* Guarded like the controls: the chip's name hint opens on tap, and
+            without the guard that same tap would also open the panel and leave
+            the hint floating over it. */}
+        <span {...stopActivation} className="flex">
+          <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
+        </span>
 
         {actions ? <span {...stopActivation}>{actions}</span> : null}
       </div>

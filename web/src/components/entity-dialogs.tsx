@@ -1,6 +1,5 @@
 "use client";
 
-import { Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Field, FieldRow, FormDialog, SelectField } from "@/components/form-dialog";
@@ -35,6 +34,7 @@ import {
 } from "@/lib/actions";
 import { ASSIGNABLE_ROLES, slugify } from "@/lib/schemas";
 import { NETWORK_LABELS } from "@/lib/stellar";
+import { ICON } from "@/lib/icons";
 
 /**
  * Every create and edit form in the app, built on the shared `FormDialog` shell
@@ -66,7 +66,7 @@ function TriggerButton({
 }: { label: string } & React.ComponentProps<typeof Button>) {
   return (
     <Button {...props}>
-      <Plus data-icon="inline-start" />
+      <ICON.add data-icon="inline-start" />
       {label}
     </Button>
   );
@@ -213,7 +213,7 @@ export function CreateTaskDialog({
     <FormDialog
       trigger={<TriggerButton label={label} />}
       title="New task"
-      description="Only a title is required. Everything else can be filled in later."
+      description="Only a title is required."
       submitLabel="Create task"
       successMessage="Task created"
       action={createTask}
@@ -356,7 +356,7 @@ export function CreateProjectDialog({ label = "New project" }: { label?: string 
     <FormDialog
       trigger={<TriggerButton label={label} />}
       title="New project"
-      description="A project holds its own tasks, milestones and proof trail."
+      description="Holds its own tasks, milestones and proof trail."
       submitLabel="Create project"
       successMessage="Project created"
       action={createProject}
@@ -379,7 +379,7 @@ export function CreateProjectDialog({ label = "New project" }: { label?: string 
           <Field
             id="slug"
             label="URL slug"
-            hint="Used in the address bar: /projects/your-slug. Fixed once created."
+            hint="Shown in the URL. Fixed once created."
             error={state.fieldErrors?.slug}
           >
             <Input
@@ -491,7 +491,7 @@ function MilestoneFields({
         error={state.fieldErrors?.title}
         hint={
           titleLocked
-            ? "Managed by doqtri. Rename the heading in the plan and the title follows."
+            ? "Managed by doqtri — rename the heading in the plan."
             : undefined
         }
       >
@@ -541,7 +541,7 @@ export function CreateMilestoneDialog({
     <FormDialog
       trigger={<TriggerButton label={label} />}
       title="New milestone"
-      description="Group tasks so completion can be submitted and proved on-chain."
+      description="Groups tasks whose completion is proved on-chain."
       submitLabel="Create milestone"
       successMessage="Milestone created"
       action={createMilestone}
@@ -575,7 +575,7 @@ export function EditMilestoneDialog({
   return (
     <FormDialog
       title="Edit milestone"
-      description="Status moves through the approval flow, not this form."
+      description="Change status from its status badge."
       submitLabel="Save changes"
       successMessage="Milestone updated"
       action={updateMilestone}
@@ -627,7 +627,7 @@ function ProofFields({
         // The schema requires at least one of contract id / tx hash / URL,
         // mirroring the stellar_proofs_has_evidence CHECK. The refinement
         // reports on this field, so the rule is stated here.
-        hint="Add at least one of contract ID, transaction hash or proof link."
+        hint="Needs at least one: contract ID, tx hash or proof link."
         error={state.fieldErrors?.contractId}
       >
         <Input
@@ -683,7 +683,7 @@ function ProofFields({
         id="p-walletAddress"
         label="Wallet address"
         optional
-        hint="The Stellar account that submitted the transaction."
+        hint="The account that sent the transaction."
         error={state.fieldErrors?.walletAddress}
       >
         <Input
@@ -722,16 +722,41 @@ export function CreateProofDialog({
   projectId,
   milestones,
   label = "Record proof",
+  defaultMilestoneId,
+  size,
 }: {
   projectId: string;
   milestones: Option[];
   label?: string;
+  /** Pre-selects the milestone, for the milestone's own page. */
+  defaultMilestoneId?: string;
+  size?: React.ComponentProps<typeof Button>["size"];
 }) {
+  const defaults: ProofDefaults | undefined = defaultMilestoneId
+    ? {
+        milestoneId: defaultMilestoneId,
+        contractId: null,
+        txHash: null,
+        network: "testnet",
+        walletAddress: null,
+        proofUrl: null,
+        notes: null,
+      }
+    : undefined;
+
   return (
     <FormDialog
-      trigger={<TriggerButton label={label} />}
+      trigger={
+        <TriggerButton
+          label={label}
+          size={size}
+          variant={size ? "outline" : undefined}
+          // A small trigger still needs a 44px target under a finger.
+          className={size ? "pointer-coarse:h-11" : undefined}
+        />
+      }
       title="Record proof"
-      description="Attach on-chain evidence a reviewer can verify independently."
+      description="On-chain evidence a reviewer can check."
       submitLabel="Record proof"
       successMessage="Proof recorded"
       action={createProof}
@@ -739,7 +764,7 @@ export function CreateProofDialog({
       {(state) => (
         <>
           <input type="hidden" name="projectId" value={projectId} />
-          <ProofFields state={state} milestones={milestones} />
+          <ProofFields state={state} milestones={milestones} defaults={defaults} />
         </>
       )}
     </FormDialog>
@@ -798,7 +823,7 @@ export function CreateDeploymentDialog({
     <FormDialog
       trigger={<TriggerButton label={label} />}
       title="Record deployment"
-      description="Appends to the release history. The newest entry is the current state."
+      description="Adds to the release history; the newest entry is current."
       submitLabel="Record deployment"
       successMessage="Deployment recorded"
       action={createDeployment}
@@ -981,12 +1006,12 @@ export function AddMemberDialog({
     <FormDialog
       trigger={
         <Button size="sm">
-          <Plus data-icon="inline-start" />
+          <ICON.add data-icon="inline-start" />
           {label}
         </Button>
       }
       title="Add member"
-      description="Give someone access to this project and choose what they may do."
+      description="Grant access and pick a role."
       submitLabel="Add member"
       successMessage="Member added"
       // Two actions, one dialog: the typed path resolves the identifier in a
@@ -1003,7 +1028,7 @@ export function AddMemberDialog({
             <Field
               id="m-identifier"
               label="Username, email or wallet address"
-              hint="They need a qdit account already — this grants access, it does not send an invitation."
+              hint="Needs an existing qdit account. No invite is sent."
               error={state.fieldErrors?.identifier}
             >
               <Input
@@ -1068,7 +1093,7 @@ export function EditMemberRoleDialog({
   return (
     <FormDialog
       title={`Change ${member.name}'s role`}
-      description="Roles decide what someone may create, edit and approve in this project."
+      description="Sets what they may create, edit and approve."
       submitLabel="Save role"
       successMessage="Role updated"
       action={updateProjectMemberRole}

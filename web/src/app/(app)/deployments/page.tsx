@@ -35,7 +35,7 @@ export default async function AllDeploymentsPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="All deployments"
-        description="Where every contract stands on the road from Testnet to Mainnet."
+        info="Where every contract stands on the road from Testnet to Mainnet."
       />
 
       <FilterBar
@@ -79,8 +79,7 @@ export default async function AllDeploymentsPage({
         empty={{
           icon: ICON.deployment,
           title: "No deployments yet",
-          description:
-            "Once a contract is deployed, record its ID and transaction hash on its project.",
+          description: "Record one on its project once a contract is deployed.",
         }}
       >
         {page.rows.map((deployment) => (

@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { InfoBubble } from "@/components/hint";
+import { ICON } from "@/lib/icons";
 
 export type Crumb = { label: string; href?: string };
 
 export function PageHeader({
   title,
+  info,
   description,
   actions,
   breadcrumb,
@@ -14,6 +16,12 @@ export function PageHeader({
   className,
 }: {
   title: string;
+  /**
+   * What this page is for, behind an ⓘ beside the title (QDIT-34). For the
+   * explainer sentence every page used to print under its heading.
+   */
+  info?: string;
+  /** Content, shown as text: a project's own description, written by a person. */
   description?: string;
   actions?: React.ReactNode;
   /** Ancestor trail. The current page is the title, so it is not repeated here. */
@@ -29,7 +37,7 @@ export function PageHeader({
           <ol className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
             {breadcrumb.map((crumb, index) => (
               <li key={`${crumb.label}-${index}`} className="flex items-center gap-1">
-                {index > 0 ? <ChevronRight className="size-3 opacity-50" /> : null}
+                {index > 0 ? <ICON.chevronRight className="size-3 opacity-50" /> : null}
                 {crumb.href ? (
                   <Link href={crumb.href} className="transition-qdit hover:text-foreground">
                     {crumb.label}
@@ -47,13 +55,20 @@ export function PageHeader({
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-lg">{title}</h1>
+            {info ? (
+              <InfoBubble label={title}>
+                <p>{info}</p>
+              </InfoBubble>
+            ) : null}
             {meta}
           </div>
           {description ? (
             <p className="max-w-prose text-sm text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+        {/* Wraps under the title on a narrow screen instead of pushing the page
+            sideways. */}
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
     </div>
   );
@@ -67,6 +82,12 @@ export function EmptyState({
 }: {
   icon?: React.ComponentType<{ className?: string }>;
   title: string;
+  /**
+   * What this page is for, behind an ⓘ beside the title (QDIT-34). For the
+   * explainer sentence every page used to print under its heading.
+   */
+  info?: string;
+  /** Content, shown as text: a project's own description, written by a person. */
   description?: string;
   action?: React.ReactNode;
 }) {

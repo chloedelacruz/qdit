@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2, MoreHorizontal } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -21,8 +20,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import Link from "next/link";
+
+import { Hint } from "@/components/hint";
 import type { ActionState } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * The edit/delete affordance on a list row or a board card.
@@ -33,8 +36,10 @@ import { cn } from "@/lib/utils";
  * down with it, so the dialog either never opens or opens and immediately
  * closes. Lifting the open state out is the documented way around that.
  *
- * Visible on hover and focus only. Every row would otherwise carry a permanent
- * button whose job is to be ignored, on a surface built for scanning.
+ * Visible on hover and focus only under a mouse. Every row would otherwise
+ * carry a permanent button whose job is to be ignored, on a surface built for
+ * scanning. Under a finger there is no hover, so the trigger is always shown
+ * and grows to a 44px target (QDIT-34).
  */
 export function RowActions({
   label,
@@ -45,6 +50,8 @@ export function RowActions({
   deleteTitle,
   deleteDescription,
   onDelete,
+  editBlocked,
+  deleteBlocked,
   persistent = false,
   className,
 }: {
@@ -72,6 +79,11 @@ export function RowActions({
   extraItems?: {
     key: string;
     label: string;
+    /**
+     * Shown, but not usable yet — with the reason, and where to fix it. The
+     * item never opens its dialog; that dialog would only have said no.
+     */
+    disabled?: { reason: string; fix?: { href: string; label: string } };
     render: (props: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
@@ -80,6 +92,10 @@ export function RowActions({
   deleteTitle: string;
   deleteDescription: string;
   onDelete?: () => Promise<ActionState>;
+  /** Edit is shown but not usable on this row, with the reason why. */
+  editBlocked?: string;
+  /** Delete is shown but not usable on this row, with the reason why. */
+  deleteBlocked?: string;
   className?: string;
 }) {
   const [editOpen, setEditOpen] = useState(false);
@@ -125,12 +141,12 @@ export function RowActions({
           aria-label={`Actions for this ${label}`}
           className={cn(
             "focus-ring transition-qdit grid size-6 place-items-center rounded-md text-muted-foreground",
-            "hover:bg-muted hover:text-foreground",
+            "hover:bg-muted hover:text-foreground pointer-coarse:size-11",
             !persistent &&
-              "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+              "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
           )}
         >
-          <MoreHorizontal className="size-4" />
+          <ICON.more className="size-4" />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent
@@ -142,31 +158,47 @@ export function RowActions({
             if (editOpen || confirmOpen || openExtra) event.preventDefault();
           }}
         >
-          {extras.map((item) => (
-            <DropdownMenuItem key={item.key} onSelect={() => setOpenExtra(item.key)}>
-              {item.label}
-            </DropdownMenuItem>
-          ))}
+          {extras.map((item) =>
+            item.disabled ? (
+              // Not Radix's `disabled`: that also drops pointer events, and the
+              // reason would then have nothing to hang its tooltip on.
+              <BlockedItem key={item.key} reason={item.disabled.reason} fix={item.disabled.fix}>
+                {item.label}
+              </BlockedItem>
+            ) : (
+              <DropdownMenuItem key={item.key} onSelect={() => setOpenExtra(item.key)}>
+                {item.label}
+              </DropdownMenuItem>
+            ),
+          )}
 
           {extras.length > 0 && (showEdit || showDelete) ? <DropdownMenuSeparator /> : null}
 
           {showEdit ? (
-            <DropdownMenuItem onSelect={() => setEditOpen(true)}>Edit</DropdownMenuItem>
+            editBlocked ? (
+              <BlockedItem reason={editBlocked}>Edit</BlockedItem>
+            ) : (
+              <DropdownMenuItem onSelect={() => setEditOpen(true)}>Edit</DropdownMenuItem>
+            )
           ) : null}
 
           {showEdit && showDelete ? <DropdownMenuSeparator /> : null}
 
           {showDelete ? (
-            <DropdownMenuItem variant="destructive" onSelect={() => setConfirmOpen(true)}>
-              Delete
-            </DropdownMenuItem>
+            deleteBlocked ? (
+              <BlockedItem reason={deleteBlocked}>Delete</BlockedItem>
+            ) : (
+              <DropdownMenuItem variant="destructive" onSelect={() => setConfirmOpen(true)}>
+                Delete
+              </DropdownMenuItem>
+            )
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
 
       {showEdit ? renderEdit?.({ open: editOpen, onOpenChange: setEditOpen }) : null}
 
-      {extras.map((item) => (
+      {extras.filter((item) => !item.disabled).map((item) => (
         <span key={item.key}>
           {item.render({
             open: openExtra === item.key,
@@ -194,12 +226,55 @@ export function RowActions({
                 confirmDelete();
               }}
             >
-              {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </span>
+  );
+}
+
+/**
+ * A menu item that is visible but not usable here, with the reason in a
+ * tooltip. Not Radix's `disabled`: that also drops pointer events, and the
+ * reason would then have nothing to hang its tooltip on.
+ *
+ * The fix, when there is one, is its own menu item right below — a real link
+ * the keyboard and a screen reader can reach. A link inside the tooltip could
+ * be neither, and pressing it counted as a click outside the menu.
+ */
+function BlockedItem({
+  reason,
+  fix,
+  children,
+}: {
+  reason: string;
+  fix?: { href: string; label: string };
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <Hint side="left" label={reason}>
+        <DropdownMenuItem
+          aria-disabled="true"
+          data-disabled-reason=""
+          className="cursor-not-allowed text-muted-foreground opacity-60 focus:text-muted-foreground"
+          onSelect={(event) => event.preventDefault()}
+        >
+          {children}
+          <span className="sr-only"> — {reason}</span>
+        </DropdownMenuItem>
+      </Hint>
+      {fix ? (
+        <DropdownMenuItem asChild className="pl-4 text-xs">
+          <Link href={fix.href}>
+            {fix.label}
+            <ICON.next className="ml-auto size-3" aria-hidden />
+          </Link>
+        </DropdownMenuItem>
+      ) : null}
+    </>
   );
 }

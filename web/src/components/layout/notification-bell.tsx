@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Bell } from "lucide-react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -14,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { markNotificationsRead } from "@/lib/actions";
 import type { NotificationRow } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * What happened while you were not looking.
@@ -69,30 +70,35 @@ export function NotificationBell({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          aria-label={
-            count > 0 ? `Notifications, ${count} unread` : "Notifications, none unread"
-          }
-        >
-          <Bell />
-          {count > 0 ? (
-            <span
-              aria-hidden
-              className={cn(
-                "bg-primary text-primary-foreground absolute top-1 right-1",
-                "flex min-w-4 items-center justify-center rounded-full px-1",
-                "text-[10px] leading-4 font-medium tabular-nums",
-              )}
-            >
-              {count > 9 ? "9+" : count}
-            </span>
-          ) : null}
-        </Button>
-      </PopoverTrigger>
+      {/* Icon-only, so its name is in a tooltip as well as the label (QDIT-34,
+          spec §Iconography). The hint wraps the trigger, not the other way
+          round: both are asChild, and only this order reaches the button. */}
+      <Hint label={count > 0 ? `Notifications · ${count} unread` : "Notifications"} side="bottom">
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative"
+            aria-label={
+              count > 0 ? `Notifications, ${count} unread` : "Notifications, none unread"
+            }
+          >
+            <ICON.notification />
+            {count > 0 ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "bg-primary text-primary-foreground absolute top-1 right-1",
+                  "flex min-w-4 items-center justify-center rounded-full px-1",
+                  "text-[10px] leading-4 font-medium tabular-nums",
+                )}
+              >
+                {count > 9 ? "9+" : count}
+              </span>
+            ) : null}
+          </Button>
+        </PopoverTrigger>
+      </Hint>
 
       <PopoverContent align="end" className="w-80 p-0">
         <div className="border-b px-3 py-2">
@@ -101,8 +107,7 @@ export function NotificationBell({
 
         {notifications.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            Nothing yet. Approvals, rejections and submissions on your projects
-            land here.
+            Nothing yet.
           </p>
         ) : (
           <ScrollArea viewportClassName="max-h-80">
@@ -113,8 +118,11 @@ export function NotificationBell({
                     type="button"
                     onClick={() => {
                       setOpen(false);
+                      // To the milestone itself, not the list it is somewhere in.
                       router.push(
-                        `/projects/${notification.projectSlug}/milestones`,
+                        notification.milestoneId
+                          ? `/projects/${notification.projectSlug}/milestones/${notification.milestoneId}`
+                          : `/projects/${notification.projectSlug}/milestones`,
                       );
                     }}
                     className={cn(

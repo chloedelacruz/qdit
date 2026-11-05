@@ -55,6 +55,50 @@ test.describe("project members", () => {
     await expect(page.getByText(/^(owner|admin|member|viewer)$/)).toHaveCount(0);
   });
 
+  /**
+   * The two rules RLS does not encode — nobody changes the owner's row, and an
+   * admin does not change their own — are said up front (QDIT-34): the items
+   * are shown, marked disabled, and carry the reason, rather than opening a
+   * form whose submit then refuses.
+   *
+   * The signed-in account is the owner, so its row is both the owner's and
+   * its own; Ben's row is the control that stays usable.
+   */
+  test("the owner's row offers Edit and Delete disabled, with the reason", async ({ page }) => {
+    const row = page
+      .locator('[data-slot="list-row"]')
+      .filter({ hasText: MEMBERS.owner.name });
+    await row.hover();
+    await row.getByRole("button", { name: "Actions for this member" }).click();
+
+    for (const name of ["Edit", "Delete"]) {
+      const item = page.getByRole("menuitem", { name: new RegExp(`^${name}\\b`) });
+      await expect(item).toHaveAttribute("aria-disabled", "true");
+      // The reason travels with the item for a screen reader, not only in
+      // the hover tooltip.
+      await expect(item).toContainText(/owner/i);
+    }
+
+    // Choosing a blocked item opens nothing.
+    await page.getByRole("menuitem", { name: /^Delete\b/ }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  });
+
+  test("another member's row keeps Edit and Delete usable", async ({ page }) => {
+    const row = page.locator('[data-slot="list-row"]').filter({ hasText: MEMBERS.ben.name });
+    await row.hover();
+    await row.getByRole("button", { name: "Actions for this member" }).click();
+
+    await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
   test("the roster is the page's primary object", async ({ page }) => {
     // Spec §Visual Priority: exactly one primary object per page.
     await expect(page.locator(".surface-primary")).toHaveCount(1);

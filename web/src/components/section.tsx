@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/lib/icons";
 
 import { cn } from "@/lib/utils";
 
@@ -12,16 +12,25 @@ import { cn } from "@/lib/utils";
  * one Section per page should set it — a second cancels the first out.
  */
 export function Section({
+  id,
   icon: Icon,
   title,
   count,
   href,
   priority = false,
   empty,
+  info,
+  actions,
   className,
   children,
 }: {
-  icon: LucideIcon;
+  /** Anchor target, so a row can link straight to this block. */
+  id?: string;
+  /** An `InfoBubble` beside the title, for the explainer the heading used to need. */
+  info?: React.ReactNode;
+  /** Small controls on the heading line, before "View all". */
+  actions?: React.ReactNode;
+  icon: IconComponent;
   title: string;
   /** Total available, shown beside the title. Omit when it adds nothing. */
   count?: number;
@@ -37,9 +46,16 @@ export function Section({
   const isEmpty = Array.isArray(children) && children.length === 0;
 
   return (
-    <section className={className} aria-labelledby={headingId}>
-      <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
-        <h2 id={headingId} className="flex items-center gap-1.5 text-sm font-semibold">
+    <section id={id} className={cn("scroll-mt-20", className)} aria-labelledby={headingId}>
+      {/* Wraps rather than squeezing: on a phone a heading with an info
+          bubble, a count, an action button and "View all" is wider than the
+          line, and the controls drop under the title instead of pushing the
+          page sideways. On a desktop it never wraps. */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
+        {/* The ⓘ sits beside the heading, not inside it, so it stays out of the
+            heading's — and this region's — accessible name. */}
+        <div className="flex min-w-0 items-center gap-1.5">
+        <h2 id={headingId} className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
           {/* Inline at 14px, never a tinted chip stacked above the heading
               (spec §Iconography). Accent only when this is the primary object. */}
           <Icon
@@ -56,15 +72,28 @@ export function Section({
             </span>
           ) : null}
         </h2>
+        {info}
+        </div>
 
-        {href ? (
-          <Link
-            href={href}
-            aria-label={`View all ${title.toLowerCase()}`}
-            className="transition-qdit shrink-0 text-xs text-muted-foreground hover:text-foreground"
-          >
-            View all
-          </Link>
+        {actions || href ? (
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            {actions}
+            {href ? (
+              <Link
+                href={href}
+                aria-label={`View all ${title.toLowerCase()}`}
+                className={cn(
+                  "transition-qdit relative shrink-0 text-xs text-muted-foreground hover:text-foreground",
+                  // An 11px word is a 16px target. Under a finger the hit area
+                  // grows to 44px without the heading line growing with it
+                  // (spec §Density: increase the hit area, never pad).
+                  "pointer-coarse:after:absolute pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-3.5",
+                )}
+              >
+                View all
+              </Link>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

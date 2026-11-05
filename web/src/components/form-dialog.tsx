@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import React, { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,8 +23,31 @@ import {
 } from "@/components/ui/select";
 import type { ActionState } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 const EMPTY: ActionState = {};
+
+/**
+ * Below `sm` the dialog becomes a bottom sheet (QDIT-34).
+ *
+ * A centred card on a phone floats a 343px box over a page you can no longer
+ * see, puts the submit button mid-screen, and with the keyboard up leaves the
+ * fields in a sliver. Pinned to the bottom edge at full width it sits where the
+ * thumb is, and capped at the dynamic viewport height it scrolls instead of
+ * running off the top. From `sm` up the primitive's centred dialog is
+ * untouched.
+ *
+ * Classes rather than a variant of `components/ui/dialog`, which stays the
+ * stock shadcn primitive.
+ */
+const SHEET_BELOW_SM = cn(
+  "max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0",
+  "max-sm:max-h-[calc(100dvh-2rem)] max-sm:overflow-y-auto max-sm:rounded-b-none",
+  // Rises from the edge it is pinned to, rather than zooming out of the middle.
+  "max-sm:data-open:slide-in-from-bottom-8 max-sm:data-closed:slide-out-to-bottom-8",
+  // The stock close button is 28px; a finger needs 44.
+  "pointer-coarse:[&>[data-slot=dialog-close]]:top-0.5 pointer-coarse:[&>[data-slot=dialog-close]]:right-0.5 pointer-coarse:[&>[data-slot=dialog-close]]:size-11",
+);
 
 /**
  * The shell every create/edit form in the app is built on.
@@ -98,8 +120,9 @@ export function FormDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
 
-      <DialogContent className={cn("sm:max-w-md", className)}>
-        <DialogHeader>
+      <DialogContent className={cn(SHEET_BELOW_SM, "sm:max-w-md", className)}>
+        {/* Clears the close button, which grows to 44px under a finger. */}
+        <DialogHeader className="pointer-coarse:pr-10">
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
@@ -115,12 +138,20 @@ export function FormDialog({
             </p>
           ) : null}
 
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+          {/* Below `sm` the primitive already stacks these full width, submit
+              on top; the home-indicator inset keeps them clear of the
+              gesture bar on a bottom sheet. */}
+          <DialogFooter className="max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <Button
+              type="button"
+              variant="ghost"
+              className="pointer-coarse:h-11"
+              onClick={() => setOpen(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            <Button type="submit" disabled={pending} className="pointer-coarse:h-11">
+              {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               {submitLabel}
             </Button>
           </DialogFooter>
@@ -288,7 +319,13 @@ function optionsFrom(children: React.ReactNode): ParsedOption[] {
   });
 }
 
-/** Two-up row for fields that belong together, e.g. status + due date. */
+/**
+ * Two-up row for fields that belong together, e.g. status + due date.
+ *
+ * Stacked below `sm`: two columns of a 343px sheet are 165px each, which cuts
+ * a select's value off mid-word and leaves a date input no room for its
+ * picker icon.
+ */
 export function FieldRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-3">{children}</div>;
+  return <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-3">{children}</div>;
 }

@@ -41,7 +41,7 @@ test.describe("anchor history export", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("link", { name: "Anchor history (CSV)" }).click(),
+      page.getByRole("link", { name: "Anchors CSV" }).click(),
     ]);
 
     expect(download.suggestedFilename()).toMatch(

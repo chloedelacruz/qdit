@@ -1,6 +1,5 @@
 "use client";
 
-import { CheckCircle2, Loader2, Send } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +12,7 @@ import { preparePayment, sendPayment } from "@/lib/payment/actions";
 import { paymentSchema } from "@/lib/schemas";
 import { formatXlm, toStroops, type StellarNetwork } from "@/lib/stellar";
 import { isRejectedError, signTransaction } from "@/lib/wallet";
+import { ICON } from "@/lib/icons";
 
 /**
  * Send XLM from the connected wallet.
@@ -160,7 +160,7 @@ export function SendPayment({
           id="payment-destination"
           label="Destination"
           error={fieldErrors.destination}
-          hint="The Stellar address to pay."
+          hint="A Stellar address."
         >
           <Input
             id="payment-destination"
@@ -203,7 +203,7 @@ export function SendPayment({
           label="Memo"
           optional
           error={fieldErrors.memo}
-          hint="Attached to the transaction on the ledger. At most 28 bytes."
+          hint="Public on the ledger. Max 28 bytes."
         >
           <Input
             id="payment-memo"
@@ -217,14 +217,14 @@ export function SendPayment({
 
       {overspending ? (
         <p className="text-sm text-warning">
-          That is more than this account can send. It has to keep{" "}
-          {balance ? formatXlm(balance.reserve) : "its"} XLM in reserve.
+          More than this account can send — {balance ? formatXlm(balance.reserve) : "its"} XLM
+          stays in reserve.
         </p>
       ) : null}
 
       {stage !== "idle" ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden />
+          <ICON.spinner className="size-4 animate-spin" aria-hidden />
           {stage === "preparing"
             ? "Building the transaction…"
             : stage === "signing"
@@ -245,7 +245,7 @@ export function SendPayment({
           className="surface space-y-2 rounded-xl border border-success/30 p-3"
         >
           <p className="flex items-center gap-1.5 text-sm text-success">
-            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            <ICON.verified className="size-4 shrink-0" aria-hidden />
             Sent {formatXlm(receipt.amount)} XLM
             {receipt.created ? ", creating the destination account" : ""}.
           </p>
@@ -269,9 +269,9 @@ export function SendPayment({
 
       <Button onClick={run} disabled={busy}>
         {busy ? (
-          <Loader2 className="animate-spin" data-icon="inline-start" />
+          <ICON.spinner className="animate-spin" data-icon="inline-start" />
         ) : (
-          <Send data-icon="inline-start" aria-hidden />
+          <ICON.send data-icon="inline-start" aria-hidden />
         )}
         {busy ? "Sending…" : "Send XLM"}
       </Button>

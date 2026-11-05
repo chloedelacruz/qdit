@@ -1,4 +1,3 @@
-import { CircleAlert, CircleCheck, CircleHelp, ExternalLink, History } from "lucide-react";
 
 import { HashLink } from "@/components/hash-link";
 import {
@@ -133,7 +132,7 @@ export function PlannedInDoqtri({
               <p className={TONE_CLASS[anchor.tone]}>{anchor.label}</p>
               {anchor.detail ? (
                 <p className="mt-0.5 flex items-start gap-1.5 text-muted-foreground">
-                  {anchor.changed ? <History aria-hidden className="mt-0.5 size-3.5 shrink-0" /> : null}
+                  {anchor.changed ? <ICON.history aria-hidden className="mt-0.5 size-3.5 shrink-0" /> : null}
                   {anchor.detail}
                 </p>
               ) : null}
@@ -151,7 +150,7 @@ export function PlannedInDoqtri({
             className="transition-qdit inline-flex items-center gap-1.5 font-medium hover:underline"
           >
             Open in doqtri
-            <ExternalLink aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <ICON.external aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="sr-only">(opens in a new tab)</span>
           </a>
         ) : null}
@@ -182,7 +181,7 @@ const TONE_CLASS: Record<Tone, string> = {
 
 type Verdict = {
   tone: Tone;
-  icon: typeof CircleCheck;
+  icon: typeof ICON.verified;
   label: string;
   detail: string;
 };
@@ -216,35 +215,35 @@ const VERDICT: Record<PlannedVerdict, (source: PublicDocSource, check: DocSource
     if (namesThisMilestone(node) && node.status === "Verified" && !verifiedOnChain(node)) {
       return {
         tone: "warning",
-        icon: CircleAlert,
+        icon: ICON.mismatch,
         label: `Planned in node ${source.nodeId}, plan at v${check.chainVersion} (checked on chain)`,
         detail: `${detail} The node is signed Verified, but the milestone is not approved on chain at that version (below).`,
       };
     }
     return {
       tone: "success",
-      icon: CircleCheck,
+      icon: ICON.verified,
       label: `Verified: planned in node ${source.nodeId}, plan at v${check.chainVersion}`,
       detail,
     };
   },
   unsigned: () => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Not verified",
     detail:
       "No heading of this doc is signed in doqtri for this milestone yet. qdit's link alone is not evidence of what doqtri planned.",
   }),
   "no-chain": () => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Not verified",
     detail:
       "This project is not registered on chain, so no doqtri signature can be checked against it yet. qdit's link alone is not evidence of what doqtri planned.",
   }),
   inconsistent: (_, check) => ({
     tone: "warning",
-    icon: CircleAlert,
+    icon: ICON.mismatch,
     label: "Not verified",
     detail: namesThisMilestone(check.node)
       ? "The node's record names this milestone, but does not line up with the milestone's record on chain (below)."
@@ -256,32 +255,32 @@ const VERDICT: Record<PlannedVerdict, (source: PublicDocSource, check: DocSource
   }),
   doc: () => ({
     tone: "warning",
-    icon: CircleAlert,
+    icon: ICON.mismatch,
     label: "Not verified",
     detail: "The node is signed for this milestone, but the doc anchor below does not hold.",
   }),
   unchecked: (_, check) => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Could not check",
     detail: `The milestone's record on ${net(check.network)} could not be read just now, so the node's signature is unchecked. This is not a pass: reload the page to try again.`,
   }),
   unreachable: (_, check) => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Could not check",
     detail: `DoqtriRegistry on ${net(check.network)} did not answer just now. This is not a pass: reload the page to try again.`,
   }),
   unavailable: () => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Could not check",
     detail:
       "qdit could not look up which doqtri heading this milestone is linked to just now, so its record was not read. This is not a pass: reload the page to try again.",
   }),
   unconfigured: () => ({
     tone: "muted",
-    icon: CircleHelp,
+    icon: ICON.unchecked,
     label: "Could not check",
     detail: "This qdit deployment does not read a DoqtriRegistry, so nothing here is checked.",
   }),

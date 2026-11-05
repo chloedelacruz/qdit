@@ -1,9 +1,9 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { DisabledReason, Hint, InfoBubble } from "@/components/hint";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,7 @@ import {
 } from "@/lib/constants";
 import { updateMilestoneStatus } from "@/lib/actions";
 import { cn } from "@/lib/utils";
+import { ICON } from "@/lib/icons";
 
 /**
  * Moves a milestone through the approval flow.
@@ -101,8 +102,22 @@ export function MilestoneStatusMenu({
 
   const badge = <StatusBadge state={MILESTONE_STATUS[optimistic]} dot={false} />;
 
-  // Approved is terminal, and a non-owner looking at a Submitted milestone has
-  // nothing to do either. Render the badge alone rather than a dead control.
+  // A non-owner looking at a Submitted milestone has nothing to do, but a bare
+  // badge left them wondering whether anything was happening. Say who it is
+  // waiting on — the one case where "no control" needs a reason (QDIT-34).
+  if (optimistic === "submitted" && !isOwner) {
+    return (
+      <Hint label="Waiting for the project owner to approve or reject it.">
+        <button type="button" className={cn("focus-ring inline-flex rounded-md", className)}>
+          {badge}
+          <span className="sr-only">, waiting for the project owner to decide</span>
+        </button>
+      </Hint>
+    );
+  }
+
+  // Approved is terminal, and someone who cannot edit has nothing to do here.
+  // Render the badge alone rather than a dead control.
   if (!canEdit || available.length === 0) return badge;
 
   // Rejected is the one state with a single way out and a reason to hurry: the
@@ -118,7 +133,7 @@ export function MilestoneStatusMenu({
           disabled={pending}
           onClick={() => change("submitted")}
         >
-          {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
+          {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : null}
           Re-submit
         </Button>
       </span>
@@ -180,7 +195,8 @@ export function MilestoneStatusMenu({
  * still unambiguous, and a rejection that says nothing is the complaint this
  * whole feature answers. The note about where the reason lives is on screen
  * rather than in the docs: someone about to write one deserves to know it is
- * stored in qdit and not on the ledger.
+ * stored in qdit and not on the ledger. That fact stays visible; why it is
+ * split that way sits behind the ⓘ (QDIT-34).
  */
 function DecisionDialog({
   decision,
@@ -199,6 +215,21 @@ function DecisionDialog({
   const rejecting = decision === "rejected";
   const empty = reason.trim().length === 0;
 
+  const confirm = (
+    <Button
+      type="button"
+      variant={rejecting ? "destructive" : "default"}
+      disabled={pending || (rejecting && empty)}
+      onClick={() => {
+        onConfirm(reason.trim());
+        setReason("");
+      }}
+    >
+      {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : null}
+      {decision ? milestoneActionLabel(from, decision) : ""}
+    </Button>
+  );
+
   return (
     <Dialog
       open={decision !== null}
@@ -214,9 +245,7 @@ function DecisionDialog({
             {decision ? milestoneActionLabel(from, decision) : ""}
           </DialogTitle>
           <DialogDescription>
-            {rejecting
-              ? "Say what is wrong. Whoever submitted this sees it, and without it they are left guessing."
-              : "Add a note if there is anything worth recording. Optional."}
+            {rejecting ? "Say what is wrong — the submitter sees this." : "A note is optional."}
           </DialogDescription>
         </DialogHeader>
 
@@ -237,28 +266,35 @@ function DecisionDialog({
                 : "Anything worth remembering about this decision."
             }
           />
-          <p className="text-xs text-muted-foreground">
-            Kept in qdit, not on the ledger. Anchoring records that the decision
-            happened and which wallet signed it; this is the half that says why.
-          </p>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <p>Kept in qdit, not on the ledger.</p>
+            <InfoBubble label="where the reason is kept">
+              <p>
+                Anchoring records that the decision happened and which wallet signed
+                it; this is the half that says why.
+              </p>
+            </InfoBubble>
+          </div>
         </div>
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onCancel} disabled={pending}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant={rejecting ? "destructive" : "default"}
-            disabled={pending || (rejecting && empty)}
-            onClick={() => {
-              onConfirm(reason.trim());
-              setReason("");
-            }}
-          >
-            {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
-            {decision ? milestoneActionLabel(from, decision) : ""}
-          </Button>
+          {/* Reject without a reason is refused by the server and the
+              database; the button says so rather than just greying out. */}
+          {rejecting && empty && !pending ? (
+            <DisabledReason
+              reason="Add a reason first."
+              // The footer stacks full width on a phone; keep the button the
+              // same width whether or not it is wrapped.
+              className="max-sm:[&_button]:w-full max-sm:[&>span]:w-full"
+            >
+              {confirm}
+            </DisabledReason>
+          ) : (
+            confirm
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
