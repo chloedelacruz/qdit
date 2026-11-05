@@ -386,3 +386,24 @@ export const ExternalGlyph = glyph(
     <path d="M18 14v4.5a2.5 2.5 0 0 1-2.5 2.5h-10A2.5 2.5 0 0 1 3 18.5v-10A2.5 2.5 0 0 1 5.5 6H10" />
   </>,
 );
+
+// --- Help -------------------------------------------------------------------
+
+/** The user guide: an open book. */
+export const GuideGlyph = glyph(
+  "guide",
+  <>
+    <path d="M12 6.5C10.3 5 7.9 4.5 3.5 4.5v14c4.4 0 6.8.5 8.5 2 1.7-1.5 4.1-2 8.5-2v-14c-4.4 0-6.8.5-8.5 2z" />
+    <path d="M12 6.5v14" />
+  </>,
+);
+
+/** The API reference: code, not prose. */
+export const ApiGlyph = glyph(
+  "api",
+  <>
+    <path d="m8 8-4 4 4 4" />
+    <path d="m16 8 4 4-4 4" />
+    <path d="m13.5 5-3 14" />
+  </>,
+);

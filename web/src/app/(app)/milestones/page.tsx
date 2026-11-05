@@ -44,7 +44,7 @@ export default async function AllMilestonesPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="All milestones"
-        description="Every milestone across the workspace, and whether it carries proof."
+        info="Every milestone across the workspace, and whether it carries proof."
       />
 
       <FilterBar

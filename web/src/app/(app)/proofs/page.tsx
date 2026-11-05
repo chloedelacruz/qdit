@@ -47,7 +47,7 @@ export default async function ProofRegistryPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Proof registry"
-        description="Every contract ID, transaction hash and proof link recorded across the workspace."
+        info="Every contract ID, transaction hash and proof link recorded across the workspace."
       />
 
       {/* The registry stores what was pasted; this asks the ledger. */}

@@ -8,8 +8,7 @@ import {
   EditTaskDialog,
 } from "@/components/entity-dialogs";
 import { MilestoneAnchorDialog } from "@/components/milestone-anchor";
-import { MilestoneHistoryDialog } from "@/components/milestone-history-dialog";
-import { ShareProofButton } from "@/components/share-proof-button";
+import { ShareLinkButton } from "@/components/share-link";
 import type { AnchorAction } from "@/lib/chain/actions";
 import { RowActions } from "@/components/row-actions";
 import {
@@ -102,38 +101,21 @@ export function MilestoneRowActions({
   canEdit,
   anchoring = false,
   isOwner = false,
+  persistent = false,
 }: {
   milestone: MilestoneRow;
   canEdit: boolean;
   anchoring?: boolean;
   isOwner?: boolean;
+  /** For the milestone's own page header, which has no row to hover. */
+  persistent?: boolean;
 }) {
   /*
-    History is offered whenever there is any: a milestone that has been decided
-    on or anchored has a sequence worth reading, and one that has not does not.
-  */
-  const historyItem =
-    milestone.anchors.length > 0 || milestone.reviews.length > 0
-      ? [
-          {
-            key: "history",
-            label: "History",
-            render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
-              <MilestoneHistoryDialog milestone={milestone} {...props} />
-            ),
-          },
-        ]
-      : [];
-
-  /*
-    Sharing is offered only when the project publishes, because a link to a
-    page that refuses to render is worse than no link at all. The toggle lives
-    on the project overview — see `ProjectPublishing`.
-
-    It is a visible button rather than a menu item. Public proof links answer
+    History, the certificate and the public link live on the milestone's own
+    page now (QDIT-34), one click from any row — not in dialogs behind this
+    menu. The share control stays on the row as well: public proof links answer
     the loudest complaint in the tester round, and a feature nobody can see is
-    a feature nobody uses — which is exactly what a tester had already said
-    about Re-submit hiding in a dropdown.
+    a feature nobody uses.
   */
   /*
     Only what the contract would accept next, read from the newest anchor: an
@@ -142,10 +124,28 @@ export function MilestoneRowActions({
     this transition" after the click.
   */
   const lastAnchor = milestone.anchor?.action ?? null;
-  const anchorItems: { key: AnchorAction; label: string }[] =
+  /*
+    An unregistered project cannot anchor anything, so the item says so where
+    it stands instead of opening a dialog that only explains it cannot.
+  */
+  const unregistered = !milestone.chainContractId
+    ? {
+        reason: "Register this project on chain first.",
+        fix: {
+          href: `/projects/${milestone.projectSlug}#chain`,
+          label: "Go to the project overview",
+        },
+      }
+    : undefined;
+
+  const anchorItems: {
+    key: AnchorAction;
+    label: string;
+    disabled?: typeof unregistered;
+  }[] =
     anchoring && canEdit && lastAnchor !== "approve"
       ? [
-          { key: "submit", label: "Anchor proof on chain" },
+          { key: "submit", label: "Anchor proof on chain", disabled: unregistered },
           ...(isOwner && lastAnchor === "submit"
             ? [
                 { key: "approve" as const, label: "Approve on chain" },
@@ -158,10 +158,9 @@ export function MilestoneRowActions({
   return (
     <span className="flex items-center gap-0.5">
       {milestone.publicProofs ? (
-        <ShareProofButton
+        <ShareLinkButton
           projectSlug={milestone.projectSlug}
           milestoneId={milestone.id}
-          milestoneTitle={milestone.title}
           anchored={Boolean(milestone.anchor)}
         />
       ) : null}
@@ -173,11 +172,12 @@ export function MilestoneRowActions({
         deleteTitle="Delete this milestone?"
         deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
         onDelete={deleteMilestone.bind(null, milestone.id)}
+        persistent={persistent}
         extraItems={[
-          ...historyItem,
           ...anchorItems.map((item) => ({
             key: item.key,
             label: item.label,
+            disabled: item.disabled,
             render: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
               <MilestoneAnchorDialog
                 milestoneId={milestone.id}
@@ -312,25 +312,44 @@ export function DeploymentRowActions({
  *
  * `canManage` is decided by the page from `canAdminister(role)`, matching the
  * `project_members` insert/update/delete policies. The two rules RLS does not
- * encode are enforced in the actions rather than here — an admin may not touch
- * the owner's row, and may not change their own — so the menu stays visible and
- * the refusal arrives with a reason. Hiding the controls instead would leave an
- * admin wondering why their own row looks different from everyone else's.
+ * encode — an admin may not touch the owner's row, and may not change their
+ * own — are enforced in the actions, and shown here as disabled items with the
+ * reason. Hiding the controls instead would leave an admin wondering why their
+ * own row looks different from everyone else's.
  */
 export function MemberRowActions({
   projectId,
   member,
   canManage,
+  isSelf = false,
 }: {
   projectId: string;
   member: ProjectMember;
   canManage: boolean;
+  /** This row is the signed-in person. */
+  isSelf?: boolean;
 }) {
+  // The two rules RLS does not encode, said up front now (QDIT-34) rather than
+  // after the form is submitted. The actions still enforce both.
+  const owner = member.role === "owner";
+  const editBlocked = owner
+    ? "The owner's role can't be changed."
+    : isSelf
+      ? "You can't change your own role. Ask an admin or the owner."
+      : undefined;
+  const deleteBlocked = owner
+    ? "The owner can't be removed."
+    : isSelf
+      ? "You can't remove yourself from a project you administer."
+      : undefined;
+
   return (
     <RowActions
       label="member"
       canEdit={canManage}
       canDelete={canManage}
+      editBlocked={editBlocked}
+      deleteBlocked={deleteBlocked}
       deleteTitle={`Remove ${member.name}?`}
       deleteDescription="They lose access to this project immediately. Anything they created stays, and they can be added again later."
       onDelete={removeProjectMember.bind(null, projectId, member.id)}

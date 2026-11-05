@@ -26,7 +26,7 @@ export default async function ProjectsPage({
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Projects"
-        description="Every build, with its milestones, deployment state and on-chain proof."
+        info="Every build, with its milestones, deployment state and on-chain proof."
         actions={<CreateProjectDialog />}
       />
 

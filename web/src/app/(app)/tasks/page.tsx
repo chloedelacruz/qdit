@@ -43,7 +43,7 @@ export default async function AllTasksPage({
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="All tasks"
-        description="Every task across every project you have access to."
+        info="Every task across every project you have access to."
       />
 
       <FilterBar

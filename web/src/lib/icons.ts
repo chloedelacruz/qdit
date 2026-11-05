@@ -22,6 +22,7 @@ import {
 
 import {
   AnchorGlyph,
+  ApiGlyph,
   AwaitingGlyph,
   BoardGlyph,
   CertificateGlyph,
@@ -31,6 +32,7 @@ import {
   ErrorGlyph,
   ExternalGlyph,
   FailedGlyph,
+  GuideGlyph,
   HistoryGlyph,
   InfoGlyph,
   LockedGlyph,
@@ -148,6 +150,10 @@ export const ICON = {
   error: ErrorGlyph,
   /** Asked for by name, and there is no such thing. 404 only. */
   missing: MissingGlyph,
+
+  // Help
+  guide: GuideGlyph,
+  api: ApiGlyph,
 
   // Controls (lucide — mechanics, not concepts)
   spinner: Loader2,

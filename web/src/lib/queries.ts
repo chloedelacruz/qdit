@@ -1093,6 +1093,30 @@ export async function listMilestones(
   return { rows, total: total ?? 0, matched: count ?? 0 };
 }
 
+/**
+ * One milestone, for its own page (QDIT-34). The same shape a list row gets,
+ * so the page and the rows that link to it can never disagree; RLS decides
+ * whether it is visible, and `null` is "no such milestone, or not yours".
+ */
+export async function getMilestone(
+  projectId: string,
+  milestoneId: string,
+): Promise<MilestoneRow | null> {
+  const supabase = await createClient();
+  const members = await memberMap();
+  const origin = readDoqtriOrigin();
+
+  const { data } = await supabase
+    .from("milestones")
+    .select(MILESTONE_SELECT)
+    .eq("id", milestoneId)
+    .eq("project_id", projectId)
+    .eq("done.status", "done")
+    .maybeSingle();
+
+  return data ? toMilestone(data as unknown as MilestoneRecord, members, origin) : null;
+}
+
 export async function listMilestoneOptions(
   projectId?: string,
 ): Promise<{ id: string; title: string }[]> {

@@ -20,7 +20,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Settings" description="Workspace preferences and member roles." />
+      <PageHeader title="Settings" info="Workspace preferences and member roles." />
 
       <Card className="mb-2">
         <CardHeader className="flex flex-row items-center justify-between gap-3">

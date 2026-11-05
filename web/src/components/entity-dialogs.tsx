@@ -722,14 +722,31 @@ export function CreateProofDialog({
   projectId,
   milestones,
   label = "Record proof",
+  defaultMilestoneId,
+  size,
 }: {
   projectId: string;
   milestones: Option[];
   label?: string;
+  /** Pre-selects the milestone, for the milestone's own page. */
+  defaultMilestoneId?: string;
+  size?: React.ComponentProps<typeof Button>["size"];
 }) {
+  const defaults: ProofDefaults | undefined = defaultMilestoneId
+    ? {
+        milestoneId: defaultMilestoneId,
+        contractId: null,
+        txHash: null,
+        network: "testnet",
+        walletAddress: null,
+        proofUrl: null,
+        notes: null,
+      }
+    : undefined;
+
   return (
     <FormDialog
-      trigger={<TriggerButton label={label} />}
+      trigger={<TriggerButton label={label} size={size} variant={size ? "outline" : undefined} />}
       title="Record proof"
       description="Attach on-chain evidence a reviewer can verify independently."
       submitLabel="Record proof"
@@ -739,7 +756,7 @@ export function CreateProofDialog({
       {(state) => (
         <>
           <input type="hidden" name="projectId" value={projectId} />
-          <ProofFields state={state} milestones={milestones} />
+          <ProofFields state={state} milestones={milestones} defaults={defaults} />
         </>
       )}
     </FormDialog>

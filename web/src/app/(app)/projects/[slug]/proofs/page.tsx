@@ -6,12 +6,14 @@ import { CreateProofDialog } from "@/components/entity-dialogs";
 import { DataList } from "@/components/data-list";
 import { ProofRowActions } from "@/components/entity-row-actions";
 import { FilterBar } from "@/components/filter-bar";
+import { CreateGate } from "@/components/create-gate";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { ProofListRow } from "@/components/rows";
 import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
+  canContribute,
   canEditProof,
   getCurrentUserId,
   getProject,
@@ -50,7 +52,7 @@ export default async function ProjectProofsPage({
           { label: project.name, href: `/projects/${slug}` },
         ]}
         title="Proofs"
-        description="Contract IDs, transaction hashes and proof links recorded against this project."
+        info="Contract IDs, transaction hashes and proof links recorded against this project."
         actions={
           <>
             {/* The anchor history as a file you can file. A tester copied hashes
@@ -59,12 +61,18 @@ export default async function ProjectProofsPage({
                 list below. Download attribute plus the route's own
                 Content-Disposition, so it saves rather than navigates. */}
             <Button asChild variant="outline" size="sm">
-              <a href={`/api/export/anchors?project=${project.slug}`} download>
+              <a
+                href={`/api/export/anchors?project=${project.slug}`}
+                download
+                aria-label="Anchor history (CSV)"
+              >
                 <ICON.download data-icon="inline-start" />
-                Anchor history (CSV)
+                Anchors CSV
               </a>
             </Button>
-            <CreateProofDialog projectId={project.id} milestones={milestones} />
+            <CreateGate allowed={canContribute(role)} label="Record proof">
+              <CreateProofDialog projectId={project.id} milestones={milestones} />
+            </CreateGate>
           </>
         }
       />
@@ -102,14 +110,15 @@ export default async function ProjectProofsPage({
         empty={{
           icon: ICON.proof,
           title: "No proof recorded yet",
-          description:
-            "Attach a contract ID or transaction hash to a milestone and it becomes part of the record a reviewer can verify.",
+          description: "Attach a contract ID or tx hash to a milestone.",
           action: (
-            <CreateProofDialog
-              projectId={project.id}
-              milestones={milestones}
-              label="Record your first proof"
-            />
+            <CreateGate allowed={canContribute(role)} label="Record your first proof">
+              <CreateProofDialog
+                projectId={project.id}
+                milestones={milestones}
+                label="Record your first proof"
+              />
+            </CreateGate>
           ),
         }}
       >

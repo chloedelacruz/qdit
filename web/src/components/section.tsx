@@ -12,15 +12,24 @@ import { cn } from "@/lib/utils";
  * one Section per page should set it — a second cancels the first out.
  */
 export function Section({
+  id,
   icon: Icon,
   title,
   count,
   href,
   priority = false,
   empty,
+  info,
+  actions,
   className,
   children,
 }: {
+  /** Anchor target, so a row can link straight to this block. */
+  id?: string;
+  /** An `InfoBubble` beside the title, for the explainer the heading used to need. */
+  info?: React.ReactNode;
+  /** Small controls on the heading line, before "View all". */
+  actions?: React.ReactNode;
   icon: IconComponent;
   title: string;
   /** Total available, shown beside the title. Omit when it adds nothing. */
@@ -37,8 +46,8 @@ export function Section({
   const isEmpty = Array.isArray(children) && children.length === 0;
 
   return (
-    <section className={className} aria-labelledby={headingId}>
-      <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
+    <section id={id} className={cn("scroll-mt-20", className)} aria-labelledby={headingId}>
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
         <h2 id={headingId} className="flex items-center gap-1.5 text-sm font-semibold">
           {/* Inline at 14px, never a tinted chip stacked above the heading
               (spec §Iconography). Accent only when this is the primary object. */}
@@ -55,8 +64,11 @@ export function Section({
               {count}
             </span>
           ) : null}
+          {info}
         </h2>
 
+        <div className="flex shrink-0 items-center gap-3">
+        {actions}
         {href ? (
           <Link
             href={href}
@@ -66,6 +78,7 @@ export function Section({
             View all
           </Link>
         ) : null}
+        </div>
       </div>
 
       {isEmpty ? (

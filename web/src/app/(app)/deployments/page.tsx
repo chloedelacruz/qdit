@@ -35,7 +35,7 @@ export default async function AllDeploymentsPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="All deployments"
-        description="Where every contract stands on the road from Testnet to Mainnet."
+        info="Where every contract stands on the road from Testnet to Mainnet."
       />
 
       <FilterBar

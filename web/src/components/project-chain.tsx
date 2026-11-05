@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { HashLink } from "@/components/hash-link";
+import { DisabledReason, Hint, InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
   prepareProjectRegistration,
@@ -105,37 +106,63 @@ export function ProjectChainRegistration({
   if (registration) {
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <ICON.anchor className="size-3.5" aria-hidden />
-          Registered on chain
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <ICON.anchor className="size-3.5 text-success" aria-hidden />
+          On chain
         </span>
         <HashLink value={registration.contractId} kind="contract" network={network} />
-        <span className="text-muted-foreground">by</span>
+        <Hint label="Owner account — the only one that can approve or reject on chain">
+          <span tabIndex={0} className="focus-ring flex items-center gap-1 rounded-sm">
+            <ICON.assignedToMe aria-label="Owner" className="size-3.5 text-muted-foreground" />
+          </span>
+        </Hint>
         <HashLink value={registration.ownerAddress} kind="account" network={network} />
       </div>
     );
   }
 
+  const explainer = (
+    <InfoBubble label="on-chain registration">
+      <p>
+        One transaction, once. The wallet that signs becomes the only account
+        that can approve or reject this project&apos;s milestones on chain —
+        pick the one you intend to keep. Until then, no milestone can be
+        anchored.
+      </p>
+    </InfoBubble>
+  );
+
   if (!isOwner) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Not registered on chain. Only the project owner can register it, and milestones
-        cannot be anchored until they do.
-      </p>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <ICON.unregistered className="size-3.5 text-warning" aria-hidden />
+          Not on chain
+        </span>
+        <DisabledReason reason="Only the project owner can register it.">
+          <Button variant="outline" size="sm" disabled>
+            <ICON.anchor aria-hidden />
+            Register on chain
+          </Button>
+        </DisabledReason>
+        {explainer}
+      </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      <Button variant="outline" size="sm" onClick={register} disabled={pending}>
-        {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : <ICON.anchor aria-hidden />}
-        Register on chain
-      </Button>
-      <p className="text-sm text-muted-foreground">
-        One transaction, once. The wallet you sign with becomes the only account that can
-        approve or reject this project&apos;s milestones on chain — pick the one you intend
-        to keep.
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <ICON.unregistered className="size-3.5 text-warning" aria-hidden />
+          Not on chain
+        </span>
+        <Button variant="outline" size="sm" onClick={register} disabled={pending}>
+          {pending ? <ICON.spinner className="animate-spin" aria-hidden /> : <ICON.anchor aria-hidden />}
+          Register on chain
+        </Button>
+        {explainer}
+      </div>
       {unfunded ? (
         <div className="space-y-2">
           <p className="text-sm text-warning">

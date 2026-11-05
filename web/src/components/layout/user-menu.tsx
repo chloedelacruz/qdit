@@ -75,6 +75,21 @@ export function UserMenu({ email }: { email: string }) {
           </Link>
         </DropdownMenuItem>
 
+        {/* The long-form explanations the app no longer prints inline
+            (QDIT-34) — one click from every page. */}
+        <DropdownMenuItem asChild>
+          <Link href="/user-guide">
+            <ICON.guide className="size-4" />
+            User guide
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/docs">
+            <ICON.api className="size-4" />
+            API docs
+          </Link>
+        </DropdownMenuItem>
+
         <DropdownMenuSeparator />
 
         {/* A sign-out that mutates a session must not be a GET link — a prefetch

@@ -58,6 +58,10 @@ const APP_NETWORK: StellarNetwork =
  */
 const LINE = "flex items-center gap-3";
 
+export function milestonePath(projectSlug: string, milestoneId: string): string {
+  return `/projects/${projectSlug}/milestones/${milestoneId}`;
+}
+
 export function ProjectListRow({
   project,
   actions,
@@ -109,7 +113,9 @@ export function TaskListRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <ListRow href={`/projects/${task.projectSlug}/board`} label={task.title}>
+    // Straight to the task's panel on its board (QDIT-34), not to the board
+    // with the task still to be found among the columns.
+    <ListRow href={`/projects/${task.projectSlug}/board?task=${task.id}`} label={task.title}>
       <div className={LINE}>
         {/* Reserved so titles start on a common left edge regardless of status.
             The badge doubles as the control for moving the task. */}
@@ -170,8 +176,10 @@ export function MilestoneListRow({
   const decision = milestone.reviews[0];
 
   return (
+    // The milestone's own page (QDIT-34): tasks, proof, history, certificate
+    // and the public link, one click from wherever the row is shown.
     <ListRow
-      href={`/projects/${milestone.projectSlug}/milestones`}
+      href={milestonePath(milestone.projectSlug, milestone.id)}
       label={milestone.title}
     >
       <div className={LINE}>

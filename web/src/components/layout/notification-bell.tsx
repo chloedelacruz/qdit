@@ -101,8 +101,7 @@ export function NotificationBell({
 
         {notifications.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            Nothing yet. Approvals, rejections and submissions on your projects
-            land here.
+            Nothing yet.
           </p>
         ) : (
           <ScrollArea viewportClassName="max-h-80">
@@ -113,8 +112,11 @@ export function NotificationBell({
                     type="button"
                     onClick={() => {
                       setOpen(false);
+                      // To the milestone itself, not the list it is somewhere in.
                       router.push(
-                        `/projects/${notification.projectSlug}/milestones`,
+                        notification.milestoneId
+                          ? `/projects/${notification.projectSlug}/milestones/${notification.milestoneId}`
+                          : `/projects/${notification.projectSlug}/milestones`,
                       );
                     }}
                     className={cn(

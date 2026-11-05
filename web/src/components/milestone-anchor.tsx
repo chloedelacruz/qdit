@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { HashLink } from "@/components/hash-link";
+import { DisabledReason, Hint, InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -284,28 +285,27 @@ export function MilestoneAnchorDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{VERB[action]}</DialogTitle>
+          {/* The explainer is one tap away rather than a paragraph in the way
+              of the action (QDIT-34). */}
+          <DialogTitle className="flex items-center gap-1.5">
+            {VERB[action]}
+            <InfoBubble label={VERB[action]}>
+              <p>{EXPLAINER[action]}</p>
+            </InfoBubble>
+          </DialogTitle>
           <DialogDescription>{milestoneTitle}</DialogDescription>
         </DialogHeader>
 
         <div className="min-w-0 space-y-3 text-sm">
-          <p className="text-muted-foreground">{EXPLAINER[action]}</p>
-
-          {!registered ? (
-            <p className="text-warning">
-              This project is not registered on chain yet. Its owner has to register it
-              from the project overview before any milestone can be anchored.
-            </p>
-          ) : null}
 
           {stage !== "idle" ? (
             <p className="flex items-center gap-2 text-muted-foreground">
               <ICON.spinner className="size-4 animate-spin" aria-hidden />
               {stage === "preparing"
-                ? "Checking the rules and simulating the transaction…"
+                ? "Simulating…"
                 : stage === "signing"
                   ? "Waiting for your wallet…"
-                  : "Submitted. Waiting for the network to confirm — this can take a moment when it is busy. Nothing is lost while it works."}
+                  : "Confirming on the network…"}
             </p>
           ) : null}
 
@@ -346,8 +346,7 @@ export function MilestoneAnchorDialog({
                 </span>
               </p>
               <p className="text-xs text-muted-foreground">
-                Simulated against {NETWORK_LABELS[network]}. Paid by the account
-                that signs; nothing has been sent yet.
+                Simulated on {NETWORK_LABELS[network]} · nothing sent yet
               </p>
               {quote.proofHash ? (
                 <p className="flex flex-wrap items-center gap-2 pt-1">
@@ -369,13 +368,17 @@ export function MilestoneAnchorDialog({
           */}
           {pendingTx && !done ? (
             <div className="well space-y-2 rounded-md border border-warning/40 px-3 py-2">
-              <p className="text-warning">
-                Submitted, but the network has not confirmed it yet.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                This happens when the network is busy. Your transaction is not
-                lost — it is on {NETWORK_LABELS[network]} and you can watch it
-                land on the explorer. It is recorded as soon as it confirms.
+              <p className="flex items-center gap-1.5 text-warning">
+                <ICON.pending aria-hidden className="size-3.5" />
+                Submitted · not confirmed yet
+                <InfoBubble label="an unconfirmed transaction">
+                  <p>
+                    This happens when the network is busy. The transaction is
+                    not lost — it is on {NETWORK_LABELS[network]}, you can watch
+                    it land on the explorer, and it is recorded as soon as it
+                    confirms.
+                  </p>
+                </InfoBubble>
               </p>
               <p className="flex flex-wrap items-center gap-2 pt-0.5">
                 <span className="text-xs text-muted-foreground">Transaction</span>
@@ -421,9 +424,17 @@ export function MilestoneAnchorDialog({
                 Sign and submit
               </Button>
             ) : (
-              <Button onClick={estimate} disabled={busy || !registered}>
-                {VERB[action]}
-              </Button>
+              registered ? (
+                <Button onClick={estimate} disabled={busy}>
+                  {VERB[action]}
+                </Button>
+              ) : (
+                // The menu already refuses to open this for an unregistered
+                // project; this is the same answer if it is reached anyway.
+                <DisabledReason reason="Register this project on chain first.">
+                  <Button disabled>{VERB[action]}</Button>
+                </DisabledReason>
+              )
             )
           ) : null}
         </DialogFooter>
@@ -448,10 +459,23 @@ export function AnchorBadge({
 }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5">
-      <ICON.anchor
-        className={stale ? "size-3.5 text-warning" : "size-3.5 text-success"}
-        aria-hidden
-      />
+      {/* The glyph carries the state — whole anchor, or broken arms when the
+          milestone changed after it was anchored — and says it on hover, focus
+          or tap. */}
+      <Hint label={stale ? "Stale — the milestone changed after it was anchored" : "Anchored on the ledger"}>
+        <span
+          tabIndex={0}
+          role="img"
+          aria-label={stale ? "Stale anchor" : "Anchored"}
+          className="focus-ring grid place-items-center rounded-sm"
+        >
+          {stale ? (
+            <ICON.anchorStale className="size-3.5 text-warning" />
+          ) : (
+            <ICON.anchor className="size-3.5 text-success" />
+          )}
+        </span>
+      </Hint>
       <HashLink
         value={anchor.txHash}
         kind="tx"
@@ -459,11 +483,6 @@ export function AnchorBadge({
         lead={4}
         tail={4}
       />
-      {stale ? (
-        <span className="text-xs text-warning" title="The milestone changed after this was anchored.">
-          stale
-        </span>
-      ) : null}
     </span>
   );
 }

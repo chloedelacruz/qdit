@@ -54,7 +54,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Dashboard"
-        description="Build progress, milestone state and deployment proof across every project."
+        info="Build progress, milestone state and deployment proof across every project."
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/projects">All projects</Link>
