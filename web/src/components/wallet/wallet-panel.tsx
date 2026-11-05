@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import type { AccountBalance } from "@/app/api/balance/route";
 import { HashLink } from "@/components/hash-link";
+import { InfoBubble } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { SendPayment } from "@/components/wallet/send-payment";
 import { WalletBalance } from "@/components/wallet/wallet-balance";
@@ -171,10 +172,17 @@ export function WalletPanel({
         </div>
 
         {drifted ? (
-          <p className="text-sm text-warning">
-            This is not the address you sign in with. It can still send XLM — it is your
-            wallet — but proofs signed from it will be refused.
-          </p>
+          // The warning stays one line; what it means is behind the ⓘ (QDIT-34).
+          <div className="flex items-center gap-1.5 text-sm text-warning">
+            Not the address you sign in with.
+            <InfoBubble label="a different wallet account">
+              <p>
+                It can still send XLM — it is your wallet — but proofs signed from it
+                will be refused. Switch your wallet back to your sign-in address to
+                sign proofs.
+              </p>
+            </InfoBubble>
+          </div>
         ) : null}
       </section>
 

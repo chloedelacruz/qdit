@@ -139,7 +139,7 @@ export function RowActions({
           aria-label={`Actions for this ${label}`}
           className={cn(
             "focus-ring transition-qdit grid size-6 place-items-center rounded-md text-muted-foreground",
-            "hover:bg-muted hover:text-foreground pointer-coarse:size-9",
+            "hover:bg-muted hover:text-foreground pointer-coarse:size-11",
             !persistent &&
               "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
           )}

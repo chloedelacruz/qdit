@@ -67,8 +67,10 @@ export function ShareLinkButton({
   if (!anchored) {
     return (
       <DisabledReason reason={NOT_ANCHORED} className={className}>
-        <span className="grid size-6 place-items-center rounded-md text-muted-foreground/50 pointer-coarse:size-9">
+        <span className="grid size-6 place-items-center rounded-md text-muted-foreground/50 pointer-coarse:size-11">
           <ICON.share className="size-4" />
+          {/* Names the action; the wrapper adds why it is unavailable. */}
+          <span className="sr-only">Copy public link</span>
         </span>
       </DisabledReason>
     );

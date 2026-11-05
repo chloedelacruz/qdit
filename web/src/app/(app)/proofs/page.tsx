@@ -47,7 +47,7 @@ export default async function ProofRegistryPage({
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Proof registry"
-        info="Every contract ID, transaction hash and proof link recorded across the workspace."
+        info="Every contract ID, transaction hash and proof link recorded across the workspace. Records appear as milestones are submitted."
       />
 
       {/* The registry stores what was pasted; this asks the ledger. */}
@@ -88,8 +88,8 @@ export default async function ProofRegistryPage({
         empty={{
           icon: ICON.proof,
           title: "Nothing recorded yet",
-          description:
-            "Proof records appear here as milestones are submitted. Attach a contract ID or transaction hash to a milestone to start the trail.",
+          // One line (QDIT-34). Where records come from is the header's ⓘ.
+          description: "Attach a contract ID or tx hash to a milestone to start.",
         }}
       >
         {page.rows.map((proof) => (
@@ -135,9 +135,11 @@ function IdentifierResult({
         <p className="text-sm font-medium">
           Not recorded in this workspace
         </p>
+        {/* The explorer button on the hash below is the "you can still open
+            it" this used to spell out (QDIT-34). */}
         <p className="mt-1 text-xs text-muted-foreground">
-          That looks like a valid {kind === "contract" ? "contract ID" : "transaction hash"},
-          but nothing here references it. You can still open it on the explorer.
+          A valid {kind === "contract" ? "contract ID" : "transaction hash"}, but nothing here
+          references it.
         </p>
         <div className="mt-2.5">
           <HashLink value={query} kind={kind} network="mainnet" lead={10} tail={10} />

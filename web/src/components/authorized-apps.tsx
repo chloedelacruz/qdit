@@ -43,10 +43,9 @@ export function AuthorizedApps({ apps }: { apps: AuthorizedApp[] | null }) {
 
   if (apps.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No apps are connected. When you allow an app such as doqtri to act for you, it shows up
-        here.
-      </p>
+      // What an authorized app is lives in the ⓘ beside the card title
+      // (QDIT-34), so the empty state only has to say there are none.
+      <p className="text-sm text-muted-foreground">No apps connected yet.</p>
     );
   }
 
@@ -106,9 +105,8 @@ export function AuthorizedApps({ apps }: { apps: AuthorizedApp[] | null }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect {confirming?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              It stops being able to act for you in qdit straight away. Anything it already
-              created — milestones, links — stays. To use it with qdit again, connect from that
-              app.
+              It loses access straight away. What it created stays; to use it again,
+              connect from that app.
             </AlertDialogDescription>
           </AlertDialogHeader>
 

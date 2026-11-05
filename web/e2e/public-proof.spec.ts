@@ -202,3 +202,44 @@ test.describe("public proof page, signed out", () => {
     expect(response?.status()).toBe(404);
   });
 });
+
+/**
+ * The other end of the same link, signed in (QDIT-34): the milestone page and
+ * its row carry the public link inline, where the share dialog used to be.
+ *
+ * The fixture milestone has never been anchored, so this is the held-back
+ * state: the URL is shown, but copying it is disabled with the reason —
+ * a public page with nothing on the ledger is not a proof anyone should be
+ * sent. Signed in as the fixture's owner, which this project's default
+ * session already is.
+ */
+test.describe("public link on the milestone page, signed in", () => {
+  test("shows the URL and holds copying back until the milestone is anchored", async ({
+    page,
+  }) => {
+    const { slug, milestoneId, milestoneTitle } = fixture!.published;
+    await page.goto(`/projects/${slug}/milestones/${milestoneId}`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(milestoneTitle);
+
+    const field = page.locator("dl").first();
+    await expect(field).toContainText(`/p/${slug}/${milestoneId}`);
+
+    const gate = field.locator('[data-slot="disabled-reason"]');
+    await expect(gate).toHaveAttribute("aria-disabled", "true");
+    await expect(gate.getByRole("button", { name: "Copy public link" })).toBeDisabled();
+    await expect(gate).toContainText(/anchor/i);
+    await expect(page.getByRole("link", { name: "Open public page" })).toHaveCount(0);
+  });
+
+  test("the milestone's row carries the same held-back link, not a dialog", async ({ page }) => {
+    const { slug, milestoneTitle } = fixture!.published;
+    await page.goto(`/projects/${slug}/milestones`);
+
+    const row = page
+      .locator('[data-slot="list-row"]')
+      .filter({ has: page.getByRole("link", { name: milestoneTitle, exact: true }) });
+    await expect(row.locator('[data-slot="disabled-reason"]')).toContainText(/anchor/i);
+    // The dialog this replaced is gone.
+    await expect(row.getByRole("button", { name: /^Share/ })).toHaveCount(0);
+  });
+});

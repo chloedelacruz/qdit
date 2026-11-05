@@ -63,8 +63,7 @@ export default async function ProjectsPage({
         empty={{
           icon: ICON.project,
           title: "No projects yet",
-          description:
-            "A project holds your tasks, milestones and the proof trail you will hand to a grant reviewer.",
+          description: "Tasks, milestones and the proof trail for a grant reviewer.",
           action: <CreateProjectDialog label="Create your first project" />,
         }}
       >

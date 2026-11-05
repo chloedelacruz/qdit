@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -69,30 +70,35 @@ export function NotificationBell({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          aria-label={
-            count > 0 ? `Notifications, ${count} unread` : "Notifications, none unread"
-          }
-        >
-          <ICON.notification />
-          {count > 0 ? (
-            <span
-              aria-hidden
-              className={cn(
-                "bg-primary text-primary-foreground absolute top-1 right-1",
-                "flex min-w-4 items-center justify-center rounded-full px-1",
-                "text-[10px] leading-4 font-medium tabular-nums",
-              )}
-            >
-              {count > 9 ? "9+" : count}
-            </span>
-          ) : null}
-        </Button>
-      </PopoverTrigger>
+      {/* Icon-only, so its name is in a tooltip as well as the label (QDIT-34,
+          spec §Iconography). The hint wraps the trigger, not the other way
+          round: both are asChild, and only this order reaches the button. */}
+      <Hint label={count > 0 ? `Notifications · ${count} unread` : "Notifications"} side="bottom">
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative"
+            aria-label={
+              count > 0 ? `Notifications, ${count} unread` : "Notifications, none unread"
+            }
+          >
+            <ICON.notification />
+            {count > 0 ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "bg-primary text-primary-foreground absolute top-1 right-1",
+                  "flex min-w-4 items-center justify-center rounded-full px-1",
+                  "text-[10px] leading-4 font-medium tabular-nums",
+                )}
+              >
+                {count > 9 ? "9+" : count}
+              </span>
+            ) : null}
+          </Button>
+        </PopoverTrigger>
+      </Hint>
 
       <PopoverContent align="end" className="w-80 p-0">
         <div className="border-b px-3 py-2">

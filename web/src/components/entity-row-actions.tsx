@@ -170,7 +170,7 @@ export function MilestoneRowActions({
         canEdit={canEdit}
         canDelete={canEdit}
         deleteTitle="Delete this milestone?"
-        deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, but they lose their milestone.`}
+        deleteDescription={`"${milestone.title}" will be removed. Its tasks stay, without a milestone.`}
         onDelete={deleteMilestone.bind(null, milestone.id)}
         persistent={persistent}
         extraItems={[
@@ -223,7 +223,7 @@ export function ProofRowActions({
       canEdit={canEdit}
       canDelete={canEdit}
       deleteTitle="Delete this proof?"
-      deleteDescription="The on-chain transaction is unaffected — only this record of it is removed."
+      deleteDescription="Only this record is removed. The transaction stays on-chain."
       onDelete={deleteProof.bind(null, proof.id)}
       renderEdit={(props) => (
         <EditProofDialog
@@ -262,7 +262,7 @@ export function ProjectRowActions({
       canDelete={canAdminister}
       persistent={persistent}
       deleteTitle="Delete this project?"
-      deleteDescription={`"${project.name}" and every task, milestone, deployment and proof inside it will be removed. This cannot be undone.`}
+      deleteDescription={`"${project.name}" and all its tasks, milestones, deployments and proofs will be removed. This cannot be undone.`}
       onDelete={deleteProject.bind(null, project.id)}
       renderEdit={(props) => (
         <EditProjectDialog
@@ -301,7 +301,7 @@ export function DeploymentRowActions({
       canEdit={false}
       canDelete={canAdminister}
       deleteTitle="Delete this deployment record?"
-      deleteDescription="The release history is a log. Removing an entry rewrites it — prefer recording a correction."
+      deleteDescription="This rewrites the release log. Prefer recording a correction."
       onDelete={deleteDeployment.bind(null, deployment.id)}
     />
   );
@@ -351,7 +351,7 @@ export function MemberRowActions({
       editBlocked={editBlocked}
       deleteBlocked={deleteBlocked}
       deleteTitle={`Remove ${member.name}?`}
-      deleteDescription="They lose access to this project immediately. Anything they created stays, and they can be added again later."
+      deleteDescription="They lose access now. What they created stays; you can add them back."
       onDelete={removeProjectMember.bind(null, projectId, member.id)}
       renderEdit={(props) => (
         <EditMemberRoleDialog

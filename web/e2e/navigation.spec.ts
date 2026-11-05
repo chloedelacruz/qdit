@@ -29,7 +29,16 @@ test.describe("app shell navigation", () => {
 
   test("only one nav item is active at a time", async ({ page }) => {
     await page.goto("/tasks");
-    await expect(page.locator('nav [aria-current="page"]')).toHaveCount(1);
+    // `:visible`, because the phone's tab bar is in the DOM at every width
+    // (hidden from `lg` up) and marks its own Tasks tab current as well.
+    await expect(page.locator('nav [aria-current="page"]:visible')).toHaveCount(1);
+  });
+
+  test("the phone's tab bar stays out of the way on a desktop", async ({ page }) => {
+    await page.goto("/dashboard");
+
+    await expect(page.locator("aside")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden();
   });
 
   /**
@@ -71,6 +80,21 @@ test.describe("app shell navigation", () => {
     await page.getByRole("button", { name: /^Account:/ }).click();
     await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  });
+
+  /**
+   * The long-form explanations the pages no longer print inline (QDIT-34) are
+   * one click from anywhere: on a desktop, in the account menu.
+   */
+  test("the account menu links the user guide and the API docs", async ({ page }) => {
+    await page.goto("/dashboard");
+
+    await page.getByRole("button", { name: /^Account:/ }).click();
+    await expect(page.getByRole("menuitem", { name: "User guide" })).toHaveAttribute(
+      "href",
+      "/user-guide",
+    );
+    await expect(page.getByRole("menuitem", { name: "API docs" })).toHaveAttribute("href", "/docs");
   });
 
   test("unknown routes 404", async ({ page }) => {

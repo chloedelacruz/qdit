@@ -43,7 +43,7 @@ export default async function AllTasksPage({
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="All tasks"
-        info="Every task across every project you have access to."
+        info="Every task in every project you can see."
       />
 
       <FilterBar
@@ -93,7 +93,7 @@ export default async function AllTasksPage({
         empty={{
           icon: ICON.task,
           title: "No tasks yet",
-          description: "Tasks you create inside a project will all show up here.",
+          description: "Create one inside a project and it shows up here.",
         }}
       >
         {page.rows.map((task) => (

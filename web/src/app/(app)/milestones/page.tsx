@@ -80,7 +80,7 @@ export default async function AllMilestonesPage({
         empty={{
           icon: ICON.milestone,
           title: "No milestones yet",
-          description: "Milestones you create inside a project will all show up here.",
+          description: "Create one inside a project and it shows up here.",
         }}
       >
         {page.rows.map((milestone) => (

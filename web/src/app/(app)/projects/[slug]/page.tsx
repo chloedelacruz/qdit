@@ -85,42 +85,42 @@ export default async function ProjectOverviewPage({
               ].filter((link): link is { label: string; href: string } => link !== null)}
             />
             <span className="hidden items-center gap-2 sm:flex">
-            {project.repoUrl ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={project.repoUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  Repo
-                  <ICON.external data-icon="inline-end" />
-                </a>
-              </Button>
-            ) : null}
-            {project.docsUrl ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={project.docsUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  Docs
-                  <ICON.external data-icon="inline-end" />
-                </a>
-              </Button>
-            ) : null}
-            {project.demoUrl ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={project.demoUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  Demo
-                  <ICON.external data-icon="inline-end" />
-                </a>
-              </Button>
-            ) : null}
+              {project.repoUrl ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={project.repoUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Repo
+                    <ICON.external data-icon="inline-end" />
+                  </a>
+                </Button>
+              ) : null}
+              {project.docsUrl ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={project.docsUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Docs
+                    <ICON.external data-icon="inline-end" />
+                  </a>
+                </Button>
+              ) : null}
+              {project.demoUrl ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={project.demoUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Demo
+                    <ICON.external data-icon="inline-end" />
+                  </a>
+                </Button>
+              ) : null}
             </span>
             <Button asChild size="sm">
               <Link href={`/projects/${slug}/board`}>
@@ -139,7 +139,9 @@ export default async function ProjectOverviewPage({
         }
       />
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Two-up even on a phone: one tile per row spent a full screen on four
+          numbers before the first milestone, and every value here is short. */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <StatTile
           label="Tasks"
           value={`${project.doneCount}/${project.taskCount}`}

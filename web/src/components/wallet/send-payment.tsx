@@ -160,7 +160,7 @@ export function SendPayment({
           id="payment-destination"
           label="Destination"
           error={fieldErrors.destination}
-          hint="The Stellar address to pay."
+          hint="A Stellar address."
         >
           <Input
             id="payment-destination"
@@ -203,7 +203,7 @@ export function SendPayment({
           label="Memo"
           optional
           error={fieldErrors.memo}
-          hint="Attached to the transaction on the ledger. At most 28 bytes."
+          hint="Public on the ledger. Max 28 bytes."
         >
           <Input
             id="payment-memo"
@@ -217,8 +217,8 @@ export function SendPayment({
 
       {overspending ? (
         <p className="text-sm text-warning">
-          That is more than this account can send. It has to keep{" "}
-          {balance ? formatXlm(balance.reserve) : "its"} XLM in reserve.
+          More than this account can send — {balance ? formatXlm(balance.reserve) : "its"} XLM
+          stays in reserve.
         </p>
       ) : null}
 

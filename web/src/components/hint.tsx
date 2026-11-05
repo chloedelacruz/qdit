@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 
 type Side = "top" | "right" | "bottom" | "left";
 
+const TAP_GRACE_MS = 400;
+
 export function Hint({
   label,
   side = "top",
@@ -37,9 +39,20 @@ export function Hint({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // When a tap opened it. Radix follows a touch with its own close requests —
+  // the trigger's click and the pointerleave that fires after pointerup — which
+  // would shut the tooltip the instant it appeared. Those arrive within a few
+  // hundred milliseconds; a later tap outside still closes it as normal.
+  const tappedAt = useRef(0);
 
   return (
-    <Tooltip open={open} onOpenChange={setOpen}>
+    <Tooltip
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && Date.now() - tappedAt.current < TAP_GRACE_MS) return;
+        setOpen(next);
+      }}
+    >
       <TooltipTrigger
         asChild
         // A touch has no hover. Toggle on tap, and stop Radix from treating the
@@ -47,7 +60,10 @@ export function Hint({
         onPointerDown={(event) => {
           if (event.pointerType !== "touch") return;
           event.preventDefault();
-          setOpen((current) => !current);
+          setOpen((current) => {
+            tappedAt.current = current ? 0 : Date.now();
+            return !current;
+          });
         }}
       >
         {children}
@@ -88,7 +104,7 @@ export function IconAction({
     "focus-ring transition-qdit grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground",
     "hover:bg-muted hover:text-foreground",
     // A finger needs 44px; the glyph stays 16px and the hit area grows.
-    "pointer-coarse:size-9",
+    "pointer-coarse:size-11",
     className,
   );
   const glyph = <Icon className="size-4" />;
@@ -144,7 +160,8 @@ export function InfoBubble({
         className={cn(
           "focus-ring transition-qdit inline-grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground",
           "hover:text-foreground data-[state=open]:text-foreground",
-          "pointer-coarse:size-8",
+          // 44px under a finger, without pushing the heading line taller.
+          "pointer-coarse:-my-3 pointer-coarse:size-11",
           className,
         )}
       >

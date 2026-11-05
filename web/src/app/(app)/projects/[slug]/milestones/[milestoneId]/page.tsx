@@ -35,6 +35,14 @@ import { cn } from "@/lib/utils";
 /** Anchoring is off unless this deployment names a contract. */
 const ANCHORING = Boolean(process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID);
 
+/**
+ * A 24px heading button is a 44px target under a finger: the hit area grows
+ * through a pseudo-element, so the heading line itself stays its desktop height
+ * (spec §Density: increase the hit area, never pad).
+ */
+const COARSE_HIT =
+  "relative pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5";
+
 type Params = Promise<{ slug: string; milestoneId: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -130,74 +138,84 @@ export default async function MilestonePage({ params }: { params: Params }) {
       />
 
       {milestone.description ? (
-        <p className="-mt-2 mb-5 max-w-prose text-sm leading-6 whitespace-pre-line text-muted-foreground">
+        // `wrap-break-word`: a pasted URL has no spaces to wrap at, and at
+        // 375px it pushed the whole page sideways.
+        <p className="-mt-2 mb-5 max-w-prose text-sm leading-6 wrap-break-word whitespace-pre-line text-muted-foreground">
           {milestone.description}
         </p>
       ) : null}
 
       {/* The facts, as a definition list: label, value, and the one action
-          each fact implies. Two columns on a desktop, one on a phone. */}
-      <dl className="surface grid overflow-hidden rounded-xl border border-border sm:grid-cols-2">
-        <Fact icon={ICON.task} label="Progress">
-          <span className="tabular-nums">
-            {milestone.doneCount}/{milestone.taskCount} tasks
-          </span>
-          <span
-            className="well h-1 w-20 overflow-hidden rounded-full"
-            role="progressbar"
-            aria-label="Progress"
-            aria-valuenow={pct}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-          </span>
-          <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
-          {milestone.dueDate ? (
-            <span className="text-xs text-muted-foreground tabular-nums">Due {milestone.dueDate}</span>
-          ) : null}
-        </Fact>
+          each fact implies. Two columns on a desktop, one on a phone.
 
-        <Fact icon={ICON.anchor} label="On chain">
-          {milestone.anchor ? (
-            <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
-          ) : registered ? (
-            <span className="text-muted-foreground">Not anchored</span>
-          ) : (
-            <Link
-              href={`/projects/${slug}#chain`}
-              className="transition-qdit inline-flex items-center gap-1.5 text-warning hover:underline"
-            >
-              <ICON.unregistered aria-hidden className="size-3.5" />
-              Project not registered
-            </Link>
-          )}
-          {registered && milestone.chainContractId ? (
-            <span className="text-xs text-muted-foreground">
-              {NETWORK_LABELS[milestone.network]}
+          Keyed to the width the list actually has (`@container` on the
+          wrapper — a container cannot query itself), not to the viewport: at
+          `sm` a viewport breakpoint split the list into two 300px columns and
+          squeezed every value beside its label. Two columns from `@2xl`, where
+          each is still wider than 21rem. */}
+      <div className="@container">
+        <dl className="surface grid overflow-hidden rounded-xl border border-border @2xl:grid-cols-2">
+          <Fact icon={ICON.task} label="Progress">
+            <span className="tabular-nums">
+              {milestone.doneCount}/{milestone.taskCount} tasks
             </span>
-          ) : null}
-        </Fact>
-
-        <Fact icon={ICON.public} label="Public link" className="sm:col-span-2">
-          {milestone.publicProofs ? (
-            <ShareLinkField
-              projectSlug={slug}
-              milestoneId={milestone.id}
-              anchored={Boolean(milestone.anchor)}
-              className="min-w-0 flex-1"
-            />
-          ) : (
-            <Link
-              href={`/projects/${slug}#publishing`}
-              className="transition-qdit inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:underline"
+            <span
+              className="well h-1 w-20 overflow-hidden rounded-full"
+              role="progressbar"
+              aria-label="Progress"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
             >
-              <ICON.private aria-hidden className="size-3.5" />
-              Private — publishing is off for this project
-            </Link>
-          )}
-        </Fact>
-      </dl>
+              <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
+            {milestone.dueDate ? (
+              <span className="text-xs text-muted-foreground tabular-nums">Due {milestone.dueDate}</span>
+            ) : null}
+          </Fact>
+
+          <Fact icon={ICON.anchor} label="On chain">
+            {milestone.anchor ? (
+              <AnchorBadge anchor={milestone.anchor} stale={milestone.anchorStale} />
+            ) : registered ? (
+              <span className="text-muted-foreground">Not anchored</span>
+            ) : (
+              <Link
+                href={`/projects/${slug}#chain`}
+                className="transition-qdit inline-flex items-center gap-1.5 text-warning hover:underline"
+              >
+                <ICON.unregistered aria-hidden className="size-3.5" />
+                Project not registered
+              </Link>
+            )}
+            {registered && milestone.chainContractId ? (
+              <span className="text-xs text-muted-foreground">
+                {NETWORK_LABELS[milestone.network]}
+              </span>
+            ) : null}
+          </Fact>
+
+          <Fact icon={ICON.public} label="Public link" className="@2xl:col-span-2">
+            {milestone.publicProofs ? (
+              <ShareLinkField
+                projectSlug={slug}
+                milestoneId={milestone.id}
+                anchored={Boolean(milestone.anchor)}
+                className="min-w-0 flex-1"
+              />
+            ) : (
+              <Link
+                href={`/projects/${slug}#publishing`}
+                className="transition-qdit inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:underline"
+              >
+                <ICON.private aria-hidden className="size-3.5" />
+                Private — publishing is off for this project
+              </Link>
+            )}
+          </Fact>
+        </dl>
+      </div>
 
       <Section
         priority
@@ -276,7 +294,7 @@ export default async function MilestonePage({ params }: { params: Params }) {
         actions={
           anchored ? (
             <Hint label="One file, verifiable against the ledger without qdit">
-              <Button asChild variant="outline" size="xs">
+              <Button asChild variant="outline" size="xs" className={COARSE_HIT}>
                 <a href={certificateHref} download>
                   <ICON.certificate data-icon="inline-start" />
                   Certificate
@@ -284,7 +302,13 @@ export default async function MilestonePage({ params }: { params: Params }) {
               </Button>
             </Hint>
           ) : (
-            <DisabledReason reason="Anchor this milestone first — a certificate of nothing proves nothing.">
+            // The wrapper takes the pointer for a disabled button, so it is the
+            // one that grows; the negative margin keeps the heading line from
+            // growing with it.
+            <DisabledReason
+              reason="Anchor this milestone first — a certificate of nothing proves nothing."
+              className="pointer-coarse:-my-2.5 pointer-coarse:py-2.5"
+            >
               <Button variant="outline" size="xs" disabled>
                 <ICON.certificate data-icon="inline-start" />
                 Certificate
@@ -313,10 +337,14 @@ function Fact({
   children: React.ReactNode;
 }) {
   return (
+    // Label above value on a phone, beside it from `@sm` — the same wrapper
+    // the grid queries. Below `@2xl` a fact is the full width of the list, and
+    // from `@2xl` each column is still past 21rem, so `@sm` holds for one fact
+    // as well as for the list.
     <div
       className={cn(
-        "flex min-w-0 flex-col gap-1.5 border-b border-border/70 px-3 py-2.5 last:border-b-0 sm:flex-row sm:items-center sm:gap-3",
-        "sm:[&:nth-child(odd):not(:last-child)]:border-r",
+        "flex min-w-0 flex-col gap-1.5 border-b border-border/70 px-3 py-2.5 last:border-b-0 @sm:flex-row @sm:items-center @sm:gap-3",
+        "@2xl:[&:nth-child(odd):not(:last-child)]:border-r",
         className,
       )}
     >

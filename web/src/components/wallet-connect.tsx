@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { HashLink } from "@/components/hash-link";
+import { InfoBubble } from "@/components/hint";
 import type { StellarNetwork } from "@/lib/stellar";
 import { currentAddress, onWalletState } from "@/lib/wallet";
 
@@ -90,11 +91,18 @@ export function WalletConnect({
       </div>
 
       {drifted ? (
-        <p className="text-sm text-muted-foreground">
-          Your wallet extension is on a different account (
-          <span className="font-mono text-xs">{connected}</span>). Switch it back
-          to the address above to sign proofs from this account.
-        </p>
+        // One line on screen; which account, and what to do, behind the ⓘ
+        // (QDIT-34).
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          Your wallet is on a different account.
+          <InfoBubble label="a different wallet account">
+            <p>
+              The extension is on{" "}
+              <span className="font-mono text-xs break-all">{connected}</span>. Switch it
+              back to the address above to sign proofs from this account.
+            </p>
+          </InfoBubble>
+        </div>
       ) : null}
     </div>
   );

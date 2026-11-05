@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { HashLink } from "@/components/hash-link";
+import { DisabledReason } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/form-dialog";
@@ -28,6 +29,13 @@ export function VerifyTx() {
   const [error, setError] = useState<string | null>(null);
 
   const valid = isTxHash(hash);
+
+  const submit = (
+    <Button type="submit" disabled={!valid || pending}>
+      {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
+      Verify
+    </Button>
+  );
 
   async function verify(event: React.FormEvent) {
     event.preventDefault();
@@ -65,7 +73,7 @@ export function VerifyTx() {
         <Input
           value={hash}
           onChange={(event) => setHash(event.target.value)}
-          placeholder="Paste a transaction hash to verify it on-chain…"
+          placeholder="Paste a transaction hash…"
           spellCheck={false}
           aria-label="Transaction hash"
           aria-invalid={hash.length > 0 && !valid}
@@ -85,10 +93,22 @@ export function VerifyTx() {
           ))}
         </SelectField>
 
-        <Button type="submit" disabled={!valid || pending}>
-          {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
-          Verify
-        </Button>
+        {/* Disabled until there is something to check, with the reason on the
+            button rather than nowhere (QDIT-34). Pending needs no reason: the
+            spinner is the reason. */}
+        {!valid && !pending ? (
+          <DisabledReason
+            reason={
+              hash.length === 0
+                ? "Paste a transaction hash first."
+                : "A transaction hash is 64 hex characters."
+            }
+          >
+            {submit}
+          </DisabledReason>
+        ) : (
+          submit
+        )}
       </form>
 
       {hash.length > 0 && !valid ? (

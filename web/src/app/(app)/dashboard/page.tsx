@@ -107,7 +107,7 @@ export default async function DashboardPage() {
           title="Awaiting approval"
           count={summary.openMilestoneCount}
           href="/milestones?status=submitted"
-          empty="No milestones are waiting on a reviewer."
+          empty="Nothing waiting on a reviewer."
         >
           {attention.rows.map((milestone) => (
             <MilestoneListRow key={milestone.id} milestone={milestone} showProject />

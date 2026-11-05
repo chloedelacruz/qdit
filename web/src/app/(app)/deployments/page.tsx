@@ -79,8 +79,7 @@ export default async function AllDeploymentsPage({
         empty={{
           icon: ICON.deployment,
           title: "No deployments yet",
-          description:
-            "Once a contract is deployed, record its ID and transaction hash on its project.",
+          description: "Record one on its project once a contract is deployed.",
         }}
       >
         {page.rows.map((deployment) => (

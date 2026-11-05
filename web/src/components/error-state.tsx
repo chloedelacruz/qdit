@@ -56,7 +56,7 @@ export function ErrorState({
 
       <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
         {description ??
-          "Something went wrong fetching this page. It is usually the connection or an expired session, and trying again is often enough."}
+          "Usually the connection or an expired session. Trying again often fixes it."}
       </p>
 
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
