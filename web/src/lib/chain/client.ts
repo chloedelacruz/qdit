@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Address, Networks, TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
+import { Address, Networks, TransactionBuilder, rpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import type { Result } from "@stellar/stellar-sdk/contract";
 
 import { Client as MilestoneProofClient } from "@/lib/chain/bindings";
@@ -367,6 +367,33 @@ function assertInvocation(
   }
 
   return { source: tx.source };
+}
+
+/**
+ * What a signed envelope asks the contract to do: who signed it, and the
+ * arguments it passes to `method`, decoded to plain values (an address comes
+ * back as its strkey).
+ *
+ * `assertInvocation` leaves arguments to the caller. This is how a caller
+ * reads them, before anything is sent.
+ */
+export function signedInvocation(
+  envelopeXdr: string,
+  config: ChainConfig,
+  method: ChainMethod,
+): { source: string; args: unknown[] } {
+  const { source } = assertInvocation(envelopeXdr, config, method);
+
+  const tx = TransactionBuilder.fromXDR(envelopeXdr, NETWORK_PASSPHRASE[config.network]);
+  // assertInvocation has already proved this is one invokeHostFunction op.
+  const operation = tx.operations[0];
+  if (operation.type !== "invokeHostFunction") throw new Error("Expected a contract invocation.");
+  const args = operation.func
+    .invokeContract()
+    .args()
+    .map((arg) => scValToNative(arg) as unknown);
+
+  return { source, args };
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   buildUnsigned,
   chainConfig,
   reconcileHash,
+  signedInvocation,
   submitSigned,
   type ChainConfig,
   type ChainMethod,
@@ -18,7 +19,7 @@ import {
 import { MILESTONE_OWNER_ONLY, type MilestoneStatus } from "@/lib/constants";
 import { isWalletAddress } from "@/lib/stellar";
 import { createClient, getUser } from "@/lib/supabase/server";
-import type { ActionState } from "@/lib/actions";
+import { createProjectWithId, type ActionState } from "@/lib/actions";
 
 /**
  * Anchoring a milestone on chain.
@@ -46,6 +47,11 @@ export type PreparedAnchor = {
   network: "testnet" | "mainnet";
   /** Null for project registration, which anchors no content. */
   proofHash: string | null;
+  /**
+   * Set only by `prepareNewProjectRegistration`: the id the project will be
+   * created under, which is the id this transaction registers.
+   */
+  projectId?: string;
   /**
    * The simulated fee in stroops, for showing what this costs *before* the
    * wallet prompt. A tester asked for it in those words; another wanted to
@@ -213,6 +219,158 @@ export async function submitProjectRegistration(
   } catch (error) {
     return { error: describe(error) };
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Creating a project already registered                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Build `create_project_ref` for a project that doesn't exist yet.
+ *
+ * The create dialog asks for the signature *before* the project is created
+ * (QDIT-36). The owner sees the wallet prompt, confirms, and only then does
+ * the project exist. So the id is chosen here, signed for, and handed back for
+ * `createRegisteredProject` to insert under.
+ *
+ * No owner check: the caller is about to create the project, so the caller is
+ * its owner by construction. The insert policy enforces that when the row is
+ * written.
+ */
+export async function prepareNewProjectRegistration(signer: string): Promise<Prepared> {
+  const config = chainConfig();
+  if (!config) return { ok: false, error: notConfigured() };
+  if (!isWalletAddress(signer)) {
+    return { ok: false, error: "That is not a Stellar account address." };
+  }
+
+  const user = await getUser();
+  if (!user) return { ok: false, error: "Your session expired. Sign in again." };
+
+  const projectId = crypto.randomUUID();
+
+  try {
+    const built = await buildUnsigned({
+      config,
+      signer,
+      method: "create_project_ref",
+      args: { project_id: projectId, owner: signer },
+    });
+    return {
+      ok: true,
+      data: {
+        xdr: built.xdr,
+        contractId: config.contractId,
+        network: config.network,
+        proofHash: null,
+        feeStroops: built.feeStroops,
+        projectId,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: describe(error) };
+  }
+}
+
+/**
+ * Create the project and register it on chain, as one act.
+ *
+ * The form carries the project's fields plus `chainProjectId` and `signedXdr`,
+ * the id and signature from `prepareNewProjectRegistration`. The order is what
+ * keeps the two sides in step:
+ *
+ *   1. Check the signed transaction registers *this* id for its own signer.
+ *      Nothing is written yet.
+ *   2. Insert the row. If the form bounces (a slug already taken), stop: the
+ *      transaction is never sent, so nothing reaches the chain.
+ *   3. Submit. If it fails, delete the row again. Either both exist or
+ *      neither does, and the person is told nothing was created.
+ *
+ * The one in-between state is a submission that reached the network but
+ * didn't confirm in time. The project stays, because the registration may
+ * still land. It is reported as pending, as on the project page.
+ */
+export async function createRegisteredProject(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const config = chainConfig();
+  if (!config) return { error: notConfigured() };
+
+  const projectId = String(formData.get("chainProjectId") ?? "");
+  const signedXdr = String(formData.get("signedXdr") ?? "");
+  if (!projectId || !signedXdr) {
+    return { error: "The registration was incomplete. Nothing was created." };
+  }
+
+  // Step 1. The signed envelope came from the browser, so it is untrusted: it
+  // must call create_project_ref on our contract (signedInvocation), for the
+  // id being created, owned by the account that signed it. That signer is
+  // what gets recorded as the owner.
+  let signer: string;
+  try {
+    const { source, args } = signedInvocation(signedXdr, config, "create_project_ref");
+    if (args[0] !== projectId || args[1] !== source) {
+      return { error: "That signature is for a different registration. Nothing was created." };
+    }
+    signer = source;
+  } catch (error) {
+    return { error: describe(error) };
+  }
+
+  // Step 2.
+  const created = await createProjectWithId(formData, projectId);
+  if (!created.ok) return created;
+
+  const supabase = await createClient();
+
+  // Step 3.
+  let result: Awaited<ReturnType<typeof submitSigned>>;
+  try {
+    result = await submitSigned(signedXdr, config, "create_project_ref");
+  } catch (error) {
+    const { error: deleteError } = await supabase.from("projects").delete().eq("id", projectId);
+    revalidateAll();
+    if (deleteError) {
+      // The row outlived its registration, so "nothing was created" would be
+      // false, and keeping the dialog open would only bounce a retry off its
+      // own slug. Same shape as the warning below: the project exists.
+      return {
+        ok: true,
+        id: projectId,
+        error: `${describe(error)} The project was created but isn't registered, and it couldn't be removed. Use Register on chain on its page, or delete it.`,
+      };
+    }
+    return { error: `${describe(error)} Nothing was created.` };
+  }
+
+  if (result.status === "pending") {
+    return { ok: true, id: projectId, pending: true, txHash: result.txHash };
+  }
+
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      chain_contract_id: config.contractId,
+      chain_network: config.network,
+      chain_owner_address: signer,
+      chain_registered_tx: result.txHash,
+      chain_registered_at: new Date().toISOString(),
+    })
+    .eq("id", projectId);
+
+  revalidateAll();
+  if (error) {
+    // On chain, but the row didn't take it. The project exists either way, so
+    // this is a success with a warning, not a failure that keeps the dialog
+    // open over a project that was made.
+    return {
+      ok: true,
+      id: projectId,
+      error: `Registered on chain, but qdit could not record it: ${error.message}`,
+    };
+  }
+  return { ok: true, id: projectId };
 }
 
 /* -------------------------------------------------------------------------- */

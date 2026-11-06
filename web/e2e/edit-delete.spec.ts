@@ -291,6 +291,11 @@ test.describe("adding a member", () => {
     await page.getByRole("button", { name: "New project" }).click();
     await page.getByLabel("Name").fill(name);
     await page.getByRole("button", { name: "Create project" }).click();
+    // With anchoring on, creating first asks for a wallet signature (QDIT-36).
+    // This browser has no wallet, so take the way past it.
+    if (process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID) {
+      await page.getByRole("button", { name: "Create without registering" }).click();
+    }
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
   }
 

@@ -104,12 +104,28 @@ function prefersDark(): boolean {
   return document.documentElement.classList.contains("dark");
 }
 
-/** Opens the wallet chooser. Resolves with the connected address. */
-export async function connectWallet(): Promise<string> {
+/**
+ * Opens the wallet chooser. Resolves with the connected address.
+ *
+ * With a `container`, the chooser renders inside that element instead of as
+ * a fixed overlay on <body>. Use one when an open modal dialog is asking: the
+ * dialog turns off pointer events outside itself, so an overlay on <body>
+ * can't be clicked.
+ */
+export async function connectWallet(container?: HTMLElement): Promise<string> {
   const wallets = await kit();
   if (!wallets) throw new Error("Connecting a wallet needs a browser.");
 
-  const { address } = await wallets.authModal();
+  // The kit draws the chooser, refreshes the wallet list for up to a second,
+  // and only then starts listening. A list left over from an earlier refresh
+  // (`hasWalletInstalled` makes one) can be clicked during that gap, and the
+  // click is lost, leaving the caller waiting. With the list empty, wallets
+  // appear only once the kit is listening. Its ✕ has the same gap and can't be
+  // covered from here; a second click lands.
+  const { allowedWallets } = await import("@creit.tech/stellar-wallets-kit/state");
+  allowedWallets.value = [];
+
+  const { address } = await wallets.authModal(container ? { container } : undefined);
   return address;
 }
 

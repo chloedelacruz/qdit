@@ -14,6 +14,8 @@ import { NETWORK_LABELS } from "@/lib/stellar";
 
 export const metadata: Metadata = { title: "Projects" };
 
+const ANCHORING = Boolean(process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID);
+
 export default async function ProjectsPage({
   searchParams,
 }: {
@@ -27,7 +29,7 @@ export default async function ProjectsPage({
       <PageHeader
         title="Projects"
         info="Every build, with its milestones, deployment state and on-chain proof."
-        actions={<CreateProjectDialog />}
+        actions={<CreateProjectDialog anchoring={ANCHORING} />}
       />
 
       <FilterBar
@@ -64,7 +66,7 @@ export default async function ProjectsPage({
           icon: ICON.project,
           title: "No projects yet",
           description: "Tasks, milestones and the proof trail for a grant reviewer.",
-          action: <CreateProjectDialog label="Create your first project" />,
+          action: <CreateProjectDialog label="Create your first project" anchoring={ANCHORING} />,
         }}
       >
         {page.rows.map((project) => (

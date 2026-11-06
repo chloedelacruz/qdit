@@ -105,7 +105,7 @@ export default defineConfig({
       // once in this project and again in `mutations`.
       // `mobile-*` is the `mobile` project's: those specs assert a phone
       // layout (tab bar, touch targets) that a desktop viewport does not have.
-      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth)\.spec\.ts/,
+      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth|project-register)\.spec\.ts/,
     },
 
     {
@@ -146,13 +146,14 @@ export default defineConfig({
        *
        * After `edits`, for the reason `edits` follows `mutations`: the extra
        * milestone would move the exact count `lists.spec.ts` asserts if the two
-       * overlapped. Signed in, because the consent screen needs a session;
+       * overlapped. project-register.spec.ts is here for the same reason: it
+       * creates a project. Signed in, because the consent screen needs a session;
        * public-proof.spec.ts drops it with its own `test.use`.
        */
       name: "publishing",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["edits"],
-      testMatch: /(public-proof|oauth)\.spec\.ts/,
+      testMatch: /(public-proof|oauth|project-register)\.spec\.ts/,
     },
 
     {

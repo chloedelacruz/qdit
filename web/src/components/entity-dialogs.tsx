@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useOptimistic, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Field, FieldRow, FormDialog, SelectField } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,24 @@ import {
   updateTask,
   type ActionState,
 } from "@/lib/actions";
-import { ASSIGNABLE_ROLES, slugify } from "@/lib/schemas";
+import {
+  ASSIGNABLE_ROLES,
+  fieldErrorsOf,
+  projectFormValues,
+  projectSchema,
+  slugify,
+} from "@/lib/schemas";
+import {
+  createRegisteredProject,
+  prepareNewProjectRegistration,
+} from "@/lib/chain/actions";
+import {
+  runRegistration,
+  type RegistrationOutcome,
+  type RegistrationStage,
+} from "@/lib/chain/register-project";
 import { NETWORK_LABELS } from "@/lib/stellar";
+import { APP_NETWORK } from "@/lib/wallet";
 import { ICON } from "@/lib/icons";
 
 /**
@@ -346,20 +363,165 @@ function ProjectCommonFields({
   );
 }
 
-export function CreateProjectDialog({ label = "New project" }: { label?: string }) {
+/**
+ * What to tell someone whose project wasn't created because registration
+ * didn't go through. Each case ends by saying nothing was made, since the
+ * whole point of the order is that a project and its registration go together.
+ */
+function notCreatedMessage(outcome: Exclude<RegistrationOutcome, { kind: "submitted" }>): string {
+  switch (outcome.kind) {
+    case "no_wallet":
+      return "No wallet was found in this browser, so the project couldn't be registered. Install Varial and try again, or create it without registering.";
+    case "declined":
+      return "Signing was cancelled. Nothing was created.";
+    case "wrong_network":
+      return `${outcome.message} Nothing was created.`;
+    case "unfunded":
+      return `That account doesn't exist on ${NETWORK_LABELS[APP_NETWORK]} yet, so it can't pay the fee. Fund it on the Wallet page, then try again. Nothing was created.`;
+    case "error":
+      return `${outcome.message} Nothing was created.`;
+  }
+}
+
+type CreateStage = "idle" | RegistrationStage;
+
+const SUBMIT_LABEL: Record<CreateStage, string> = {
+  idle: "Create project",
+  wallet: "Waiting for your wallet…",
+  submitting: "Creating project…",
+};
+
+export function CreateProjectDialog({
+  label = "New project",
+  anchoring = false,
+}: {
+  label?: string;
+  /**
+   * Whether this deployment has a `milestone_proof` contract. When it does,
+   * creating a project registers it on chain in the same step (QDIT-36).
+   */
+  anchoring?: boolean;
+}) {
   // The slug is derived from the name until the user edits it themselves —
   // after that it is theirs, and retyping the name must not overwrite it.
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
 
+  // Optimistic because it changes while the form's action is still running. A
+  // plain state set in there would wait for the action to end, so "Waiting for
+  // your wallet…" would never paint. This also falls back to "idle" by itself
+  // when the action ends.
+  const [stage, setStage] = useOptimistic<CreateStage>("idle");
+  // Shown once registration has failed, so it doesn't invite skipping it.
+  const [offerSkip, setOfferSkip] = useState(false);
+  // Where the wallet chooser renders when no wallet is connected. Inside the
+  // dialog, because the dialog blocks clicks on anything outside it.
+  const walletSlot = useRef<HTMLDivElement>(null);
+  // Set by Create without registering for the one submit it starts.
+  const skipRegistration = useRef(false);
+
+  /**
+   * The dialog can't be closed while it waits on the wallet. Closing it would
+   * unmount the chooser without settling its promise, and the dialog would
+   * reopen stuck on "Waiting for your wallet…". The way out is the wallet's
+   * own close: the chooser's ✕ or the extension's Reject, which come back as
+   * "Signing was cancelled". A ref, not the stage state, because the success
+   * close runs in the same tick that the stage is reset.
+   */
+  const [open, setOpen] = useState(false);
+  const busy = useRef(false);
+  function changeOpen(next: boolean) {
+    if (!next && busy.current) return;
+    setOpen(next);
+  }
+
+  /**
+   * Create project, then wallet, then confirm, then the project exists.
+   *
+   * The wallet comes first. The fields are checked here, then the owner signs
+   * the registration for an id chosen in advance, and only then is the
+   * project created and the transaction sent, together, by
+   * `createRegisteredProject`. If the prompt is closed or anything fails,
+   * nothing is created and the dialog stays open with the reason.
+   *
+   * **Create without registering** is the way out for someone with no wallet
+   * to hand. It's offered only after a registration attempt has failed, and
+   * it creates the project unregistered, as before QDIT-36. Register on chain
+   * on the project page covers it later.
+   */
+  async function create(previous: ActionState, formData: FormData): Promise<ActionState> {
+    const skip = skipRegistration.current;
+    skipRegistration.current = false;
+    if (!anchoring || skip) {
+      const result = await createProject(previous, formData);
+      if (result.ok) setOfferSkip(false);
+      return result;
+    }
+
+    // Before the wallet: nobody should sign for a form that's about to bounce.
+    const parsed = projectSchema.safeParse(projectFormValues(formData));
+    if (!parsed.success) return { fieldErrors: fieldErrorsOf(parsed.error) };
+
+    let projectId = "";
+    busy.current = true;
+    const outcome = await runRegistration(
+      APP_NETWORK,
+      {
+        prepare: async (signer) => {
+          const prepared = await prepareNewProjectRegistration(signer);
+          if (prepared.ok && prepared.data.projectId) projectId = prepared.data.projectId;
+          return prepared;
+        },
+        submit: (signedXdr) => {
+          formData.set("chainProjectId", projectId);
+          formData.set("signedXdr", signedXdr);
+          return createRegisteredProject(previous, formData);
+        },
+      },
+      {
+        onlyIfWalletInstalled: true,
+        chooserContainer: walletSlot.current ?? undefined,
+        // In a transition because the later stages arrive after an await.
+        onStage: (next) => startTransition(() => setStage(next)),
+      },
+    );
+    busy.current = false;
+
+    if (outcome.kind !== "submitted") {
+      setOfferSkip(true);
+      return { error: notCreatedMessage(outcome) };
+    }
+
+    const { result } = outcome;
+    if (!result.ok) {
+      // A field error (a slug already taken) is fixed in the form, not skipped.
+      if (!result.fieldErrors) setOfferSkip(true);
+      return result;
+    }
+
+    setOfferSkip(false);
+    if (result.pending) {
+      toast.message("Still confirming on chain", {
+        description:
+          "The project is created. Its registration is on the network and is saved once it confirms. If the project page doesn't show it shortly, use Register on chain there.",
+        duration: 10_000,
+      });
+    } else if (result.error) {
+      toast.warning(result.error);
+    }
+    return result;
+  }
+
   return (
     <FormDialog
       trigger={<TriggerButton label={label} />}
+      open={open}
+      onOpenChange={changeOpen}
       title="New project"
       description="Holds its own tasks, milestones and proof trail."
-      submitLabel="Create project"
+      submitLabel={SUBMIT_LABEL[stage]}
       successMessage="Project created"
-      action={createProject}
+      action={create}
     >
       {(state) => (
         <>
@@ -395,6 +557,34 @@ export function CreateProjectDialog({ label = "New project" }: { label?: string 
           </Field>
 
           <ProjectCommonFields state={state} />
+
+          {anchoring ? (
+            <p className="text-xs text-muted-foreground">
+              Your wallet asks you to confirm before the project is created. The
+              account you sign with is the only one that can approve or reject
+              its milestones on chain.
+            </p>
+          ) : null}
+
+          {/* The kit renders its chooser in here, inline, when it needs one. */}
+          <div ref={walletSlot} data-slot="wallet-chooser" />
+
+          {anchoring && offerSkip && stage === "idle" ? (
+            <Button
+              // Not a submit button. Pressing Enter in a field submits through
+              // the form's first submit button, and that must stay Create.
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={(event) => {
+                skipRegistration.current = true;
+                event.currentTarget.form?.requestSubmit();
+              }}
+            >
+              Create without registering
+            </Button>
+          ) : null}
         </>
       )}
     </FormDialog>
