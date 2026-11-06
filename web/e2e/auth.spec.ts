@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { Keypair } from "@stellar/stellar-sdk";
+import { expect, test, type Page } from "@playwright/test";
+
+import { giveWallet } from "./test-wallet";
 
 /**
  * Runs in the `anon` project — no saved session. Everything here describes what
@@ -40,6 +43,40 @@ test.describe("authentication", () => {
     await expect(page.getByRole("button", { name: "Connect wallet" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Lost your wallet?" })).toBeVisible();
+  });
+
+  /**
+   * The first setup step exists for someone with no wallet, who otherwise sits
+   * on this page believing it is broken. The kit always lists wallets that need
+   * no extension as available, so those must not count as "found" (QDIT-39).
+   */
+  const firstStep = (page: Page) => page.locator("li", { hasText: "Install a Stellar wallet" });
+
+  test("with no wallet extension, the first step says to install one", async ({ page }) => {
+    await page.goto("/login");
+
+    // "pending", not just the advice: the advice also shows while the check runs.
+    await expect(firstStep(page)).toHaveAttribute("data-state", "pending");
+    await expect(firstStep(page).getByRole("link", { name: "Varial" })).toBeVisible();
+    await expect(page.getByText("Found in this browser.")).toHaveCount(0);
+  });
+
+  test("with a wallet extension, the first step says it found it", async ({ page }) => {
+    await giveWallet(page, Keypair.random());
+    await page.goto("/login");
+
+    await expect(firstStep(page)).toHaveAttribute("data-state", "done");
+    await expect(page.getByText("Found in this browser.")).toBeVisible();
+    await expect(firstStep(page).getByRole("link", { name: "Varial" })).toHaveCount(0);
+  });
+
+  test("wallets that need no extension are still offered", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Connect wallet" }).click();
+
+    for (const wallet of ["Albedo", "xBull", "GHOSTSIG"]) {
+      await expect(page.locator("li", { hasText: wallet })).toBeVisible();
+    }
   });
 
   test("there is no way to sign up with an email and password", async ({ page }) => {

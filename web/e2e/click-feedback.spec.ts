@@ -6,11 +6,17 @@ import { expect, test, type Page } from "@playwright/test";
  * The server is made slow on purpose: every RSC request — the payload a
  * client-side navigation fetches — is held for a second, which is the case
  * that used to show nothing at all between the click and the new page.
+ *
+ * Prefetches are refused, and this goes in before the page loads. A finished
+ * prefetch makes the navigation instant, and the bar is built not to flash on
+ * an instant one, so otherwise these would race the prefetch (QDIT-38).
  */
 
 async function slowNavigations(page: Page) {
   await page.route("**/*", async (route) => {
-    if (route.request().headers()["rsc"]) {
+    const headers = route.request().headers();
+    if (headers["next-router-prefetch"]) return route.abort();
+    if (headers["rsc"]) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     await route.continue();
@@ -21,9 +27,9 @@ const bar = (page: Page) => page.getByRole("progressbar", { name: "Loading page"
 
 test.describe("click feedback", () => {
   test("the progress bar and the pending nav item show at once, then clear", async ({ page }) => {
+    await slowNavigations(page);
     await page.goto("/dashboard");
     await expect(bar(page)).toHaveAttribute("data-state", "idle");
-    await slowNavigations(page);
 
     const settings = page
       .getByRole("navigation")
@@ -41,8 +47,8 @@ test.describe("click feedback", () => {
 
   test("with Reduce Motion the bar is a still, full-width line", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/dashboard");
     await slowNavigations(page);
+    await page.goto("/dashboard");
 
     await page.getByRole("navigation").getByRole("link", { name: "Wallet", exact: true }).first().click();
 

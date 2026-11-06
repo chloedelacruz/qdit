@@ -27,8 +27,6 @@ async function openMilestone(page: Page, title: string) {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
 }
 
-const history = (page: Page) => page.getByRole("region", { name: /^History(?![a-z])/ });
-
 test.describe("milestone rows under a finger", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`/projects/${PROJECT.slug}/milestones`);
@@ -62,27 +60,6 @@ test.describe("milestone page under a finger", () => {
 
     await trigger.tap();
     await expect(page.getByRole("dialog")).toBeHidden();
-  });
-
-  /**
-   * The reason a control is disabled must reach a phone too: Radix tooltips
-   * open on hover and focus only, and `Hint` adds the tap.
-   */
-  test("tapping a disabled Certificate shows the reason", async ({ page }) => {
-    await openMilestone(page, MILESTONES.proposed);
-
-    test.skip(
-      (await history(page).getByRole("link", { name: "Certificate" }).count()) > 0,
-      `${MILESTONES.proposed} has been anchored on this database, so its certificate is live`,
-    );
-
-    const gate = history(page).locator('[data-slot="disabled-reason"]', { hasText: "Certificate" });
-    test.skip((await gate.count()) === 0, "anchoring is not configured for this deployment");
-    await gate.tap();
-
-    const tooltip = page.getByRole("tooltip");
-    await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText(/anchor/i);
   });
 
   test("its header actions are on show", async ({ page }) => {

@@ -19,9 +19,17 @@ import { MILESTONES, PROJECT, TASKS } from "./seed";
  * Seed facts used (seed.ts / supabase/seed.sql):
  *   - `MILESTONES.submitted` holds `TASKS.inProgress`, and is the one milestone
  *     on the dashboard's "Awaiting approval" panel.
- *   - `MILESTONES.proposed` is the newest milestone, never advanced past
- *     Proposed, so it is the one least likely to have been anchored by hand.
+ *
+ * What a milestone says before it is anchored, on a project not yet registered,
+ * is in `milestone-gates.spec.ts`: the seeded rows are both on production.
  */
+
+/**
+ * A click-through's URL changes only when the server answers, and with every
+ * worker hitting one local server that has taken 15s. Slow, not broken, so this
+ * allows what `navigationTimeout` allows a page load (QDIT-38).
+ */
+const expectNavigation = expect.configure({ timeout: 30_000 });
 
 const MILESTONE_URL = new RegExp(`/projects/${PROJECT.slug}/milestones/[0-9a-f-]{36}$`);
 
@@ -29,7 +37,7 @@ const MILESTONE_URL = new RegExp(`/projects/${PROJECT.slug}/milestones/[0-9a-f-]
 async function openMilestone(page: Page, title: string) {
   await page.goto(`/projects/${PROJECT.slug}/milestones`);
   await page.getByRole("link", { name: title, exact: true }).click();
-  await expect(page).toHaveURL(MILESTONE_URL);
+  await expectNavigation(page).toHaveURL(MILESTONE_URL);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
 }
 
@@ -50,7 +58,7 @@ test.describe("reaching a milestone", () => {
       .getByRole("link", { name: MILESTONES.submitted, exact: true })
       .click();
 
-    await expect(page).toHaveURL(MILESTONE_URL);
+    await expectNavigation(page).toHaveURL(MILESTONE_URL);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(MILESTONES.submitted);
   });
 
@@ -135,7 +143,7 @@ test.describe("the milestone page", () => {
   test("a task row opens the board with that task's panel", async ({ page }) => {
     await section(page, "Tasks").getByRole("link", { name: TASKS.inProgress, exact: true }).click();
 
-    await expect(page).toHaveURL(
+    await expectNavigation(page).toHaveURL(
       new RegExp(`/projects/${PROJECT.slug}/board\\?task=[0-9a-f-]{36}$`),
     );
     await expect(page.getByRole("dialog")).toContainText(TASKS.inProgress);
@@ -153,11 +161,11 @@ test.describe("the milestone page", () => {
     );
 
     await crumbs.getByRole("link", { name: "Milestones", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT.slug}/milestones$`));
+    await expectNavigation(page).toHaveURL(new RegExp(`/projects/${PROJECT.slug}/milestones$`));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Milestones");
 
     await page.goBack();
-    await expect(page).toHaveURL(MILESTONE_URL);
+    await expectNavigation(page).toHaveURL(MILESTONE_URL);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(MILESTONES.submitted);
   });
 
@@ -207,56 +215,5 @@ test.describe("keyboard", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("dialog")).not.toBeEmpty();
-  });
-
-  test("a disabled Certificate says why on keyboard focus", async ({ page }) => {
-    await openMilestone(page, MILESTONES.proposed);
-    const history = section(page, "History");
-
-    test.skip(
-      (await history.getByRole("link", { name: "Certificate" }).count()) > 0,
-      `${MILESTONES.proposed} has been anchored on this database, so its certificate is live`,
-    );
-
-    const gate = history.locator('[data-slot="disabled-reason"]', { hasText: "Certificate" });
-    // Without a contract there is nothing to anchor, so no certificate to gate.
-    test.skip((await gate.count()) === 0, "anchoring is not configured for this deployment");
-    await expect(gate).toHaveAttribute("aria-disabled", "true");
-    await expect(gate.getByRole("button", { name: "Certificate" })).toBeDisabled();
-    // The reason is in the DOM for a screen reader, not only in the tooltip.
-    await expect(gate).toContainText(/anchor/i);
-
-    // Reached with Tab, straight after the heading's ⓘ: a disabled <button>
-    // takes no focus, and the wrapper is what keeps the reason reachable.
-    await page.getByRole("button", { name: "About the history" }).focus();
-    await page.keyboard.press("Tab");
-    await expect(gate).toBeFocused();
-
-    await expect(page.getByRole("tooltip")).toBeVisible();
-    await expect(page.getByRole("tooltip")).toContainText(/anchor/i);
-  });
-
-  test("anchoring an unregistered project's milestone says why instead of opening", async ({
-    page,
-  }) => {
-    await openMilestone(page, MILESTONES.proposed);
-
-    const unregistered = page.locator(`a[href="/projects/${PROJECT.slug}#chain"]`);
-    test.skip(
-      (await unregistered.count()) === 0,
-      "the seeded project is registered on chain on this database",
-    );
-
-    await page.getByRole("button", { name: "Actions for this milestone" }).first().click();
-    const item = page.getByRole("menuitem", { name: /^Anchor proof on chain/ });
-    test.skip((await item.count()) === 0, "anchoring is not configured for this deployment");
-
-    await expect(item).toHaveAttribute("aria-disabled", "true");
-    await item.hover();
-    await expect(page.getByRole("tooltip")).toContainText("Register this project on chain first.");
-
-    // Choosing it opens nothing.
-    await item.click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });

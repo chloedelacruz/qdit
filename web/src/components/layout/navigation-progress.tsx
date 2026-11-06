@@ -48,12 +48,15 @@ export function NavigationProgress() {
       doneNavigation();
     }
 
-    // Bubble phase on the document: React's handlers have run, so a link
-    // whose click was cancelled reports `defaultPrevented`.
-    document.addEventListener("click", onClick);
+    // Capture phase, ahead of React's handlers. `next/link` calls
+    // `preventDefault()` on every client navigation it takes over, so by the
+    // bubble phase each of them looks cancelled and the bar never starts. The
+    // cost is that a Link whose own onClick cancels the click would show the
+    // bar until the timeout. Nothing in the app does that today.
+    document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onPopState);
     return () => {
-      document.removeEventListener("click", onClick);
+      document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
     };
   }, []);
