@@ -305,7 +305,7 @@ const SECTIONS: Section[] = [
     note: (
       <>
         Registering is what lets you anchor milestones. Choose the wallet you
-        intend to keep. If you close the prompt, nothing is created: try again,
+        intend to keep. If you close the chooser or the prompt, nothing is created: try again,
         or click <strong>Create without registering</strong> and register later
         with <strong>Register on chain</strong> on the project overview.
       </>

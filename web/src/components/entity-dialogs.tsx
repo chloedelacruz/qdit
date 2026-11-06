@@ -370,8 +370,6 @@ function ProjectCommonFields({
  */
 function notCreatedMessage(outcome: Exclude<RegistrationOutcome, { kind: "submitted" }>): string {
   switch (outcome.kind) {
-    case "no_wallet":
-      return "No wallet was found in this browser, so the project couldn't be registered. Install Varial and try again, or create it without registering.";
     case "declined":
       return "Signing was cancelled. Nothing was created.";
     case "wrong_network":
@@ -445,8 +443,9 @@ export function CreateProjectDialog({
    * nothing is created and the dialog stays open with the reason.
    *
    * **Create without registering** is the way out for someone with no wallet
-   * to hand. It's offered only after a registration attempt has failed, and
-   * it creates the project unregistered, as before QDIT-36. Register on chain
+   * to hand: they close the chooser, and it appears. It's offered only after a
+   * registration attempt has failed, and it creates the project unregistered,
+   * as before QDIT-36. Register on chain
    * on the project page covers it later.
    */
   async function create(previous: ActionState, formData: FormData): Promise<ActionState> {
@@ -479,7 +478,6 @@ export function CreateProjectDialog({
         },
       },
       {
-        onlyIfWalletInstalled: true,
         chooserContainer: walletSlot.current ?? undefined,
         // In a transition because the later stages arrive after an await.
         onStage: (next) => startTransition(() => setStage(next)),

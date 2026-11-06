@@ -12,7 +12,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const wallet = {
   currentAddress: vi.fn<() => Promise<string | undefined>>(),
   connectWallet: vi.fn<(container?: HTMLElement) => Promise<string>>(),
-  hasWalletInstalled: vi.fn<() => Promise<boolean>>(),
   walletNetwork: vi.fn<() => Promise<"testnet" | "mainnet" | null | undefined>>(),
   signTransaction: vi.fn<(xdr: string) => Promise<string>>(),
 };
@@ -23,7 +22,6 @@ vi.mock("@/lib/wallet", async (importOriginal) => {
     ...real,
     currentAddress: () => wallet.currentAddress(),
     connectWallet: (container?: HTMLElement) => wallet.connectWallet(container),
-    hasWalletInstalled: () => wallet.hasWalletInstalled(),
     walletNetwork: () => wallet.walletNetwork(),
     signTransaction: (xdr: string) => wallet.signTransaction(xdr),
   };
@@ -89,27 +87,14 @@ describe("runRegistration", () => {
       runRegistration("testnet", steps, { chooserContainer: container }),
     ).resolves.toMatchObject({ kind: "submitted" });
     expect(wallet.connectWallet).toHaveBeenCalledWith(container);
-    // The project-page button never asked, and still doesn't.
-    expect(wallet.hasWalletInstalled).not.toHaveBeenCalled();
   });
 
-  it("with onlyIfWalletInstalled, opens the chooser when a wallet is installed", async () => {
+  it("closing the chooser builds nothing", async () => {
     wallet.currentAddress.mockResolvedValue(undefined);
-    wallet.hasWalletInstalled.mockResolvedValue(true);
-    wallet.connectWallet.mockResolvedValue(SIGNER);
+    wallet.connectWallet.mockRejectedValue({ code: -1, message: "The user closed the modal." });
 
-    const outcome = await runRegistration("testnet", steps, { onlyIfWalletInstalled: true });
-    expect(outcome.kind).toBe("submitted");
-    expect(wallet.connectWallet).toHaveBeenCalledOnce();
-  });
-
-  it("with onlyIfWalletInstalled and no wallet, asks nothing and builds nothing", async () => {
-    wallet.currentAddress.mockResolvedValue(undefined);
-    wallet.hasWalletInstalled.mockResolvedValue(false);
-
-    const outcome = await runRegistration("testnet", steps, { onlyIfWalletInstalled: true });
-    expect(outcome).toEqual({ kind: "no_wallet" });
-    expect(wallet.connectWallet).not.toHaveBeenCalled();
+    const outcome = await runRegistration("testnet", steps);
+    expect(outcome).toEqual({ kind: "declined" });
     expect(prepare).not.toHaveBeenCalled();
   });
 

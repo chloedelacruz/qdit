@@ -83,7 +83,6 @@ export function ProjectChainRegistration({
           toast.error(outcome.message);
           return;
         case "declined":
-        case "no_wallet":
           // The button is still here; closing the prompt needs no message.
           return;
       }

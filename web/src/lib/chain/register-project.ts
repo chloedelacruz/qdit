@@ -3,7 +3,6 @@ import type { StellarNetwork } from "@/lib/stellar";
 import {
   connectWallet,
   currentAddress,
-  hasWalletInstalled,
   isRejectedError,
   isUnfundedError,
   signTransaction,
@@ -49,8 +48,6 @@ export type RegistrationStage = "wallet" | "submitting";
 export type RegistrationOutcome =
   /** The server took the signed transaction. Its own result says how it went. */
   | { kind: "submitted"; result: ActionState }
-  /** Only with `onlyIfWalletInstalled`: nothing to sign with, so nothing was asked. */
-  | { kind: "no_wallet" }
   | { kind: "wrong_network"; message: string }
   /** The person closed the chooser or the signing prompt. */
   | { kind: "declined" }
@@ -62,12 +59,6 @@ export async function runRegistration(
   network: StellarNetwork,
   steps: RegistrationSteps,
   options: {
-    /**
-     * When no wallet is connected, open the chooser only if the page can see an
-     * installed one. Otherwise the chooser lists wallets the person doesn't
-     * have.
-     */
-    onlyIfWalletInstalled?: boolean;
     /**
      * Where to render the wallet chooser, if one is needed. Inside an open
      * dialog this has to be an element in the dialog. The kit's default is a
@@ -82,13 +73,10 @@ export async function runRegistration(
   try {
     options.onStage?.("wallet");
 
-    let signer = await currentAddress();
-    if (!signer) {
-      if (options.onlyIfWalletInstalled && !(await hasWalletInstalled())) {
-        return { kind: "no_wallet" };
-      }
-      signer = await connectWallet(options.chooserContainer);
-    }
+    // With nothing connected, always the chooser. Albedo and xBull need no
+    // extension, so a browser with none installed can still sign, and closing
+    // the chooser is the way out.
+    const signer = (await currentAddress()) ?? (await connectWallet(options.chooserContainer));
 
     // A wallet on the wrong network fails with an error about a missing
     // account, which explains nothing. Ask before building anything.
