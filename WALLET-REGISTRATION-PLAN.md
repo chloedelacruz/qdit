@@ -510,10 +510,9 @@ Two real defects were found only by running it — both in §15.
 
 ### Still not verified
 
-- **`enable_signup = false` together with session minting.** `config.toml` sets
-  it locally; the hosted switch is deliberately not flipped. Minting goes through
-  `generateLink` and nothing has proved that call is indifferent to the setting.
-  **This is the one remaining change that could break sign-in for everyone.**
+- ~~`enable_signup = false` together with session minting.~~ Verified on 6 Nov
+  2026: the hosted switch is off, `wallet-auth.spec.ts` passed on production, and
+  a real Varial sign-in worked.
 - **The `complete-account` path** for the one placeholder account in hosted.
   Reaching it means signing in as that account, which means holding its wallet.
 
