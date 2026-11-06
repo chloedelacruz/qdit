@@ -117,6 +117,20 @@ impl MilestoneProofV2Contract {
         members::get_members(&env, project_id)
     }
 
+    /// Set how many approvals a milestone needs.
+    ///
+    /// Owner-signed. `threshold` must be at least 1 and at most the current
+    /// approver count, else [`Error::InvalidThreshold`]. It changes no milestone
+    /// by itself: see "Lowering a threshold" in the crate README.
+    pub fn set_threshold(
+        env: Env,
+        project_id: String,
+        owner: Address,
+        threshold: u32,
+    ) -> Result<(), Error> {
+        members::set_threshold(&env, project_id, owner, threshold)
+    }
+
     /// Attach a proof hash to a milestone and move it to
     /// [`MilestoneStatus::Submitted`].
     ///
@@ -131,6 +145,31 @@ impl MilestoneProofV2Contract {
         proof_hash: BytesN<32>,
     ) -> Result<(), Error> {
         milestones::submit(&env, project_id, milestone_id, submitter, proof_hash)
+    }
+
+    /// Record `approver`'s approval of a submitted milestone.
+    ///
+    /// `approver` must hold the `Approver` role. The milestone becomes Approved
+    /// once the size of its approvers set reaches the threshold. An approval
+    /// given before the approver was removed still counts (D-105).
+    pub fn approve_milestone(
+        env: Env,
+        project_id: String,
+        milestone_id: String,
+        approver: Address,
+    ) -> Result<(), Error> {
+        milestones::approve(&env, project_id, milestone_id, approver)
+    }
+
+    /// Reject a submitted milestone. Any one approver can do this, and the
+    /// milestone can then be resubmitted.
+    pub fn reject_milestone(
+        env: Env,
+        project_id: String,
+        milestone_id: String,
+        approver: Address,
+    ) -> Result<(), Error> {
+        milestones::reject(&env, project_id, milestone_id, approver)
     }
 
     /// Read a milestone's status, version, proof hash, submitter, submission

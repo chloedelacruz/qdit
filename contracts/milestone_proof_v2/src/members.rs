@@ -3,7 +3,7 @@
 use soroban_sdk::{Address, Env, Map, String};
 
 use crate::errors::Error;
-use crate::events::{MemberAdded, MemberRemoved, ProjectOwnerTransferred};
+use crate::events::{MemberAdded, MemberRemoved, ProjectOwnerTransferred, ThresholdChanged};
 use crate::storage::{self, Project, Role, MAX_MEMBERS};
 
 /// Require `owner`'s signature and check it against the owner in storage,
@@ -134,6 +134,37 @@ pub fn transfer_project_owner(
         project_id,
         previous_owner: current_owner,
         new_owner,
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn set_threshold(
+    env: &Env,
+    project_id: String,
+    owner: Address,
+    threshold: u32,
+) -> Result<(), Error> {
+    storage::check_id(&project_id)?;
+    let project = require_owner(env, &project_id, &owner)?;
+
+    let members = storage::get_members(env, &project_id);
+    if threshold == 0 || threshold > approver_count(&members) {
+        return Err(Error::InvalidThreshold);
+    }
+
+    storage::set_project(
+        env,
+        &project_id,
+        &Project {
+            owner: project.owner,
+            threshold,
+        },
+    );
+
+    ThresholdChanged {
+        project_id,
+        threshold,
     }
     .publish(env);
     Ok(())

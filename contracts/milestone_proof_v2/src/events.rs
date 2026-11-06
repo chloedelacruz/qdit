@@ -6,7 +6,7 @@
 
 use soroban_sdk::{contractevent, Address, BytesN, String};
 
-use crate::storage::Role;
+use crate::storage::{MilestoneStatus, Role};
 
 #[contractevent(topics = ["qdit", "create"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,5 +57,36 @@ pub struct ProofSubmitted {
     pub milestone_id: String,
     pub submitter: Address,
     pub proof_hash: BytesN<32>,
+    pub version: u32,
+}
+
+#[contractevent(topics = ["qdit", "threshold"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThresholdChanged {
+    #[topic]
+    pub project_id: String,
+    pub threshold: u32,
+}
+
+/// One approval. `status` is the milestone's status after it: Approved when this
+/// approval reached the threshold, otherwise still Submitted.
+#[contractevent(topics = ["qdit", "approve"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneApproved {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub approver: Address,
+    pub version: u32,
+    pub status: MilestoneStatus,
+}
+
+#[contractevent(topics = ["qdit", "reject"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneRejected {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub approver: Address,
     pub version: u32,
 }
