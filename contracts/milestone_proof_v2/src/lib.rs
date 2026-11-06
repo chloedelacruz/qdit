@@ -9,13 +9,14 @@
 mod errors;
 mod events;
 mod members;
+mod milestones;
 mod storage;
 
 pub use errors::Error;
 pub use events::*;
 pub use storage::{DataKey, MilestoneRecord, MilestoneStatus, Project, Role, MAX_MEMBERS};
 
-use soroban_sdk::{contract, contractimpl, Address, Env, Map, String};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String};
 
 #[contract]
 pub struct MilestoneProofV2Contract;
@@ -114,6 +115,32 @@ impl MilestoneProofV2Contract {
     /// Read a project's roster and each member's role.
     pub fn get_members(env: Env, project_id: String) -> Result<Map<Address, Role>, Error> {
         members::get_members(&env, project_id)
+    }
+
+    /// Attach a proof hash to a milestone and move it to
+    /// [`MilestoneStatus::Submitted`].
+    ///
+    /// `submitter` must hold the `Submitter` role. A resubmission increments the
+    /// version and clears earlier approvals, so approvals always refer to the
+    /// hash being approved. An Approved milestone can't be resubmitted.
+    pub fn submit_milestone_proof(
+        env: Env,
+        project_id: String,
+        milestone_id: String,
+        submitter: Address,
+        proof_hash: BytesN<32>,
+    ) -> Result<(), Error> {
+        milestones::submit(&env, project_id, milestone_id, submitter, proof_hash)
+    }
+
+    /// Read a milestone's status, version, proof hash, submitter, submission
+    /// time and approvers.
+    pub fn get_milestone_status(
+        env: Env,
+        project_id: String,
+        milestone_id: String,
+    ) -> Result<MilestoneRecord, Error> {
+        milestones::get_status(&env, project_id, milestone_id)
     }
 }
 

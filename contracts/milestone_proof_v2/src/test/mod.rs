@@ -1,12 +1,13 @@
 #![cfg(test)]
 
 mod members;
+mod milestones;
 mod project;
 
-use crate::{MilestoneProofV2Contract, MilestoneProofV2ContractClient};
+use crate::{MilestoneProofV2Contract, MilestoneProofV2ContractClient, Role};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    Address, Env, String,
+    Address, BytesN, Env, String,
 };
 
 pub const NOW: u64 = 1_700_000_000;
@@ -40,4 +41,20 @@ pub fn too_long_id(env: &Env) -> String {
         env,
         "0123456789012345678901234567890123456789012345678901234567890123x",
     )
+}
+
+pub fn milestone_id(env: &Env) -> String {
+    String::from_str(env, "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7")
+}
+
+pub fn proof(env: &Env, byte: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[byte; 32])
+}
+
+/// Add a new member with `role` to the fixture's project.
+pub fn add_member(f: &Fixture, role: Role) -> Address {
+    let member = Address::generate(&f.env);
+    f.client
+        .add_member(&project_id(&f.env), &f.owner, &member, &role);
+    member
 }

@@ -12,19 +12,12 @@ fn with_project() -> Fixture {
     f
 }
 
-fn add(f: &Fixture, role: Role) -> Address {
-    let member = Address::generate(&f.env);
-    f.client
-        .add_member(&project_id(&f.env), &f.owner, &member, &role);
-    member
-}
-
 #[test]
 fn add_member_puts_them_on_the_roster() {
     let f = with_project();
 
-    let submitter = add(&f, Role::Submitter);
-    let approver = add(&f, Role::Approver);
+    let submitter = add_member(&f, Role::Submitter);
+    let approver = add_member(&f, Role::Approver);
 
     let members = f.client.get_members(&project_id(&f.env));
     assert_eq!(members.len(), 2);
@@ -35,7 +28,7 @@ fn add_member_puts_them_on_the_roster() {
 #[test]
 fn remove_member_takes_them_off_the_roster() {
     let f = with_project();
-    let submitter = add(&f, Role::Submitter);
+    let submitter = add_member(&f, Role::Submitter);
 
     f.client
         .remove_member(&project_id(&f.env), &f.owner, &submitter);
@@ -46,7 +39,7 @@ fn remove_member_takes_them_off_the_roster() {
 #[test]
 fn add_member_on_an_existing_member_changes_their_role() {
     let f = with_project();
-    let member = add(&f, Role::Submitter);
+    let member = add_member(&f, Role::Submitter);
 
     f.client
         .add_member(&project_id(&f.env), &f.owner, &member, &Role::Approver);
@@ -72,7 +65,7 @@ fn add_member_refuses_a_non_owner() {
 #[test]
 fn remove_member_refuses_a_non_owner() {
     let f = with_project();
-    let member = add(&f, Role::Submitter);
+    let member = add_member(&f, Role::Submitter);
     let stranger = Address::generate(&f.env);
 
     assert_eq!(
@@ -100,7 +93,7 @@ fn add_member_requires_owner_auth() {
 #[test]
 fn remove_member_requires_owner_auth() {
     let f = with_project();
-    let member = add(&f, Role::Submitter);
+    let member = add_member(&f, Role::Submitter);
     f.env.set_auths(&[]);
 
     assert!(matches!(
@@ -115,7 +108,7 @@ fn remove_member_requires_owner_auth() {
 fn add_member_refuses_past_the_cap() {
     let f = with_project();
     for _ in 0..MAX_MEMBERS {
-        add(&f, Role::Submitter);
+        add_member(&f, Role::Submitter);
     }
     let one_more = Address::generate(&f.env);
 
@@ -131,9 +124,9 @@ fn add_member_refuses_past_the_cap() {
 #[test]
 fn a_full_roster_can_still_change_a_role() {
     let f = with_project();
-    let member = add(&f, Role::Submitter);
+    let member = add_member(&f, Role::Submitter);
     for _ in 1..MAX_MEMBERS {
-        add(&f, Role::Submitter);
+        add_member(&f, Role::Submitter);
     }
 
     f.client
@@ -203,7 +196,7 @@ fn remove_member_refuses_someone_not_on_the_roster() {
 #[test]
 fn removing_an_approver_below_the_threshold_is_refused() {
     let f = with_project();
-    let approver = add(&f, Role::Approver);
+    let approver = add_member(&f, Role::Approver);
 
     assert_eq!(
         f.client
@@ -219,8 +212,8 @@ fn removing_an_approver_below_the_threshold_is_refused() {
 #[test]
 fn removing_an_approver_above_the_threshold_is_allowed() {
     let f = with_project();
-    let approver = add(&f, Role::Approver);
-    let spare = add(&f, Role::Approver);
+    let approver = add_member(&f, Role::Approver);
+    let spare = add_member(&f, Role::Approver);
 
     f.client
         .remove_member(&project_id(&f.env), &f.owner, &spare);
@@ -234,7 +227,7 @@ fn removing_an_approver_above_the_threshold_is_allowed() {
 #[test]
 fn demoting_an_approver_below_the_threshold_is_refused() {
     let f = with_project();
-    let approver = add(&f, Role::Approver);
+    let approver = add_member(&f, Role::Approver);
 
     assert_eq!(
         f.client
@@ -250,8 +243,8 @@ fn demoting_an_approver_below_the_threshold_is_refused() {
 #[test]
 fn demoting_an_approver_above_the_threshold_is_allowed() {
     let f = with_project();
-    add(&f, Role::Approver);
-    let spare = add(&f, Role::Approver);
+    add_member(&f, Role::Approver);
+    let spare = add_member(&f, Role::Approver);
 
     f.client
         .add_member(&project_id(&f.env), &f.owner, &spare, &Role::Submitter);
@@ -269,14 +262,14 @@ fn a_project_created_above_its_approver_count_can_still_add_approvers() {
     let f = setup();
     f.client.create_project(&project_id(&f.env), &f.owner, &2);
 
-    let first = add(&f, Role::Approver);
+    let first = add_member(&f, Role::Approver);
     assert_eq!(
         f.client
             .try_remove_member(&project_id(&f.env), &f.owner, &first),
         Err(Ok(Error::InvalidThreshold))
     );
 
-    add(&f, Role::Approver);
+    add_member(&f, Role::Approver);
     assert_eq!(f.client.get_members(&project_id(&f.env)).len(), 2);
 }
 
@@ -311,7 +304,7 @@ fn member_writes_emit_their_events() {
         .to_xdr(env, contract)],
     );
 
-    add(&f, Role::Approver);
+    add_member(&f, Role::Approver);
     f.client.remove_member(&project_id(env), &f.owner, &member);
     assert_eq!(
         env.events().all(),
@@ -343,7 +336,7 @@ fn refused_member_writes_emit_nothing() {
 #[test]
 fn transfer_moves_the_project_and_leaves_the_roster() {
     let f = with_project();
-    let member = add(&f, Role::Submitter);
+    let member = add_member(&f, Role::Submitter);
     let new_owner = Address::generate(&f.env);
 
     f.client

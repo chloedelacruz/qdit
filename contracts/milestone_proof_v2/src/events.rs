@@ -4,7 +4,7 @@
 //! project id. The data carries what `@qdit/verify replay` needs to rebuild
 //! state from events alone, without reading contract storage.
 
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk::{contractevent, Address, BytesN, String};
 
 use crate::storage::Role;
 
@@ -46,4 +46,16 @@ pub struct MemberRemoved {
     pub project_id: String,
     pub member: Address,
     pub role: Role,
+}
+
+/// A submission also clears the approvers of any earlier version.
+#[contractevent(topics = ["qdit", "submit"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofSubmitted {
+    #[topic]
+    pub project_id: String,
+    pub milestone_id: String,
+    pub submitter: Address,
+    pub proof_hash: BytesN<32>,
+    pub version: u32,
 }

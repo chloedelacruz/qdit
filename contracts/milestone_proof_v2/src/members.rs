@@ -18,6 +18,25 @@ fn require_owner(env: &Env, project_id: &String, owner: &Address) -> Result<Proj
     Ok(project)
 }
 
+/// Check `address` holds `role`, reading the roster from storage.
+///
+/// Off the roster is [`Error::NotMember`]; on it with another role is
+/// [`Error::NotAuthorized`].
+pub fn require_role(
+    env: &Env,
+    project_id: &String,
+    address: &Address,
+    role: Role,
+) -> Result<(), Error> {
+    let held = storage::get_members(env, project_id)
+        .get(address.clone())
+        .ok_or(Error::NotMember)?;
+    if held != role {
+        return Err(Error::NotAuthorized);
+    }
+    Ok(())
+}
+
 fn approver_count(members: &Map<Address, Role>) -> u32 {
     members
         .values()

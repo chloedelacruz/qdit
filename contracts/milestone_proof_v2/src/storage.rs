@@ -68,6 +68,8 @@ pub enum DataKey {
     Project(String),
     /// `project_id -> Map<Address, Role>`, the project's roster.
     Members(String),
+    /// `(project_id, milestone_id) -> MilestoneRecord`.
+    Milestone(String, String),
 }
 
 /// Reject an identifier longer than [`MAX_ID_LEN`].
@@ -109,4 +111,27 @@ pub fn set_members(env: &Env, project_id: &String, members: &Map<Address, Role>)
     env.storage()
         .persistent()
         .set(&DataKey::Members(project_id.clone()), members);
+}
+
+pub fn get_milestone(
+    env: &Env,
+    project_id: &String,
+    milestone_id: &String,
+) -> Option<MilestoneRecord> {
+    env.storage().persistent().get(&DataKey::Milestone(
+        project_id.clone(),
+        milestone_id.clone(),
+    ))
+}
+
+pub fn set_milestone(
+    env: &Env,
+    project_id: &String,
+    milestone_id: &String,
+    record: &MilestoneRecord,
+) {
+    env.storage().persistent().set(
+        &DataKey::Milestone(project_id.clone(), milestone_id.clone()),
+        record,
+    );
 }
