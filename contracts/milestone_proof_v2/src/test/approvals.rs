@@ -3,9 +3,10 @@ use crate::{
     Error, MilestoneApproved, MilestoneRecord, MilestoneRejected, MilestoneStatus,
     ThresholdChanged, MAX_MEMBERS,
 };
+use core::cell::Cell;
 use soroban_sdk::{
-    testutils::{Address as _, Events},
-    vec, Event as _,
+    testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
+    vec, Event as _, IntoVal,
 };
 
 /// A 2-of-3 project with one submitter.
@@ -15,6 +16,8 @@ struct Team {
     a: Address,
     b: Address,
     c: Address,
+    /// The hash approvers review: the last one submitted.
+    current: Cell<u8>,
 }
 
 fn two_of_three() -> Team {
@@ -30,11 +33,17 @@ fn two_of_three() -> Team {
         a,
         b,
         c,
+        current: Cell::new(1),
     }
 }
 
 impl Team {
+    fn current_hash(&self) -> BytesN<32> {
+        proof(&self.f.env, self.current.get())
+    }
+
     fn submit(&self, byte: u8) {
+        self.current.set(byte);
         self.f.client.submit_milestone_proof(
             &project_id(&self.f.env),
             &milestone_id(&self.f.env),
@@ -48,6 +57,7 @@ impl Team {
             &project_id(&self.f.env),
             &milestone_id(&self.f.env),
             approver,
+            &self.current_hash(),
         );
     }
 
@@ -58,6 +68,7 @@ impl Team {
                 &project_id(&self.f.env),
                 &milestone_id(&self.f.env),
                 approver,
+                &self.current_hash(),
             )
             .err()
             .map(|e| e.expect("a contract error"))
@@ -70,6 +81,7 @@ impl Team {
                 &project_id(&self.f.env),
                 &milestone_id(&self.f.env),
                 approver,
+                &self.current_hash(),
             )
             .err()
             .map(|e| e.expect("a contract error"))
@@ -124,8 +136,12 @@ fn a_one_of_one_project_is_approved_at_once() {
         &proof(&f.env, 1),
     );
 
-    f.client
-        .approve_milestone(&project_id(&f.env), &milestone_id(&f.env), &approver);
+    f.client.approve_milestone(
+        &project_id(&f.env),
+        &milestone_id(&f.env),
+        &approver,
+        &proof(&f.env, 1),
+    );
 
     assert_eq!(
         f.client
@@ -296,6 +312,109 @@ fn resubmission_empties_the_approvers_and_needs_the_full_threshold_again() {
     assert_eq!(t.record().status, MilestoneStatus::Approved);
 }
 
+/// D-108: the approver reviewed the first hash, and a resubmission landed before
+/// their approval did. It must not count towards a hash they never saw.
+#[test]
+fn an_approval_for_a_replaced_hash_is_refused() {
+    let t = two_of_three();
+    t.submit(1);
+    let reviewed = t.current_hash();
+    t.submit(2);
+
+    assert_eq!(
+        t.f.client.try_approve_milestone(
+            &project_id(&t.f.env),
+            &milestone_id(&t.f.env),
+            &t.a,
+            &reviewed,
+        ),
+        Err(Ok(Error::ProofMismatch))
+    );
+    assert_eq!(t.record().status, MilestoneStatus::Submitted);
+    assert_eq!(t.record().approvers.len(), 0);
+
+    // Approving what is actually there still works.
+    t.approve(&t.a);
+    assert_eq!(t.record().approvers, vec![&t.f.env, t.a.clone()]);
+}
+
+#[test]
+fn a_rejection_for_a_replaced_hash_is_refused() {
+    let t = two_of_three();
+    t.submit(1);
+    let reviewed = t.current_hash();
+    t.submit(2);
+
+    assert_eq!(
+        t.f.client.try_reject_milestone(
+            &project_id(&t.f.env),
+            &milestone_id(&t.f.env),
+            &t.a,
+            &reviewed,
+        ),
+        Err(Ok(Error::ProofMismatch))
+    );
+    assert_eq!(t.record().status, MilestoneStatus::Submitted);
+}
+
+/// Authorise `t.a` to approve, for `signed_for` alone.
+fn sign_approval_for(t: &Team, signed_for: BytesN<32>) {
+    t.f.env.mock_auths(&[MockAuth {
+        address: &t.a,
+        invoke: &MockAuthInvoke {
+            contract: &t.f.client.address,
+            fn_name: "approve_milestone",
+            args: (
+                project_id(&t.f.env),
+                milestone_id(&t.f.env),
+                t.a.clone(),
+                signed_for,
+            )
+                .into_val(&t.f.env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+/// A signature for one hash can't be used with another: the hash is one of the
+/// arguments the approver signs.
+#[test]
+fn an_approvers_signature_covers_the_hash() {
+    let t = two_of_three();
+    t.submit(1);
+    sign_approval_for(&t, proof(&t.f.env, 9));
+
+    assert!(matches!(
+        t.f.client.try_approve_milestone(
+            &project_id(&t.f.env),
+            &milestone_id(&t.f.env),
+            &t.a,
+            &t.current_hash(),
+        ),
+        Err(Err(_))
+    ));
+    t.f.env.mock_all_auths();
+    assert_eq!(t.record().approvers.len(), 0);
+}
+
+/// The control for the test above: the same signature setup, for the right hash.
+#[test]
+fn an_approvers_signature_for_the_current_hash_is_accepted() {
+    let t = two_of_three();
+    t.submit(1);
+    sign_approval_for(&t, t.current_hash());
+
+    t.f.client.approve_milestone(
+        &project_id(&t.f.env),
+        &milestone_id(&t.f.env),
+        &t.a,
+        &t.current_hash(),
+    );
+
+    t.f.env.mock_all_auths();
+    assert_eq!(t.record().approvers, vec![&t.f.env, t.a.clone()]);
+}
+
 #[test]
 fn an_approved_milestone_cannot_be_resubmitted() {
     let t = two_of_three();
@@ -367,8 +486,12 @@ fn approve_requires_the_approvers_auth() {
     t.f.env.set_auths(&[]);
 
     assert!(matches!(
-        t.f.client
-            .try_approve_milestone(&project_id(&t.f.env), &milestone_id(&t.f.env), &t.a),
+        t.f.client.try_approve_milestone(
+            &project_id(&t.f.env),
+            &milestone_id(&t.f.env),
+            &t.a,
+            &t.current_hash()
+        ),
         Err(Err(_))
     ));
     assert_eq!(t.record().approvers.len(), 0);
@@ -381,8 +504,12 @@ fn reject_requires_the_approvers_auth() {
     t.f.env.set_auths(&[]);
 
     assert!(matches!(
-        t.f.client
-            .try_reject_milestone(&project_id(&t.f.env), &milestone_id(&t.f.env), &t.a),
+        t.f.client.try_reject_milestone(
+            &project_id(&t.f.env),
+            &milestone_id(&t.f.env),
+            &t.a,
+            &t.current_hash()
+        ),
         Err(Err(_))
     ));
     assert_eq!(t.record().status, MilestoneStatus::Submitted);
@@ -395,31 +522,36 @@ fn decisions_refuse_an_unknown_project_and_over_long_ids() {
     let project = project_id(&f.env);
     let milestone = milestone_id(&f.env);
     let long = too_long_id(&f.env);
+    let hash = proof(&f.env, 1);
 
     assert_eq!(
         f.client
-            .try_approve_milestone(&project, &milestone, &approver),
+            .try_approve_milestone(&project, &milestone, &approver, &hash),
         Err(Ok(Error::ProjectNotFound))
     );
     assert_eq!(
         f.client
-            .try_reject_milestone(&project, &milestone, &approver),
+            .try_reject_milestone(&project, &milestone, &approver, &hash),
         Err(Ok(Error::ProjectNotFound))
     );
     assert_eq!(
-        f.client.try_approve_milestone(&long, &milestone, &approver),
+        f.client
+            .try_approve_milestone(&long, &milestone, &approver, &hash),
         Err(Ok(Error::IdTooLong))
     );
     assert_eq!(
-        f.client.try_approve_milestone(&project, &long, &approver),
+        f.client
+            .try_approve_milestone(&project, &long, &approver, &hash),
         Err(Ok(Error::IdTooLong))
     );
     assert_eq!(
-        f.client.try_reject_milestone(&long, &milestone, &approver),
+        f.client
+            .try_reject_milestone(&long, &milestone, &approver, &hash),
         Err(Ok(Error::IdTooLong))
     );
     assert_eq!(
-        f.client.try_reject_milestone(&project, &long, &approver),
+        f.client
+            .try_reject_milestone(&project, &long, &approver, &hash),
         Err(Ok(Error::IdTooLong))
     );
 }
@@ -607,20 +739,23 @@ fn an_approvers_set_holds_at_most_one_more_than_the_member_cap() {
     let f = setup();
     let project = project_id(&f.env);
     let milestone = milestone_id(&f.env);
+    let hash = proof(&f.env, 1);
     f.client
         .create_project(&project, &f.owner, &(MAX_MEMBERS + 1));
 
     let submitter = add_member(&f, Role::Submitter);
     f.client
-        .submit_milestone_proof(&project, &milestone, &submitter, &proof(&f.env, 1));
+        .submit_milestone_proof(&project, &milestone, &submitter, &hash);
     for _ in 1..MAX_MEMBERS {
         let approver = add_member(&f, Role::Approver);
-        f.client.approve_milestone(&project, &milestone, &approver);
+        f.client
+            .approve_milestone(&project, &milestone, &approver, &hash);
     }
     // The submitter's place makes it a full roster of approvers.
     f.client
         .add_member(&project, &f.owner, &submitter, &Role::Approver);
-    f.client.approve_milestone(&project, &milestone, &submitter);
+    f.client
+        .approve_milestone(&project, &milestone, &submitter, &hash);
 
     let record = f.client.get_milestone_status(&project, &milestone);
     assert_eq!(record.status, MilestoneStatus::Submitted);
@@ -631,7 +766,8 @@ fn an_approvers_set_holds_at_most_one_more_than_the_member_cap() {
         .set_threshold(&project, &f.owner, &(MAX_MEMBERS - 1));
     f.client.remove_member(&project, &f.owner, &submitter);
     let last = add_member(&f, Role::Approver);
-    f.client.approve_milestone(&project, &milestone, &last);
+    f.client
+        .approve_milestone(&project, &milestone, &last, &hash);
 
     let record = f.client.get_milestone_status(&project, &milestone);
     assert_eq!(record.status, MilestoneStatus::Approved);
@@ -683,6 +819,7 @@ fn each_approval_emits_its_event_with_the_resulting_status() {
             milestone_id: milestone_id(env),
             approver: t.a.clone(),
             version: 1,
+            proof_hash: proof(env, 1),
             status: MilestoneStatus::Submitted,
         }
         .to_xdr(env, contract)],
@@ -696,6 +833,7 @@ fn each_approval_emits_its_event_with_the_resulting_status() {
             milestone_id: milestone_id(env),
             approver: t.b.clone(),
             version: 1,
+            proof_hash: proof(env, 1),
             status: MilestoneStatus::Approved,
         }
         .to_xdr(env, contract)],
@@ -716,6 +854,7 @@ fn reject_emits_its_event() {
             milestone_id: milestone_id(&t.f.env),
             approver: t.a.clone(),
             version: 1,
+            proof_hash: proof(&t.f.env, 1),
         }
         .to_xdr(&t.f.env, &t.f.client.address)],
     );

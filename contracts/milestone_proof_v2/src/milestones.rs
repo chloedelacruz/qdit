@@ -57,13 +57,15 @@ pub fn submit(
     Ok(())
 }
 
-/// The checks approve and reject share: the approver's signature and role, and a
-/// milestone that is waiting for a decision.
+/// The checks approve and reject share: the approver's signature and role, a
+/// milestone that is waiting for a decision, and the hash the approver reviewed
+/// still being the current one (D-108).
 fn load_for_decision(
     env: &Env,
     project_id: &String,
     milestone_id: &String,
     approver: &Address,
+    proof_hash: &BytesN<32>,
 ) -> Result<(Project, MilestoneRecord), Error> {
     storage::check_id(project_id)?;
     storage::check_id(milestone_id)?;
@@ -77,6 +79,9 @@ fn load_for_decision(
     if record.status != MilestoneStatus::Submitted {
         return Err(Error::InvalidStatus);
     }
+    if &record.proof_hash != proof_hash {
+        return Err(Error::ProofMismatch);
+    }
     Ok((project, record))
 }
 
@@ -85,8 +90,10 @@ pub fn approve(
     project_id: String,
     milestone_id: String,
     approver: Address,
+    proof_hash: BytesN<32>,
 ) -> Result<(), Error> {
-    let (project, mut record) = load_for_decision(env, &project_id, &milestone_id, &approver)?;
+    let (project, mut record) =
+        load_for_decision(env, &project_id, &milestone_id, &approver, &proof_hash)?;
 
     if record.approvers.contains(&approver) {
         return Err(Error::AlreadyApproved);
@@ -104,6 +111,7 @@ pub fn approve(
         milestone_id,
         approver,
         version: record.version,
+        proof_hash,
         status: record.status,
     }
     .publish(env);
@@ -115,8 +123,10 @@ pub fn reject(
     project_id: String,
     milestone_id: String,
     approver: Address,
+    proof_hash: BytesN<32>,
 ) -> Result<(), Error> {
-    let (_, mut record) = load_for_decision(env, &project_id, &milestone_id, &approver)?;
+    let (_, mut record) =
+        load_for_decision(env, &project_id, &milestone_id, &approver, &proof_hash)?;
 
     record.status = MilestoneStatus::Rejected;
     storage::set_milestone(env, &project_id, &milestone_id, &record);
@@ -126,6 +136,7 @@ pub fn reject(
         milestone_id,
         approver,
         version: record.version,
+        proof_hash,
     }
     .publish(env);
     Ok(())

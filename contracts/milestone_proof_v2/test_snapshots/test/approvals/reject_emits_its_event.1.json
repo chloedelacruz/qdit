@@ -204,6 +204,9 @@
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                 }
               ]
             }
@@ -640,6 +643,14 @@
                   },
                   "val": {
                     "string": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "proof_hash"
+                  },
+                  "val": {
+                    "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                   }
                 },
                 {

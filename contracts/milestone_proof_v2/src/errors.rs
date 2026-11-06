@@ -27,4 +27,6 @@ pub enum Error {
     /// The project's roster is full.
     MemberLimit = 10,
     // 11 is reserved for `BatchExists` (QDIT-17).
+    /// The approver named a hash other than the milestone's current one.
+    ProofMismatch = 12,
 }

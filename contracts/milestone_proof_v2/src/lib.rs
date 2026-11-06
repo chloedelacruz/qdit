@@ -151,24 +151,31 @@ impl MilestoneProofV2Contract {
     /// `approver` must hold the `Approver` role. The milestone becomes Approved
     /// once the size of its approvers set reaches the threshold. An approval
     /// given before the approver was removed still counts (D-105).
+    ///
+    /// `proof_hash` is the hash the approver reviewed, and it is part of what they
+    /// sign. If it is no longer current, because a resubmission landed first, the
+    /// call is refused with [`Error::ProofMismatch`] (D-108).
     pub fn approve_milestone(
         env: Env,
         project_id: String,
         milestone_id: String,
         approver: Address,
+        proof_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        milestones::approve(&env, project_id, milestone_id, approver)
+        milestones::approve(&env, project_id, milestone_id, approver, proof_hash)
     }
 
     /// Reject a submitted milestone. Any one approver can do this, and the
-    /// milestone can then be resubmitted.
+    /// milestone can then be resubmitted. `proof_hash` works as it does for
+    /// [`Self::approve_milestone`].
     pub fn reject_milestone(
         env: Env,
         project_id: String,
         milestone_id: String,
         approver: Address,
+        proof_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        milestones::reject(&env, project_id, milestone_id, approver)
+        milestones::reject(&env, project_id, milestone_id, approver, proof_hash)
     }
 
     /// Read a milestone's status, version, proof hash, submitter, submission

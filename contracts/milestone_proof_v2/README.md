@@ -18,8 +18,8 @@ never from an argument.
 | `set_threshold(project_id, owner, threshold)` | `owner` | `ProjectNotFound`, `NotAuthorized`; `InvalidThreshold` unless 1 to the approver count |
 | `transfer_project_owner(project_id, current_owner, new_owner)` | **both** | `ProjectNotFound`, `NotAuthorized` |
 | `submit_milestone_proof(project_id, milestone_id, submitter, proof_hash)` | `submitter`, role `Submitter` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `InvalidStatus` |
-| `approve_milestone(project_id, milestone_id, approver)` | `approver`, role `Approver` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `MilestoneNotFound`, `InvalidStatus`, `AlreadyApproved` |
-| `reject_milestone(project_id, milestone_id, approver)` | `approver`, role `Approver` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `MilestoneNotFound`, `InvalidStatus` |
+| `approve_milestone(project_id, milestone_id, approver, proof_hash)` | `approver`, role `Approver` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `MilestoneNotFound`, `InvalidStatus`, `ProofMismatch`, `AlreadyApproved` |
+| `reject_milestone(project_id, milestone_id, approver, proof_hash)` | `approver`, role `Approver` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `MilestoneNotFound`, `InvalidStatus`, `ProofMismatch` |
 | `get_project(project_id)` | none | `ProjectNotFound` |
 | `get_members(project_id)` | none | `ProjectNotFound` |
 | `get_milestone_status(project_id, milestone_id)` | none | `MilestoneNotFound` |
@@ -28,8 +28,8 @@ Every call also refuses an id over 64 characters with `IdTooLong`.
 
 Errors: `ProjectExists = 1`, `ProjectNotFound = 2`, `MilestoneNotFound = 3`,
 `NotAuthorized = 4`, `InvalidStatus = 5`, `IdTooLong = 6`, `NotMember = 7`,
-`AlreadyApproved = 8`, `InvalidThreshold = 9`, `MemberLimit = 10`. Code 11 is reserved
-for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
+`AlreadyApproved = 8`, `InvalidThreshold = 9`, `MemberLimit = 10`, `ProofMismatch = 12`.
+Code 11 is reserved for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
 `NotAuthorized`.
 
 ## Rules
@@ -50,6 +50,10 @@ for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
 - **Resubmission.** It increments `version`, restamps `timestamp` and clears the
   approvers, so an approval never carries over to a new hash. It is allowed from
   Submitted or Rejected. Approved is terminal.
+- **Approving a hash (D-108).** `approve_milestone` and `reject_milestone` name the hash
+  the approver reviewed, and it is part of what they sign. If a resubmission replaced it
+  first, the call is refused with `ProofMismatch`, so nobody approves a hash they didn't
+  see. This differs from the signature in the SOW (section 3.7).
 - **Rejection.** Any one approver can reject. The approvers set stays readable until a
   resubmission clears it.
 - **Transfer (D-107).** Both owners sign, as in v1. The roster is unchanged, and the new
@@ -67,8 +71,6 @@ approver, whose approval finalises it.
 
 ### Known limits
 
-- **An approval does not name the hash.** It applies to whichever version is current when
-  it executes. If a resubmission lands first, the approval counts towards the new hash.
 - **Any `Submitter` can resubmit a milestone in progress**, including one another member
   submitted, which replaces `submitter` and clears its approvals. The remedy is the owner
   removing them.
@@ -92,8 +94,8 @@ rebuild state without reading storage.
 | `remove_member` | `member`, `role` (held until the call) |
 | `threshold` | `threshold` |
 | `submit` | `milestone_id`, `submitter`, `proof_hash`, `version`, `timestamp` |
-| `approve` | `milestone_id`, `approver`, `version`, `status` (after the call) |
-| `reject` | `milestone_id`, `approver`, `version` |
+| `approve` | `milestone_id`, `approver`, `version`, `proof_hash`, `status` (after the call) |
+| `reject` | `milestone_id`, `approver`, `version`, `proof_hash` |
 
 ## Test
 

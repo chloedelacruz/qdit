@@ -79,6 +79,8 @@ pub struct MilestoneApproved {
     pub milestone_id: String,
     pub approver: Address,
     pub version: u32,
+    /// The hash the approver named and signed for.
+    pub proof_hash: BytesN<32>,
     pub status: MilestoneStatus,
 }
 
@@ -90,4 +92,6 @@ pub struct MilestoneRejected {
     pub milestone_id: String,
     pub approver: Address,
     pub version: u32,
+    /// The hash the approver named and signed for.
+    pub proof_hash: BytesN<32>,
 }
