@@ -17,7 +17,7 @@ import { fund, giveWallet } from "./test-wallet";
  * Writes a project row, named with the `e2e project` prefix the teardown
  * removes. It runs in the `publishing` project, after the specs that assert
  * exact counts. The registration stays on Testnet, under an id nothing reuses.
- * Skipped where anchoring is off, as in CI.
+ * Skipped where anchoring is off.
  */
 test.skip(
   !process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID,
