@@ -197,8 +197,9 @@ detail: proofs anchored on Testnet are not durable evidence, even though
 
 Not oversights.
 
-- **Playwright in CI** — excluded deliberately; it needs secrets and a database
-  two concurrent runs would fight over. Vitest and the WASM build are in CI.
+- **Playwright in CI** — never. The suite runs only on a local machine, and there
+  is no workflow for it. On CI it would waste CI time, and it needs secrets and a
+  database two concurrent runs would fight over. Vitest and the WASM build are in CI.
 - **Dashboard rows are read-only** — a capped rollup; every entity is editable
   from its own list.
 - **Deployment rows cannot be edited** — the log is append-only by design.
@@ -234,8 +235,15 @@ Not oversights.
   not transactional; a partial failure leaves positions inconsistent, which the
   code notes and tolerates.
 - **`password123` is in git history**, in `fe93996`, via `supabase/seed.sql`.
-  Rotated, and the repo is private, so this is low priority rather than urgent.
-  The standing rule is never to apply `seed.sql` to a hosted project.
+  Rotated, so it no longer signs anyone in, but the repo is public, so treat the
+  value as known. The standing rules: never apply `seed.sql` to a hosted project,
+  and never put a real email address or password in it.
+- **A Supabase branch can't stand in for production yet.** Found on a throwaway
+  branch on 6 Nov 2026, and it matters when staging comes back. It got no seed.
+  Its 14 migrations from `api_requests` on were recorded with no statements, so 8
+  tables were missing. `service_role` also had no SELECT, INSERT or UPDATE on the
+  core tables: migrations grant those to `authenticated` only, and new projects no
+  longer get them by default.
 
 ---
 

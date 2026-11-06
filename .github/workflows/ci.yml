@@ -1,10 +1,10 @@
 name: CI
 
-# The Playwright suite is deliberately not here. It runs against the real hosted
-# Supabase project with RLS enforced — there are no fixtures — so it needs
+# The Playwright suite runs only on a local machine, never on CI, here or in any
+# other workflow. It would waste CI time. It also runs against production with
+# RLS enforced, so it needs
 # E2E_EMAIL / E2E_PASSWORD and a database that write specs are allowed to
-# mutate. Putting it in the default PR check would make every fork's build fail
-# on missing secrets and let two concurrent runs fight over one database.
+# mutate, and two concurrent runs would fight over one database.
 # See the end-to-end tests note in README.md.
 
 # Only `main` runs here. Every other branch is checked before it leaves the
