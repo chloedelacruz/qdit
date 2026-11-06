@@ -8,13 +8,14 @@
 
 mod errors;
 mod events;
+mod members;
 mod storage;
 
 pub use errors::Error;
 pub use events::*;
 pub use storage::{DataKey, MilestoneRecord, MilestoneStatus, Project, Role, MAX_MEMBERS};
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, Address, Env, Map, String};
 
 #[contract]
 pub struct MilestoneProofV2Contract;
@@ -65,6 +66,54 @@ impl MilestoneProofV2Contract {
     pub fn get_project(env: Env, project_id: String) -> Result<Project, Error> {
         storage::check_id(&project_id)?;
         storage::get_project(&env, &project_id)
+    }
+
+    /// Add `member` with `role`, or change the role of an existing member.
+    ///
+    /// Owner-signed. Refused with [`Error::MemberLimit`] on a full roster, and
+    /// with [`Error::InvalidThreshold`] if it changes an approver's role and
+    /// leaves fewer approvers than the threshold (D-106).
+    pub fn add_member(
+        env: Env,
+        project_id: String,
+        owner: Address,
+        member: Address,
+        role: Role,
+    ) -> Result<(), Error> {
+        members::add_member(&env, project_id, owner, member, role)
+    }
+
+    /// Remove `member` from the roster.
+    ///
+    /// Owner-signed. Refused with [`Error::NotMember`] if they aren't on it, and
+    /// with [`Error::InvalidThreshold`] if it leaves fewer approvers than the
+    /// threshold.
+    pub fn remove_member(
+        env: Env,
+        project_id: String,
+        owner: Address,
+        member: Address,
+    ) -> Result<(), Error> {
+        members::remove_member(&env, project_id, owner, member)
+    }
+
+    /// Hand a project to a new owner (D-107).
+    ///
+    /// **Both parties must sign**, as in v1: the outgoing owner proves the right
+    /// to give it away, and the incoming owner proves the address is controlled.
+    /// The roster is unchanged, and the new owner gets no member role.
+    pub fn transfer_project_owner(
+        env: Env,
+        project_id: String,
+        current_owner: Address,
+        new_owner: Address,
+    ) -> Result<(), Error> {
+        members::transfer_project_owner(&env, project_id, current_owner, new_owner)
+    }
+
+    /// Read a project's roster and each member's role.
+    pub fn get_members(env: Env, project_id: String) -> Result<Map<Address, Role>, Error> {
+        members::get_members(&env, project_id)
     }
 }
 

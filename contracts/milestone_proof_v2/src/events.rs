@@ -6,6 +6,8 @@
 
 use soroban_sdk::{contractevent, Address, String};
 
+use crate::storage::Role;
+
 #[contractevent(topics = ["qdit", "create"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCreated {
@@ -13,4 +15,35 @@ pub struct ProjectCreated {
     pub project_id: String,
     pub owner: Address,
     pub threshold: u32,
+}
+
+/// Emitted when a project changes hands.
+#[contractevent(topics = ["qdit", "transfer"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectOwnerTransferred {
+    #[topic]
+    pub project_id: String,
+    pub previous_owner: Address,
+    pub new_owner: Address,
+}
+
+/// Emitted when a member is added or their role changes. `role` is the role
+/// they hold after this call.
+#[contractevent(topics = ["qdit", "add_member"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberAdded {
+    #[topic]
+    pub project_id: String,
+    pub member: Address,
+    pub role: Role,
+}
+
+/// `role` is the role the member held until this call.
+#[contractevent(topics = ["qdit", "remove_member"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberRemoved {
+    #[topic]
+    pub project_id: String,
+    pub member: Address,
+    pub role: Role,
 }

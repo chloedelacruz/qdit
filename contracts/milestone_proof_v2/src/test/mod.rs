@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod members;
 mod project;
 
 use crate::{MilestoneProofV2Contract, MilestoneProofV2ContractClient};

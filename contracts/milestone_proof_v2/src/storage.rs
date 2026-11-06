@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Map, String, Vec};
 
 use crate::errors::Error;
 
@@ -66,6 +66,8 @@ pub struct MilestoneRecord {
 pub enum DataKey {
     /// `project_id -> Project`.
     Project(String),
+    /// `project_id -> Map<Address, Role>`, the project's roster.
+    Members(String),
 }
 
 /// Reject an identifier longer than [`MAX_ID_LEN`].
@@ -93,4 +95,18 @@ pub fn set_project(env: &Env, project_id: &String, project: &Project) {
     env.storage()
         .persistent()
         .set(&DataKey::Project(project_id.clone()), project);
+}
+
+/// The project's roster. Empty until the owner adds someone.
+pub fn get_members(env: &Env, project_id: &String) -> Map<Address, Role> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Members(project_id.clone()))
+        .unwrap_or_else(|| Map::new(env))
+}
+
+pub fn set_members(env: &Env, project_id: &String, members: &Map<Address, Role>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Members(project_id.clone()), members);
 }
