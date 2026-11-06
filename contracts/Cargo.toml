@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["milestone_proof"]
+members = ["milestone_proof", "milestone_proof_v2"]
 
 [workspace.package]
 version = "0.1.0"
