@@ -177,7 +177,13 @@ test.describe("the More sheet", () => {
 
     await expect(more(page)).toHaveAttribute("aria-expanded", "false");
     await openMore(page);
-    await expect(more(page)).toHaveAttribute("aria-expanded", "true");
+    // The open sheet is modal, so the tab bar behind it is hidden from role
+    // queries. That is correct, and it's why this one has to ask for hidden.
+    await expect(
+      page
+        .getByRole("navigation", { name: "Tabs", includeHidden: true })
+        .getByRole("button", { name: "More", includeHidden: true }),
+    ).toHaveAttribute("aria-expanded", "true");
   });
 
   test("exposes every workspace destination, and help", async ({ page }) => {

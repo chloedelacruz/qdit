@@ -79,8 +79,9 @@ test.describe("project members", () => {
       await expect(item).toContainText(/owner/i);
     }
 
-    // Choosing a blocked item opens nothing.
-    await page.getByRole("menuitem", { name: /^Delete\b/ }).click();
+    // Choosing a blocked item opens nothing. Forced, because Playwright waits
+    // for an aria-disabled element to become enabled, and this one never does.
+    await page.getByRole("menuitem", { name: /^Delete\b/ }).click({ force: true });
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 
