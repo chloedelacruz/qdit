@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 
 import { PROJECT } from "./seed";
 import { NO_SERVICE, rest, service, tag } from "./service";
@@ -8,7 +8,7 @@ import { NO_SERVICE, rest, service, tag } from "./service";
  *
  * These need a milestone with no anchors, on a project not yet registered on
  * chain. On production the seeded project is registered and its seeded
- * milestones get anchored by hand, so they build their own (QDIT-38).
+ * milestones get anchored by hand, so they build their own (QDIT-38, QDIT-39).
  *
  * Writes a project and a milestone, named with the `e2e` prefixes the teardown
  * removes, so this runs in `publishing`, after the specs that assert exact
@@ -94,4 +94,26 @@ test("anchoring an unregistered project's milestone says why instead of opening"
   // aria-disabled element to become enabled, and this one never does.
   await item.click({ force: true });
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test.describe("under a finger", () => {
+  // Pixel 7, as in the `mobile` project, spelled out because a describe block
+  // can't set the `defaultBrowserType` that `devices` also carries.
+  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
+  test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
+
+  /**
+   * The reason a control is disabled must reach a phone too: Radix tooltips
+   * open on hover and focus only, and `Hint` adds the tap.
+   */
+  test("tapping a disabled Certificate shows the reason", async ({ page }) => {
+    const gate = history(page).locator('[data-slot="disabled-reason"]', { hasText: "Certificate" });
+    // Forced, because Playwright waits for an aria-disabled element to become
+    // enabled, and this one never does.
+    await gate.tap({ force: true });
+
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText(/anchor/i);
+  });
 });

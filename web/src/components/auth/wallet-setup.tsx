@@ -235,7 +235,7 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <li className="flex gap-3">
+    <li data-state={state} className="flex gap-3">
       <span
         aria-hidden
         className={cn(

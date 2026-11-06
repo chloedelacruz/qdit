@@ -202,6 +202,19 @@ export async function onWalletState(
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The kit reports these as available in every browser, because they need no
+ * extension. They can still be chosen, but they say nothing about what is
+ * installed here (QDIT-39).
+ */
+const ALWAYS_AVAILABLE_WALLETS = new Set(["albedo", "xbull", "ghostsig"]);
+
+export function anyWalletInstalled(
+  wallets: readonly { id: string; isAvailable: boolean }[],
+): boolean {
+  return wallets.some((wallet) => wallet.isAvailable && !ALWAYS_AVAILABLE_WALLETS.has(wallet.id));
+}
+
+/**
  * Is any wallet installed in this browser?
  *
  * The kit lists every wallet it knows about and marks the ones actually present
@@ -215,8 +228,7 @@ export async function hasWalletInstalled(): Promise<boolean> {
   if (!wallets) return false;
 
   try {
-    const supported = await wallets.refreshSupportedWallets();
-    return supported.some((wallet) => wallet.isAvailable);
+    return anyWalletInstalled(await wallets.refreshSupportedWallets());
   } catch {
     return false;
   }
