@@ -13,6 +13,9 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 const STORAGE_STATE = path.join(__dirname, "e2e/.auth/user.json");
 
 /**
+ * This suite runs only on a local machine, never on CI, and against production:
+ * there is no staging environment. See the end-to-end tests note in README.md.
+ *
  * These specs run against a real Supabase project with Row Level Security
  * enforced — there are no fixtures any more. Assertions therefore describe the
  * seeded rows, and anything that must hold at any data size (paging, filtering)
@@ -29,10 +32,7 @@ const STORAGE_STATE = path.join(__dirname, "e2e/.auth/user.json");
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"]],
+  reporter: [["list"]],
 
   /**
    * Assertions wait longer than Playwright's 5s default because every page now
@@ -105,7 +105,7 @@ export default defineConfig({
       // once in this project and again in `mutations`.
       // `mobile-*` is the `mobile` project's: those specs assert a phone
       // layout (tab bar, touch targets) that a desktop viewport does not have.
-      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth)\.spec\.ts/,
+      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth|project-register)\.spec\.ts/,
     },
 
     {
@@ -146,13 +146,14 @@ export default defineConfig({
        *
        * After `edits`, for the reason `edits` follows `mutations`: the extra
        * milestone would move the exact count `lists.spec.ts` asserts if the two
-       * overlapped. Signed in, because the consent screen needs a session;
+       * overlapped. project-register.spec.ts is here for the same reason: it
+       * creates a project. Signed in, because the consent screen needs a session;
        * public-proof.spec.ts drops it with its own `test.use`.
        */
       name: "publishing",
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["edits"],
-      testMatch: /(public-proof|oauth)\.spec\.ts/,
+      testMatch: /(public-proof|oauth|project-register)\.spec\.ts/,
     },
 
     {
@@ -171,7 +172,7 @@ export default defineConfig({
   webServer: {
     command: `npm run build && npm run start -- --port ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 180_000,
     stdout: "ignore",
     stderr: "pipe",

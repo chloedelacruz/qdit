@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useActionState, useRef, useState } from "react";
+import React, { startTransition, useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -129,7 +129,21 @@ export function FormDialog({
 
         {/* noValidate: the browser's own bubbles would pre-empt the inline
             messages, which are the ones that match the server's rules. */}
-        <form ref={formRef} action={formAction} className="space-y-3.5" noValidate>
+        <form
+          ref={formRef}
+          action={formAction}
+          className="space-y-3.5"
+          noValidate
+          onSubmit={(event) => {
+            // React resets a form's uncontrolled fields once its `action` ends,
+            // even when the action returned an error, which would wipe what was
+            // typed and let a retry bounce on empty fields. Dispatching from
+            // here skips that reset. Success still resets, in the action above.
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            startTransition(() => formAction(data));
+          }}
+        >
           {children(state)}
 
           {state.error ? (

@@ -85,6 +85,36 @@ export const projectSchema = z.object({
 });
 
 /**
+ * The create-project form's fields, in the shape `projectSchema` reads.
+ *
+ * Shared by `createProject` and the create dialog. The dialog checks the
+ * fields before it opens the wallet prompt (QDIT-36), so nobody signs a
+ * registration for a form that's about to bounce. The server still checks
+ * again, because it is the boundary.
+ */
+export function projectFormValues(formData: FormData): Record<keyof ProjectInput, string> {
+  return {
+    name: String(formData.get("name") ?? ""),
+    slug: String(formData.get("slug") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    status: String(formData.get("status") || "active"),
+    repoUrl: String(formData.get("repoUrl") ?? ""),
+    demoUrl: String(formData.get("demoUrl") ?? ""),
+    docsUrl: String(formData.get("docsUrl") ?? ""),
+  };
+}
+
+/** The first message per field, in the shape the form dialogs render. */
+export function fieldErrorsOf(error: z.ZodError): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  for (const issue of error.issues) {
+    const key = String(issue.path[0] ?? "");
+    if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
+  }
+  return fieldErrors;
+}
+
+/**
  * The slug is fixed after creation. It is `unique` and appears in every project
  * URL, so editing it would silently break links people have already shared.
  * Omitted from the schema rather than merely disabled in the form, so a

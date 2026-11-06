@@ -291,6 +291,16 @@ test.describe("adding a member", () => {
     await page.getByRole("button", { name: "New project" }).click();
     await page.getByLabel("Name").fill(name);
     await page.getByRole("button", { name: "Create project" }).click();
+    // With anchoring on, creating first asks for a wallet signature (QDIT-36).
+    // This browser has no extension, but the chooser still opens, since some
+    // wallets need none. Wallets are listed once it is listening, so wait for
+    // one, close it, and take the way past it.
+    if (process.env.NEXT_PUBLIC_MILESTONE_PROOF_CONTRACT_ID) {
+      const chooser = page.getByRole("dialog").locator('[data-slot="wallet-chooser"]');
+      await expect(chooser.locator("li").first()).toBeVisible({ timeout: 20_000 });
+      await chooser.locator("header button").last().click();
+      await page.getByRole("button", { name: "Create without registering" }).click();
+    }
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 20_000 });
   }
 

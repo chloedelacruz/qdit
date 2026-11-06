@@ -1,5 +1,7 @@
-import { Keypair, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
-import { expect, test, type Page } from "@playwright/test";
+import { Keypair } from "@stellar/stellar-sdk";
+import { expect, test } from "@playwright/test";
+
+import { connect, fund, giveWallet } from "./test-wallet";
 
 /**
  * `/wallet`: connect, balance, send — with a real Testnet account and no
@@ -34,66 +36,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Friendbot and Horizon being up, which is the point of a payment test.
  */
 
-const FRIENDBOT = "https://friendbot.stellar.org";
 const HORIZON = "https://horizon-testnet.stellar.org";
-
-async function giveWallet(page: Page, keypair: Keypair): Promise<void> {
-  await page.exposeFunction(
-    "__e2eSignTransaction",
-    (xdr: string, passphrase: string | undefined): string => {
-      if (passphrase && passphrase !== Networks.TESTNET) {
-        throw new Error(`e2e wallet signs on Testnet only, not "${passphrase}".`);
-      }
-      const transaction = TransactionBuilder.fromXDR(xdr, Networks.TESTNET);
-      transaction.sign(keypair);
-      return transaction.toXDR();
-    },
-  );
-
-  await page.addInitScript((address: string) => {
-    // Looked up at call time, not here: the binding is installed by its own
-    // init script, and the order of the two is not worth depending on.
-    const sign = (xdr: string, passphrase?: string) =>
-      (window as unknown as {
-        __e2eSignTransaction: (xdr: string, passphrase?: string) => Promise<string>;
-      }).__e2eSignTransaction(xdr, passphrase);
-
-    (window as unknown as { hanaWallet: unknown }).hanaWallet = {
-      stellar: {
-        getPublicKey: async () => address,
-        signTransaction: async ({
-          xdr,
-          networkPassphrase,
-        }: {
-          xdr: string;
-          networkPassphrase?: string;
-        }) => sign(xdr, networkPassphrase),
-        signAuthEntry: async () => {
-          throw new Error("e2e wallet does not sign auth entries.");
-        },
-        signMessage: async () => {
-          throw new Error("e2e wallet does not sign messages.");
-        },
-      },
-    };
-  }, keypair.publicKey());
-}
-
-async function connect(page: Page): Promise<void> {
-  await page.goto("/wallet");
-  await expect(page.getByRole("heading", { level: 1, name: "Wallet" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  // The kit's chooser is plain DOM appended to <body>, one <li> per wallet.
-  await page.locator("li", { hasText: "Hana Wallet" }).click();
-}
-
-async function fund(address: string): Promise<void> {
-  const response = await fetch(`${FRIENDBOT}?addr=${address}`, {
-    signal: AbortSignal.timeout(30_000),
-  });
-  expect(response.ok, `Friendbot refused ${address}: ${await response.text()}`).toBe(true);
-}
 
 // One account per test, so nothing here shares state; serial only to keep
 // Friendbot from seeing a burst from one address.

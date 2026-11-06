@@ -10,18 +10,10 @@ import {
   prepareProjectRegistration,
   submitProjectRegistration,
 } from "@/lib/chain/actions";
+import { runRegistration } from "@/lib/chain/register-project";
 import { ICON } from "@/lib/icons";
 import type { StellarNetwork } from "@/lib/stellar";
 import { FundTestnetButton } from "@/components/wallet/fund-testnet-button";
-import {
-  connectWallet,
-  currentAddress,
-  isRejectedError,
-  isUnfundedError,
-  signTransaction,
-  walletNetwork,
-  wrongNetworkMessage,
-} from "@/lib/wallet";
 
 /**
  * Registers a project on chain, once.
@@ -56,49 +48,43 @@ export function ProjectChainRegistration({
     setUnfunded(null);
 
     startTransition(async () => {
-      try {
-        const signer = (await currentAddress()) ?? (await connectWallet());
+      const outcome = await runRegistration(network, {
+        prepare: (signer) => prepareProjectRegistration(projectId, signer),
+        submit: (signedXdr) => submitProjectRegistration(projectId, signedXdr),
+      });
 
-        // Same check as the anchor dialog: a wallet on the wrong network fails
-        // with an error about a missing account, which explains nothing.
-        const walletOn = await walletNetwork();
-        if (walletOn !== undefined && walletOn !== network) {
-          toast.error(wrongNetworkMessage(walletOn));
+      switch (outcome.kind) {
+        case "submitted": {
+          const { result } = outcome;
+          if (result.error) {
+            toast.error(result.error);
+          } else if (result.pending) {
+            // Submitted but not confirmed within the budget. Registration is
+            // recorded only once it lands, so tell the truth: it is on the
+            // network, and re-running once it confirms is safe — the contract
+            // answers "already registered" rather than registering twice.
+            toast.message("Submitted — still confirming on chain", {
+              description:
+                "Registration is saved once it confirms. If it doesn't appear shortly, register again — a landed one is recognised, not duplicated.",
+              duration: 10_000,
+            });
+          } else {
+            toast.success("Project registered on chain");
+          }
           return;
         }
-
-        const prepared = await prepareProjectRegistration(projectId, signer);
-        if (!prepared.ok) {
-          toast.error(prepared.error);
+        case "unfunded":
+          setUnfunded(outcome.address);
           return;
-        }
-
-        const signed = await signTransaction(prepared.data.xdr);
-        const result = await submitProjectRegistration(projectId, signed);
-
-        if (result.error) {
-          toast.error(result.error);
-        } else if (result.pending) {
-          // Submitted but not confirmed within the budget. Registration is
-          // recorded only once it lands, so tell the truth: it is on the
-          // network, and re-running once it confirms is safe — the contract
-          // answers "already registered" rather than registering twice.
-          toast.message("Submitted — still confirming on chain", {
-            description:
-              "Registration is saved once it confirms. If it doesn't appear shortly, register again — a landed one is recognised, not duplicated.",
-            duration: 10_000,
-          });
-        } else {
-          toast.success("Project registered on chain");
-        }
-      } catch (caught) {
-        const message = caught instanceof Error ? caught.message : String(caught);
-        if (isRejectedError(message)) return;
-        if (isUnfundedError(message)) {
-          setUnfunded((await currentAddress()) ?? null);
+        case "wrong_network":
+          toast.error(outcome.message);
           return;
-        }
-        toast.error(message);
+        case "error":
+          toast.error(outcome.message);
+          return;
+        case "declined":
+          // The button is still here; closing the prompt needs no message.
+          return;
       }
     });
   }

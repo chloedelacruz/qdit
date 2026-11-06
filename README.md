@@ -1211,9 +1211,15 @@ migration, because nothing regenerates it.
 > **Never apply `supabase/seed.sql` to a hosted project.** It creates local-stack accounts
 > with a plaintext password and its header says so.
 
-End-to-end tests build and serve the app themselves on port 3100, against the real
-Supabase project with RLS enforced — there are no fixtures, and credentials come from
-`E2E_EMAIL` / `E2E_PASSWORD` in `.env.local`:
+End-to-end tests run **only on a local machine, never on CI, and against production**.
+There is no staging environment, and every pull request targets `main`; that holds until
+there is budget for an always-on staging branch. The tests build and serve the app
+themselves on port 3100, against the Supabase project in `.env.local` with RLS enforced —
+there are no fixtures, and credentials come from `E2E_EMAIL` / `E2E_PASSWORD`.
+
+A full run writes to production. `reseed` deletes tasks in the seeded project that
+`web/e2e/seed.ts` doesn't list and resets seeded task statuses, and `cleanup` deletes rows,
+accounts and OAuth clients carrying the `e2e` prefixes, whoever owns them.
 
 ```bash
 cd web
@@ -1382,14 +1388,13 @@ scripts/ci-local.sh --all        # or name jobs: scripts/ci-local.sh web databas
 
 `git push --no-verify` skips it; don't, unless the branch is going nowhere near `main`.
 
-The Playwright suite is deliberately not in CI: it runs against the real hosted
-Supabase project with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database
-that write specs are allowed to mutate. For now it is run locally with `npm run test:e2e`
-from `web/`. `.github/workflows/e2e.yml` can run it on demand (Actions › E2E › Run
-workflow), one run at a time, once the secrets listed at the top of that file are set; they
-are not, so until then it stops at its first step. Besides the secret key, `oauth.spec.ts` needs the e2e
-project's OAuth 2.1 server enabled — without it the approve, deny and revoke tests skip and
-say why — and `wallet.spec.ts` needs Friendbot and Horizon on Testnet.
+The Playwright suite runs **only on a local machine, never on CI**, with
+`npm run test:e2e` from `web/`. There is no workflow for it, on any trigger, and none should
+be added: it would waste CI time. The pre-push hook doesn't run it either, so nothing runs it
+unless someone does so by hand. It runs against production with RLS enforced, so it needs `E2E_EMAIL` / `E2E_PASSWORD` and a database that write specs are
+allowed to mutate. Besides the secret key, `oauth.spec.ts` needs the e2e project's OAuth 2.1
+server enabled — without it the approve, deny and revoke tests skip and say why — and
+`wallet.spec.ts` needs Friendbot and Horizon on Testnet.
 
 ### Test output
 
@@ -1405,7 +1410,7 @@ supabase db start && supabase test db  # pgTAP — migrations on a local Postgre
 | --- | --- | --- |
 | Vitest — 9 files | Milestone state machine, filter round trip, strkey validators, milestone hash encoding, SEP-10 challenge, registration tickets, envelope assertions | **183 passed** |
 | Soroban — `cargo test` | Auth rules, the approval state machine, two-signature transfer, event emission, id length limits, version counting | **26 passed** |
-| Playwright — not in CI | Auth gate, every read, the write and approval flows, mobile nav | 140 passed, 1 skipped |
+| Playwright — local machine only, never on CI | Auth gate, every read, the write and approval flows, mobile nav | 140 passed, 1 skipped |
 
 The milestone rules matter most: `updateMilestoneStatus` mirrors what `milestone_proof`
 enforces on-chain, and a silent divergence between the two is the expensive kind, so

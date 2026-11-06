@@ -288,24 +288,26 @@ const SECTIONS: Section[] = [
         Check the URL slug. qdit fills it in from the name. You can edit it before
         you save.
       </>,
-      <>
-        Click <strong>Create project</strong>.
-      </>,
-      <>Open your new project from the list.</>,
       {
-        before: <>Only the project owner can register the project. The wallet you sign with becomes the only wallet that can approve or reject this project&apos;s milestones.</>,
+        before: <>The wallet you sign with becomes the only wallet that can approve or reject this project&apos;s milestones.</>,
         do: (
           <>
-            On the project overview, click <strong>Register on chain</strong>, then
-            sign the transaction in the Varial extension.
+            Click <strong>Create project</strong>. qdit waits for your wallet. If
+            no wallet is connected, choose one in the dialog.
           </>
         ),
       },
+      <>
+        Confirm the registration in the Varial extension. The project is
+        created once you confirm, and <strong>Project created</strong> appears.
+      </>,
     ],
     note: (
       <>
-        You must register the project before you anchor any milestone. Choose the
-        wallet you intend to keep. The ⓘ beside the registration explains it.
+        Registering is what lets you anchor milestones. Choose the wallet you
+        intend to keep. If you close the chooser or the prompt, nothing is created: try again,
+        or click <strong>Create without registering</strong> and register later
+        with <strong>Register on chain</strong> on the project overview.
       </>
     ),
   },

@@ -1,20 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { ZodError } from "zod";
+import { z, type ZodError } from "zod";
 
 import {
   deploymentSchema,
   milestoneSchema,
   profileSchema,
   classifyMemberIdentifier,
+  fieldErrorsOf,
+  projectFormValues,
   projectMemberIdentifierSchema,
   projectMemberSchema,
   projectSchema,
   projectUpdateSchema,
   proofSchema,
   taskSchema,
-  type ProjectInput,
 } from "@/lib/schemas";
 import {
   MILESTONE_OWNER_ONLY,
@@ -47,15 +48,15 @@ export type ActionState = {
    */
   pending?: boolean;
   txHash?: string;
+  /**
+   * The id of the row a create made. Set only by `createProject`, so the
+   * dialog can go straight on to registering it on chain (QDIT-36).
+   */
+  id?: string;
 };
 
 function toFieldErrors(error: ZodError): ActionState {
-  const fieldErrors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? "");
-    if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
-  }
-  return { fieldErrors };
+  return { fieldErrors: fieldErrorsOf(error) };
 }
 
 /** Empty strings from a form mean "not set", not "set to empty". */
@@ -240,15 +241,32 @@ export async function deleteTask(taskId: string): Promise<ActionState> {
 }
 
 export async function createProject(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const parsed = projectSchema.safeParse({
-    name: String(formData.get("name") ?? ""),
-    slug: String(formData.get("slug") ?? ""),
-    description: String(formData.get("description") ?? ""),
-    status: String(formData.get("status") || "active"),
-    repoUrl: String(formData.get("repoUrl") ?? ""),
-    demoUrl: String(formData.get("demoUrl") ?? ""),
-    docsUrl: String(formData.get("docsUrl") ?? ""),
-  } satisfies Record<keyof ProjectInput, string>);
+  return createProjectWithId(formData, crypto.randomUUID());
+}
+
+/**
+ * Insert a project under an id chosen beforehand, and return it.
+ *
+ * The id is chosen first because a project's id is what goes on chain:
+ * `create_project_ref` is signed for it before the row exists (QDIT-36), so
+ * the row must be inserted under that same id. `createProject` picks a fresh
+ * one; `createRegisteredProject` in `chain/actions.ts` passes the one the
+ * owner just signed for.
+ *
+ * Choosing the id up front also means nothing is read back with `.select()`.
+ * That read would go through the SELECT policy, which needs the owner's
+ * membership row, and the AFTER INSERT trigger writes that row too late for
+ * RETURNING to see.
+ *
+ * Exported for `chain/actions.ts`, which makes it callable from a browser like
+ * any export of a "use server" file. A caller picking its own id gains
+ * nothing: the insert policy still pins `owner_id` to the caller, and an id
+ * already in use fails on the primary key.
+ */
+export async function createProjectWithId(formData: FormData, id: string): Promise<ActionState> {
+  if (!z.guid().safeParse(id).success) return { error: "Missing project." };
+
+  const parsed = projectSchema.safeParse(projectFormValues(formData));
 
   if (!parsed.success) return toFieldErrors(parsed.error);
 
@@ -260,6 +278,7 @@ export async function createProject(_prev: ActionState, formData: FormData): Pro
   // `owner_id = auth.uid()`, and the on_project_created trigger then grants the
   // owner membership row that every other policy keys off.
   const { error } = await supabase.from("projects").insert({
+    id,
     owner_id: user.id,
     name: parsed.data.name,
     slug: parsed.data.slug,
@@ -270,10 +289,18 @@ export async function createProject(_prev: ActionState, formData: FormData): Pro
     docs_url: orNull(formData.get("docsUrl")),
   });
 
-  if (error) return { error: friendly(error.message, error.code) };
+  if (error) {
+    // Slugs are globally unique, and the person can only fix this one in the
+    // form, so it belongs on the field. The dialog also reads a field error as
+    // "fix this", not as a reason to offer Create without registering (QDIT-36).
+    if (error.code === "23505" && error.message.includes("projects_slug_key")) {
+      return { fieldErrors: { slug: "That slug is taken. Try a different one." } };
+    }
+    return { error: friendly(error.message, error.code) };
+  }
 
   revalidateAll();
-  return { ok: true };
+  return { ok: true, id };
 }
 
 export async function updateProject(
