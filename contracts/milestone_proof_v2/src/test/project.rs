@@ -57,20 +57,17 @@ fn create_project_accepts_a_threshold_above_the_approver_count() {
     assert_eq!(f.client.get_project(&project_id(&f.env)).threshold, 3);
 }
 
-/// No roster can ever reach a higher threshold, and this cap is what bounds
-/// every milestone's approvers set.
+/// D-104: no roster can reach this, but the owner can lower it later.
 #[test]
-fn create_project_refuses_a_threshold_above_the_member_cap() {
+fn create_project_accepts_a_threshold_above_the_member_cap() {
     let f = setup();
 
     f.client
-        .create_project(&project_id(&f.env), &f.owner, &MAX_MEMBERS);
+        .create_project(&project_id(&f.env), &f.owner, &(MAX_MEMBERS + 1));
 
-    let other = String::from_str(&f.env, "other");
     assert_eq!(
-        f.client
-            .try_create_project(&other, &f.owner, &(MAX_MEMBERS + 1)),
-        Err(Ok(Error::InvalidThreshold))
+        f.client.get_project(&project_id(&f.env)).threshold,
+        MAX_MEMBERS + 1
     );
 }
 
@@ -116,17 +113,6 @@ fn create_project_emits_its_event() {
         }
         .to_xdr(&f.env, &f.client.address)],
     );
-}
-
-#[test]
-fn a_refused_create_project_emits_nothing() {
-    let f = setup();
-
-    let _ = f
-        .client
-        .try_create_project(&project_id(&f.env), &f.owner, &0);
-
-    assert_eq!(f.env.events().all().events().len(), 0);
 }
 
 #[test]

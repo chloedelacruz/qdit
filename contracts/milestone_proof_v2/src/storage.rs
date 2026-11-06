@@ -7,9 +7,11 @@ const MAX_ID_LEN: u32 = 64;
 
 /// Ceiling on a project's roster.
 ///
-/// It also caps the threshold. A milestone stops collecting approvals once it
-/// reaches the threshold, so this bounds every approvers set as well, even
-/// though a set can hold addresses that have since left the roster (D-105).
+/// It also bounds every approvers set, at one more than this, even though a set
+/// can hold addresses that have since left the roster (D-105). A set stops growing
+/// at the threshold. While the threshold is above the approver count no approver
+/// can leave, so the set stops at the roster's size until the threshold is lowered,
+/// and the next approval then finalises the milestone.
 pub const MAX_MEMBERS: u32 = 20;
 
 /// A registered project.

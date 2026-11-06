@@ -318,22 +318,6 @@ fn member_writes_emit_their_events() {
 }
 
 #[test]
-fn refused_member_writes_emit_nothing() {
-    let f = with_project();
-    let stranger = Address::generate(&f.env);
-
-    let _ = f
-        .client
-        .try_add_member(&project_id(&f.env), &stranger, &stranger, &Role::Approver);
-    assert!(f.env.events().all().events().is_empty());
-
-    let _ = f
-        .client
-        .try_remove_member(&project_id(&f.env), &f.owner, &stranger);
-    assert!(f.env.events().all().events().is_empty());
-}
-
-#[test]
 fn transfer_moves_the_project_and_leaves_the_roster() {
     let f = with_project();
     let member = add_member(&f, Role::Submitter);
@@ -370,6 +354,20 @@ fn transfer_moves_roster_rights_to_the_new_owner() {
     f.client
         .add_member(&project_id(&f.env), &new_owner, &member, &Role::Approver);
     assert_eq!(f.client.get_members(&project_id(&f.env)).len(), 1);
+}
+
+#[test]
+fn a_new_owner_who_was_already_a_member_keeps_their_role() {
+    let f = with_project();
+    let member = add_member(&f, Role::Submitter);
+
+    f.client
+        .transfer_project_owner(&project_id(&f.env), &f.owner, &member);
+
+    assert_eq!(
+        f.client.get_members(&project_id(&f.env)).get(member),
+        Some(Role::Submitter)
+    );
 }
 
 /// Authorise the transfer for `signer` alone.

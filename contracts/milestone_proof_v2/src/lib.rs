@@ -25,10 +25,9 @@ pub struct MilestoneProofV2Contract;
 impl MilestoneProofV2Contract {
     /// Register a project owned by `owner`.
     ///
-    /// `threshold` must be at least 1 and at most [`MAX_MEMBERS`]. It may exceed
-    /// the current approver count, because a project has no approvers yet when
-    /// it is created (D-104). A milestone can't reach Approved until enough
-    /// approvers exist.
+    /// `threshold` must be at least 1. It may exceed the current approver count,
+    /// because a project has no approvers yet when it is created (D-104). A
+    /// milestone can't reach Approved until enough approvers exist.
     pub fn create_project(
         env: Env,
         project_id: String,
@@ -38,7 +37,7 @@ impl MilestoneProofV2Contract {
         storage::check_id(&project_id)?;
         owner.require_auth();
 
-        if threshold == 0 || threshold > MAX_MEMBERS {
+        if threshold == 0 {
             return Err(Error::InvalidThreshold);
         }
         if storage::has_project(&env, &project_id) {
@@ -135,8 +134,8 @@ impl MilestoneProofV2Contract {
     /// [`MilestoneStatus::Submitted`].
     ///
     /// `submitter` must hold the `Submitter` role. A resubmission increments the
-    /// version and clears earlier approvals, so approvals always refer to the
-    /// hash being approved. An Approved milestone can't be resubmitted.
+    /// version and clears earlier approvals, so an approval never carries over to
+    /// a new hash. An Approved milestone can't be resubmitted.
     pub fn submit_milestone_proof(
         env: Env,
         project_id: String,

@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0,
     "mux_id": 0
   },
@@ -22,7 +22,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 1
+                  "u32": 21
                 }
               ]
             }
@@ -31,7 +31,6 @@
         }
       ]
     ],
-    [],
     []
   ],
   "ledger": {
@@ -77,7 +76,7 @@
                       "symbol": "threshold"
                     },
                     "val": {
-                      "u32": 1
+                      "u32": 21
                     }
                   }
                 ]

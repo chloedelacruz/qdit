@@ -58,6 +58,7 @@ pub struct ProofSubmitted {
     pub submitter: Address,
     pub proof_hash: BytesN<32>,
     pub version: u32,
+    pub timestamp: u64,
 }
 
 #[contractevent(topics = ["qdit", "threshold"])]

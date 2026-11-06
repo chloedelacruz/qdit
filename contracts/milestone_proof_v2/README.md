@@ -12,7 +12,7 @@ never from an argument.
 
 | Function | Auth | Refused with |
 | --- | --- | --- |
-| `create_project(project_id, owner, threshold)` | `owner` | `ProjectExists`; `InvalidThreshold` unless 1 to 20 |
+| `create_project(project_id, owner, threshold)` | `owner` | `ProjectExists`; `InvalidThreshold` on 0 |
 | `add_member(project_id, owner, member, role)` | `owner` | `ProjectNotFound`, `NotAuthorized`, `MemberLimit`; `InvalidThreshold` when demoting an approver leaves too few |
 | `remove_member(project_id, owner, member)` | `owner` | `ProjectNotFound`, `NotAuthorized`, `NotMember`; `InvalidThreshold` when removing an approver leaves too few |
 | `set_threshold(project_id, owner, threshold)` | `owner` | `ProjectNotFound`, `NotAuthorized`; `InvalidThreshold` unless 1 to the approver count |
@@ -40,15 +40,15 @@ for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
   submit or approve, the owner has to add themselves with a role.
 - **Threshold at creation (D-104).** `create_project` accepts a threshold above the
   current approver count, because a project starts with no approvers. A milestone can't
-  reach Approved until enough approvers exist. The cap of 20 exists because no roster
-  could reach more, and it bounds every approvers set.
+  reach Approved until enough approvers exist.
 - **Keeping the threshold reachable (D-106).** Removing an approver, or changing them to
   another role, is refused if it leaves fewer approvers than the threshold.
-- **Removed approvers (D-105).** An approval given before the approver was removed still
-  counts, and their address stays in the set. They can't give a new approval. To cancel
-  an approval from a removed key, resubmit the milestone.
+- **Removed approvers (D-105).** An approval given before the approver was removed or
+  demoted still counts, and their address stays in the set. They can't give a new
+  approval. To cancel an approval from a removed key, resubmit the milestone. Because of
+  this a set can hold up to 21 addresses, one more than the roster cap.
 - **Resubmission.** It increments `version`, restamps `timestamp` and clears the
-  approvers, so approvals always refer to the hash being approved. It is allowed from
+  approvers, so an approval never carries over to a new hash. It is allowed from
   Submitted or Rejected. Approved is terminal.
 - **Rejection.** Any one approver can reject. The approvers set stays readable until a
   resubmission clears it.
@@ -61,8 +61,22 @@ for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
 milestone. A milestone that now meets the lower threshold stays Submitted until the next
 approval, which moves it to Approved.
 
-If every current approver has already approved, nobody can give that approval: they get
-`AlreadyApproved`, and the milestone stays Submitted until it is resubmitted or rejected.
+If every current approver has already approved, they get `AlreadyApproved`. The milestone
+stays Submitted until it is resubmitted or rejected, or until the owner adds a new
+approver, whose approval finalises it.
+
+### Known limits
+
+- **An approval does not name the hash.** It applies to whichever version is current when
+  it executes. If a resubmission lands first, the approval counts towards the new hash.
+- **Any `Submitter` can resubmit a milestone in progress**, including one another member
+  submitted, which replaces `submitter` and clears its approvals. The remedy is the owner
+  removing them.
+- **The owner can make a submitter an approver**, who can then approve their own proof. A
+  threshold of 2 or more still requires someone else.
+- **Anyone can claim an unused `project_id`.** After `ProjectExists`, check the owner with
+  `get_project`.
+- **Ids may be empty**, as in v1.
 
 ## Events
 
@@ -77,7 +91,7 @@ rebuild state without reading storage.
 | `add_member` | `member`, `role` (held after the call) |
 | `remove_member` | `member`, `role` (held until the call) |
 | `threshold` | `threshold` |
-| `submit` | `milestone_id`, `submitter`, `proof_hash`, `version` |
+| `submit` | `milestone_id`, `submitter`, `proof_hash`, `version`, `timestamp` |
 | `approve` | `milestone_id`, `approver`, `version`, `status` (after the call) |
 | `reject` | `milestone_id`, `approver`, `version` |
 

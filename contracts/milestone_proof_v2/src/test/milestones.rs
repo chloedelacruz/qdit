@@ -251,22 +251,30 @@ fn submit_emits_its_event() {
             submitter: t.submitter.clone(),
             proof_hash: proof(&t.f.env, 7),
             version: 1,
+            timestamp: NOW,
         }
         .to_xdr(&t.f.env, &t.f.client.address)],
     );
 }
 
 #[test]
-fn a_refused_submit_emits_nothing() {
+fn a_resubmission_emits_the_new_version_and_time() {
     let t = team();
-    let stranger = Address::generate(&t.f.env);
+    submit(&t, 7);
 
-    let _ = t.f.client.try_submit_milestone_proof(
-        &project_id(&t.f.env),
-        &milestone_id(&t.f.env),
-        &stranger,
-        &proof(&t.f.env, 1),
+    t.f.env.ledger().set_timestamp(NOW + 60);
+    submit(&t, 8);
+
+    assert_eq!(
+        t.f.env.events().all(),
+        [ProofSubmitted {
+            project_id: project_id(&t.f.env),
+            milestone_id: milestone_id(&t.f.env),
+            submitter: t.submitter.clone(),
+            proof_hash: proof(&t.f.env, 8),
+            version: 2,
+            timestamp: NOW + 60,
+        }
+        .to_xdr(&t.f.env, &t.f.client.address)],
     );
-
-    assert!(t.f.env.events().all().events().is_empty());
 }

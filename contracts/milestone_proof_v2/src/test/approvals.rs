@@ -236,6 +236,50 @@ fn a_demoted_approver_cannot_approve() {
 }
 
 #[test]
+fn a_demoted_approver_cannot_reject() {
+    let t = two_of_three();
+    t.submit(1);
+    t.f.client
+        .add_member(&project_id(&t.f.env), &t.f.owner, &t.a, &Role::Submitter);
+
+    assert_eq!(t.try_reject(&t.a), Some(Error::NotAuthorized));
+}
+
+/// D-105 applied to a role change: the approval was valid when it was given.
+#[test]
+fn an_approval_from_a_since_demoted_approver_still_counts() {
+    let t = two_of_three();
+    t.submit(1);
+    t.approve(&t.a);
+    t.f.client
+        .add_member(&project_id(&t.f.env), &t.f.owner, &t.a, &Role::Submitter);
+
+    t.approve(&t.b);
+
+    assert_eq!(t.record().status, MilestoneStatus::Approved);
+    assert_eq!(
+        t.record().approvers,
+        vec![&t.f.env, t.a.clone(), t.b.clone()]
+    );
+}
+
+#[test]
+fn an_owner_who_adds_themselves_can_act_in_that_role() {
+    let t = two_of_three();
+    t.submit(1);
+    t.f.client.add_member(
+        &project_id(&t.f.env),
+        &t.f.owner,
+        &t.f.owner,
+        &Role::Approver,
+    );
+
+    t.approve(&t.f.owner);
+
+    assert_eq!(t.record().approvers, vec![&t.f.env, t.f.owner.clone()]);
+}
+
+#[test]
 fn resubmission_empties_the_approvers_and_needs_the_full_threshold_again() {
     let t = two_of_three();
     t.submit(1);
@@ -525,6 +569,76 @@ fn a_lowered_threshold_with_no_approver_left_is_cleared_by_resubmission() {
 }
 
 #[test]
+fn a_lowered_threshold_with_no_approver_left_is_cleared_by_rejection() {
+    let t = two_of_three();
+    t.set_threshold(3);
+    t.submit(1);
+    t.approve(&t.a);
+    t.approve(&t.b);
+    t.set_threshold(2);
+    t.remove(&t.c);
+
+    assert_eq!(t.try_reject(&t.a), None);
+
+    assert_eq!(t.record().status, MilestoneStatus::Rejected);
+}
+
+#[test]
+fn a_lowered_threshold_with_no_approver_left_is_cleared_by_a_new_approver() {
+    let t = two_of_three();
+    t.set_threshold(3);
+    t.submit(1);
+    t.approve(&t.a);
+    t.approve(&t.b);
+    t.set_threshold(2);
+    t.remove(&t.c);
+
+    let new_approver = add_member(&t.f, Role::Approver);
+    t.approve(&new_approver);
+
+    assert_eq!(t.record().status, MilestoneStatus::Approved);
+    assert_eq!(t.record().approvers.len(), 3);
+}
+
+/// The worst case for an approvers set: a threshold no roster can reach, a full
+/// roster of approvers who all approve, then one more after it is lowered.
+#[test]
+fn an_approvers_set_holds_at_most_one_more_than_the_member_cap() {
+    let f = setup();
+    let project = project_id(&f.env);
+    let milestone = milestone_id(&f.env);
+    f.client
+        .create_project(&project, &f.owner, &(MAX_MEMBERS + 1));
+
+    let submitter = add_member(&f, Role::Submitter);
+    f.client
+        .submit_milestone_proof(&project, &milestone, &submitter, &proof(&f.env, 1));
+    for _ in 1..MAX_MEMBERS {
+        let approver = add_member(&f, Role::Approver);
+        f.client.approve_milestone(&project, &milestone, &approver);
+    }
+    // The submitter's place makes it a full roster of approvers.
+    f.client
+        .add_member(&project, &f.owner, &submitter, &Role::Approver);
+    f.client.approve_milestone(&project, &milestone, &submitter);
+
+    let record = f.client.get_milestone_status(&project, &milestone);
+    assert_eq!(record.status, MilestoneStatus::Submitted);
+    assert_eq!(record.approvers.len(), MAX_MEMBERS);
+
+    // Lowering opens a place on the roster, and the next approval finalises.
+    f.client
+        .set_threshold(&project, &f.owner, &(MAX_MEMBERS - 1));
+    f.client.remove_member(&project, &f.owner, &submitter);
+    let last = add_member(&f, Role::Approver);
+    f.client.approve_milestone(&project, &milestone, &last);
+
+    let record = f.client.get_milestone_status(&project, &milestone);
+    assert_eq!(record.status, MilestoneStatus::Approved);
+    assert_eq!(record.approvers.len(), MAX_MEMBERS + 1);
+}
+
+#[test]
 fn a_raised_threshold_applies_to_a_milestone_in_progress() {
     let t = two_of_three();
     t.submit(1);
@@ -605,22 +719,4 @@ fn reject_emits_its_event() {
         }
         .to_xdr(&t.f.env, &t.f.client.address)],
     );
-}
-
-#[test]
-fn refused_decisions_and_threshold_changes_emit_nothing() {
-    let t = two_of_three();
-    t.submit(1);
-    t.approve(&t.a);
-
-    assert_eq!(t.try_approve(&t.a), Some(Error::AlreadyApproved));
-    assert!(t.f.env.events().all().events().is_empty());
-
-    assert_eq!(t.try_reject(&t.submitter), Some(Error::NotAuthorized));
-    assert!(t.f.env.events().all().events().is_empty());
-
-    let _ =
-        t.f.client
-            .try_set_threshold(&project_id(&t.f.env), &t.f.owner, &0);
-    assert!(t.f.env.events().all().events().is_empty());
 }

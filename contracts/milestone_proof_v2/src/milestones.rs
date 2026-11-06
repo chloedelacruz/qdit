@@ -30,6 +30,7 @@ pub fn submit(
         version = existing.version + 1;
     }
 
+    let timestamp = env.ledger().timestamp();
     storage::set_milestone(
         env,
         &project_id,
@@ -39,7 +40,7 @@ pub fn submit(
             version,
             proof_hash: proof_hash.clone(),
             submitter: submitter.clone(),
-            timestamp: env.ledger().timestamp(),
+            timestamp,
             approvers: Vec::new(env),
         },
     );
@@ -50,6 +51,7 @@ pub fn submit(
         submitter,
         proof_hash,
         version,
+        timestamp,
     }
     .publish(env);
     Ok(())

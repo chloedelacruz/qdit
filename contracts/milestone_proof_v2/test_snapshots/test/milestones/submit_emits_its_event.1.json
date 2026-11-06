@@ -479,6 +479,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": "1700000000"
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "version"
                   },
                   "val": {
