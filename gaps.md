@@ -74,18 +74,15 @@ display name (`Ada Builder` → `ada_builder`); none collided, and none were lef
 null. The one placeholder-email account got `gb7k_zc5d` from its own truncated
 address, which is replaced the moment it completes registration.
 
-**One step is hosted-only and has no migration: public signup is still on.**
-Turn it off in the dashboard (Authentication → Sign In / Providers → "Allow new
-users to sign up"); `supabase/config.toml` already does it for the local stack.
-Until that switch is flipped the `raw_app_meta_data` fix is carrying the whole
-defence alone — which it can, and it was verified in place against the hosted
-database (a signup forging `user_metadata.wallet_address` no longer reaches
-`profiles`), but it was not meant to be alone.
-
-**Do not flip it before testing sign-in locally.** Minting a session goes
-through `admin.generateLink({ type: "magiclink" })`, and nothing has yet proved
-that call is indifferent to the signup setting. The comment in `config.toml`
-says the same thing at the point of change.
+**One step is hosted-only and has no migration: public signup.** It has been off
+since 6 Nov 2026, in the dashboard (Authentication → Sign In / Providers → "Allow
+new users to sign up"); `supabase/config.toml` does the same for the local stack.
+Minting a session goes through `admin.generateLink({ type: "magiclink" })`, and
+that works with signup closed: `e2e/wallet-auth.spec.ts` passed on production, and
+so did a real Varial sign-in. On production, direct signup by email and password,
+magic link, phone and anonymous were all refused, and no account was created. The
+`raw_app_meta_data` fix (a signup forging `user_metadata.wallet_address` no longer
+reaches `profiles`) still stands behind it.
 
 **Two GoTrue behaviours that will bite the next person**, both found by running
 `e2e/wallet-auth.spec.ts` rather than by reading:

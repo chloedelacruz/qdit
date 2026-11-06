@@ -63,11 +63,11 @@ refresh_token_reuse_interval = 10
 #
 # admin.createUser() is unaffected: the Auth admin API does not consult this.
 #
-# BEFORE FLIPPING THIS IN THE HOSTED PROJECT: run the local stack and sign in
-# with a wallet. Session minting goes through admin.generateLink({ type:
-# "magiclink" }) for an account that already exists, which should be indifferent
-# to the signup setting — should be, and this repo has not proved it. Local
-# first, hosted after.
+# Production is closed too, since 6 Nov 2026, through the dashboard: Authentication
+# > Sign In / Providers > Allow new users to sign up. This file doesn't set it there.
+# Session minting goes through admin.generateLink({ type: "magiclink" }) for an
+# account that already exists, and that works with signup closed: wallet-auth.spec.ts
+# passed on production, and so did a real Varial sign-in.
 enable_signup = false
 enable_anonymous_sign_ins = false
 
