@@ -2,8 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { checkEligibility } from "@/lib/hackathon/eligibility";
 import {
-  createGraderClient,
   gradeOnce,
+  graderClientFromEnv,
   graderModel,
   GraderError,
   GraderRefusalError,
@@ -552,17 +552,17 @@ class Sweep {
   }
 }
 
-/** The service-role store and the Anthropic client from the environment; null (logged) when unset. */
+/** The service-role store and the grader client from the environment (graderClientFromEnv); null (logged) when unset. */
 export function productionWorkerDeps(): WorkerDeps | null {
   const secret = serviceSecretKey();
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!secret || !apiKey) {
+  const client = graderClientFromEnv();
+  if (!secret || !client) {
     console.error(
       `hackathon grader: ${!secret ? "SUPABASE_SECRET_KEY" : "ANTHROPIC_API_KEY"} is not set, so nothing is graded. See web/.env.example.`,
     );
     return null;
   }
-  return { store: supabaseGradingStore(createServiceClient(secret)), client: createGraderClient(apiKey) };
+  return { store: supabaseGradingStore(createServiceClient(secret)), client };
 }
 
 /**

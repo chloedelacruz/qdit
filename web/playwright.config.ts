@@ -105,7 +105,7 @@ export default defineConfig({
       // once in this project and again in `mutations`.
       // `mobile-*` is the `mobile` project's: those specs assert a phone
       // layout (tab bar, touch targets) that a desktop viewport does not have.
-      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth|project-register|milestone-gates)\.spec\.ts/,
+      testIgnore: /(mobile-[\w-]+|auth|landing|create-task|edit-delete|public-proof|oauth|project-register|milestone-gates|hackathon)\.spec\.ts/,
     },
 
     {
@@ -154,6 +154,22 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState: STORAGE_STATE },
       dependencies: ["edits"],
       testMatch: /(public-proof|oauth|project-register|milestone-gates)\.spec\.ts/,
+    },
+
+    {
+      /**
+       * The hackathon portal (WP-4.7, QDIT-49). Last of the write projects:
+       * it creates its own accounts, project and `e2e-` hackathon, and signs
+       * in as those accounts in their own browser contexts, so it needs no
+       * saved session. Nothing it writes is visible to the signed-in account,
+       * but it follows `publishing` so no two write specs ever overlap.
+       * Its afterAll and the `cleanup` teardown sweep every `e2e-` hackathon
+       * and its mindmap images. Skipped where the migration is not applied.
+       */
+      name: "hackathon",
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["publishing"],
+      testMatch: /[\\/]hackathon\.spec\.ts$/,
     },
 
     {

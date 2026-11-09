@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { createFakeGraderClient, fakeGraderEnabled } from "@/lib/hackathon/fake-grader";
 import type { GradingRequest } from "@/lib/hackathon/prompt";
 import { parseAiRun, InvalidAiRunError } from "@/lib/hackathon/rubric";
 import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput } from "@/lib/hackathon/types";
@@ -37,6 +38,16 @@ export function graderModel(env: Record<string, string | undefined> = process.en
 /** The Anthropic client the worker uses in production. */
 export function createGraderClient(apiKey: string): Anthropic {
   return new Anthropic({ apiKey, timeout: GRADER_TIMEOUT_MS, maxRetries: GRADER_MAX_RETRIES });
+}
+
+/**
+ * The client the worker and the cron route grade with: the local fake for
+ * `HACKATHON_GRADER_FAKE=1` outside a production build (fake-grader.ts),
+ * else Claude with `ANTHROPIC_API_KEY`; null when neither is set.
+ */
+export function graderClientFromEnv(env: Record<string, string | undefined> = process.env): GraderClient | null {
+  if (fakeGraderEnabled(env)) return createFakeGraderClient();
+  return env.ANTHROPIC_API_KEY ? createGraderClient(env.ANTHROPIC_API_KEY) : null;
 }
 
 /** The part of the SDK client the grader calls; tests pass a fake. */

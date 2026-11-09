@@ -16,7 +16,8 @@
     "test:doqtri": "playwright test -c integration/doqtri/playwright.config.ts",
     "demo:wallets": "node scripts/demo/wallets.mjs",
     "demo:seed": "node scripts/demo/seed.mjs",
-    "demo:clean": "node scripts/demo/seed.mjs --clean"
+    "demo:clean": "node scripts/demo/seed.mjs --clean",
+    "demo:hackathon": "node scripts/demo/hackathon-seed.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.6.0",

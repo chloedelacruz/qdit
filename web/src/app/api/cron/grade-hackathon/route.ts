@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createGraderClient } from "@/lib/hackathon/grader";
+import { graderClientFromEnv } from "@/lib/hackathon/grader";
 import { supabaseGradingStore } from "@/lib/hackathon/grading-store";
 import { runSweep, SWEEP_BUDGET_MS } from "@/lib/hackathon/grading-worker";
 import { createServiceClient, serviceSecretKey } from "@/lib/hackathon/service-client";
@@ -47,8 +47,9 @@ export async function GET(request: Request) {
     console.error("grading cron: SUPABASE_SECRET_KEY is not set. See web/.env.example.");
     return failure(503, "unavailable", "Hackathon grading is not configured.");
   }
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  // Claude, or the local fake for a dry run (HACKATHON_GRADER_FAKE, never in production).
+  const client = graderClientFromEnv();
+  if (!client) {
     console.error("grading cron: ANTHROPIC_API_KEY is not set. See web/.env.example.");
     return failure(503, "unavailable", "Hackathon grading is not configured.");
   }
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
   try {
     const counts = await runSweep(
       { budgetMs: SWEEP_BUDGET_MS },
-      { store: supabaseGradingStore(createServiceClient(secretKey)), client: createGraderClient(apiKey) },
+      { store: supabaseGradingStore(createServiceClient(secretKey)), client },
     );
     return NextResponse.json({ data: counts }, { headers: NO_STORE });
   } catch {

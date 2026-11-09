@@ -1220,6 +1220,11 @@ there are no fixtures, and credentials come from `E2E_EMAIL` / `E2E_PASSWORD`.
 A full run writes to production. `reseed` deletes tasks in the seeded project that
 `web/e2e/seed.ts` doesn't list and resets seeded task statuses, and `cleanup` deletes rows,
 accounts and OAuth clients carrying the `e2e` prefixes, whoever owns them.
+The `hackathon` project (WP-4.7) builds its own `e2e-<run>` hackathon, accounts and team
+project, settles grading with synthetic runs (no model call), and deletes all of it,
+including the mindmap images in Storage. It skips itself until the hackathon migration is
+applied. The hackathon's operator steps, dry run and rollback are in
+[`docs/runbooks/hackathon.md`](docs/runbooks/hackathon.md).
 
 ```bash
 cd web
