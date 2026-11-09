@@ -2,10 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { GradeUsage } from "@/lib/hackathon/grader";
 import type { GradingImage, GradingImageMediaType } from "@/lib/hackathon/prompt";
-import { parseAiRun } from "@/lib/hackathon/rubric";
 import type {
   AiFlag,
-  AiRunOutput,
   CriterionKey,
   DoqtriSnapshotV1,
   EligibilityResult,
@@ -18,7 +16,13 @@ import type { Database } from "@/lib/types/database";
  * Every database and Storage access of the hackathon grader (WP-4.7, D-116,
  * D-119), behind one interface. The worker depends on `GradingStore` only;
  * `supabaseGradingStore` is the production implementation over the service
- * role, against supabase/migrations/20261110100000_hackathons.sql.
+ * role, against supabase/migrations/20261110100000_hackathons.sql. It calls
+ * only the grader's service-role functions and the private bucket: no table
+ * is read or written directly.
+ *
+ * Every write names the claim it settles (`attempt`, the job's attempts as
+ * claimed): a job leased again after its lease ran out answers "stale" to
+ * the earlier holder, so two workers never both record one job.
  *
  * Errors carry the operation and the PostgREST/Postgres code, never the
  * database's message: a constraint violation on hackathon_ai_runs would echo
@@ -27,12 +31,12 @@ import type { Database } from "@/lib/types/database";
 
 export type GradingJobStatus = "pending" | "running" | "done" | "failed" | "superseded";
 
-/** One leased job with everything the grader reads: claim_grading_jobs() row. */
+/** One leased job with everything the grader reads: a claim_grading_jobs() row. */
 export interface ClaimedJob {
   jobId: string;
   versionId: string;
   runNo: number;
-  /** Claims so far, this one included (1–3). */
+  /** The job's attempts as of this claim; every write for it passes this back. */
   attempts: number;
   /** ISO 8601. The job goes back to the queue (or fails) after this. */
   leaseUntil: string;
@@ -48,26 +52,28 @@ export interface ClaimedJob {
   /** Null when the team pushed nothing, or retention removed it. */
   doqtriSnapshot: DoqtriSnapshotV1 | null;
   window: HackathonWindow;
-}
-
-/** What may have changed since the claim. */
-export interface JobContext {
-  /** The job's status now; null when the row is gone. */
-  jobStatus: GradingJobStatus | null;
-  /** The version is still its submission's current one. */
-  isCurrentVersion: boolean;
+  /** The entry's current version at claim time. */
+  currentVersionId: string | null;
   /** The admin's call: true or false wins over the gate, null means the gate stands. */
   eligibilityOverride: boolean | null;
   /** The stored gate result; null until the grader stores one. */
-  eligibility: EligibilityResult | null;
+  storedEligibility: EligibilityResult | null;
 }
 
-/** A version's queue state and the runs that count. */
+/** One counted run of a version (its job is done), as stored. */
+export interface StoredRun {
+  runNo: number;
+  criteria: Record<CriterionKey, { score: number; evidence: string }>;
+  total: number;
+  flags: AiFlag[];
+}
+
+/** hackathon_version_progress(): the version's queue state and the runs that count. */
 export interface VersionProgress {
-  /** Every job of the version except superseded ones. */
+  /** Every job of the version except superseded ones, by run number. */
   jobs: { runNo: number; status: GradingJobStatus }[];
   /** Runs whose job is done, by run number. Only these count (regrade supersedes the rest). */
-  runs: AiRunOutput[];
+  runs: StoredRun[];
 }
 
 /** One finished run, as complete_grading_job() stores it. */
@@ -84,22 +90,36 @@ export interface CompletedRun {
   truncated: boolean;
 }
 
+/** How a failed attempt goes back to the queue: fail_grading_job(). */
+export interface JobFailure {
+  /** Content-free; stored in last_error. */
+  error: string;
+  retryAfterSeconds: number;
+  /** Fail now, whatever the attempts (refusal, cut-off or invalid output). */
+  permanent: boolean;
+  /** False for provider overload and budget aborts: the attempt is given back. */
+  countAttempt: boolean;
+}
+
+/** A mindmap read: the image, or why it was dropped. Never a thrown error. */
+export type ImageRead =
+  | { ok: true; image: GradingImage }
+  | { ok: false; reason: "missing" | "too_large" | "unsupported_type" | "unreadable" };
+
 export interface GradingStore {
   /** Lease due jobs: claim_grading_jobs(). The database caps running jobs at 20. */
   claimJobs(args: { limit: number; leaseSeconds: number; versionId?: string }): Promise<ClaimedJob[]>;
-  /** Job status, current version, override and stored eligibility, read now. */
-  readJobContext(job: Pick<ClaimedJob, "jobId" | "versionId" | "submissionId">): Promise<JobContext>;
   /** set_version_eligibility(). */
   setVersionEligibility(versionId: string, eligibility: EligibilityResult): Promise<void>;
-  /** One mindmap image from the private bucket, base64. Throws when unreadable. */
-  readImage(path: string): Promise<GradingImage>;
-  /** complete_grading_job(): stores the run and marks the job done; "stale" when no longer running. */
-  completeJob(jobId: string, run: CompletedRun): Promise<"done" | "stale">;
-  /** Marks a running job done without a run (an ineligible entry), with the reason in last_error. */
-  skipJob(jobId: string, reason: string): Promise<"done" | "stale">;
-  /** fail_grading_job(): back to pending after the delay while attempts < 3, else failed. */
-  failJob(jobId: string, error: string, retryAfterSeconds: number): Promise<"pending" | "failed" | "stale">;
-  /** The version's non-superseded jobs and its counted runs. */
+  /** One mindmap from the private bucket. Resolves `{ ok: false }` instead of throwing. */
+  readImage(path: string): Promise<ImageRead>;
+  /** complete_grading_job(): stores the run and marks the job done; "stale" unless still running under `attempt`. */
+  completeJob(jobId: string, attempt: number, run: CompletedRun): Promise<"done" | "stale">;
+  /** skip_grading_job(): done without a run (an ineligible entry), the reason in last_error. */
+  skipJob(jobId: string, attempt: number, reason: string): Promise<"done" | "stale">;
+  /** fail_grading_job(). */
+  failJob(jobId: string, attempt: number, failure: JobFailure): Promise<"pending" | "failed" | "stale">;
+  /** hackathon_version_progress(). */
   readVersionProgress(versionId: string): Promise<VersionProgress>;
   /** enqueue_third_run(): the new job id, or null when not needed or not current. */
   enqueueThirdRun(versionId: string): Promise<string | null>;
@@ -119,6 +139,8 @@ export class GradingStoreError extends Error {
 }
 
 export const MINDMAP_BUCKET = "hackathon-mindmaps";
+/** The bucket's own limit, and the Messages API's per-image limit. */
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const MEDIA_TYPES: Readonly<Record<string, GradingImageMediaType>> = {
   png: "image/png",
@@ -134,6 +156,16 @@ export function imageMediaType(path: string, blobType: string | null | undefined
   if (ALLOWED_MEDIA_TYPES.has(type)) return type as GradingImageMediaType;
   const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase();
   return ext ? (MEDIA_TYPES[ext] ?? null) : null;
+}
+
+/** Checks a downloaded object before reading its bytes: size first, then type. */
+export async function imageFromBlob(path: string, blob: Blob): Promise<ImageRead> {
+  if (blob.size > MAX_IMAGE_BYTES) return { ok: false, reason: "too_large" };
+  if (blob.size === 0) return { ok: false, reason: "unreadable" };
+  const mediaType = imageMediaType(path, blob.type);
+  if (!mediaType) return { ok: false, reason: "unsupported_type" };
+  const base64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+  return { ok: true, image: { mediaType, base64 } };
 }
 
 const JOB_STATUSES: ReadonlySet<string> = new Set(["pending", "running", "done", "failed", "superseded"]);
@@ -163,7 +195,14 @@ function asQditSnapshot(value: unknown): QditSnapshotV1 {
   return value as unknown as QditSnapshotV1;
 }
 
-interface ClaimRow {
+function asEligibility(value: unknown): EligibilityResult | null {
+  return isRecord(value) && typeof value.eligible === "boolean" && Array.isArray(value.rules)
+    ? (value as unknown as EligibilityResult)
+    : null;
+}
+
+/** A claim_grading_jobs() row. */
+export interface ClaimRow {
   job_id: string;
   version_id: string;
   run_no: number;
@@ -182,9 +221,12 @@ interface ClaimRow {
   closes_at: string;
   team_min: number;
   team_max: number;
+  current_version_id: string | null;
+  eligibility_override: boolean | null;
+  eligibility: unknown;
 }
 
-function toClaimedJob(row: ClaimRow): ClaimedJob {
+export function toClaimedJob(row: ClaimRow): ClaimedJob {
   return {
     jobId: row.job_id,
     versionId: row.version_id,
@@ -206,7 +248,37 @@ function toClaimedJob(row: ClaimRow): ClaimedJob {
       team_min: row.team_min,
       team_max: row.team_max,
     },
+    currentVersionId: row.current_version_id ?? null,
+    eligibilityOverride: typeof row.eligibility_override === "boolean" ? row.eligibility_override : null,
+    storedEligibility: asEligibility(row.eligibility),
   };
+}
+
+/** A hackathon_version_progress() answer. Throws on an unexpected shape. */
+export function toVersionProgress(value: unknown): VersionProgress {
+  if (!isRecord(value) || !Array.isArray(value.jobs) || !Array.isArray(value.runs)) {
+    throw new GradingStoreError("read version progress (unexpected shape)", null);
+  }
+  const jobs = value.jobs.map((j) => {
+    const row = j as { run_no?: unknown; status?: unknown };
+    if (typeof row.run_no !== "number" || typeof row.status !== "string" || !JOB_STATUSES.has(row.status)) {
+      throw new GradingStoreError("read version progress (unexpected job)", null);
+    }
+    return { runNo: row.run_no, status: row.status as GradingJobStatus };
+  });
+  const runs = value.runs.map((r) => {
+    const row = r as { run_no?: unknown; criteria?: unknown; total?: unknown; flags?: unknown };
+    if (typeof row.run_no !== "number" || !isRecord(row.criteria)) {
+      throw new GradingStoreError("read version progress (unexpected run)", null);
+    }
+    return {
+      runNo: row.run_no,
+      criteria: row.criteria as StoredRun["criteria"],
+      total: Number(row.total),
+      flags: (Array.isArray(row.flags) ? row.flags : []) as AiFlag[],
+    };
+  });
+  return { jobs, runs };
 }
 
 function fail(operation: string, error: { code?: string | null } | null): never {
@@ -216,9 +288,9 @@ function fail(operation: string, error: { code?: string | null } | null): never 
 /**
  * The production store, over a service-role client (service-client.ts).
  *
- * The hackathon tables and functions are not in the hand-written
- * `Database` type yet (QDIT-43 adds them), so this reads through an untyped
- * view of the client and checks shapes itself.
+ * The hackathon functions are not in this branch's hand-written `Database`
+ * type yet (QDIT-43 adds them), so this calls them through an untyped view
+ * of the client and checks shapes itself.
  */
 export function supabaseGradingStore(client: SupabaseClient<Database>): GradingStore {
   const db = client as unknown as SupabaseClient;
@@ -234,34 +306,6 @@ export function supabaseGradingStore(client: SupabaseClient<Database>): GradingS
       return ((data ?? []) as ClaimRow[]).map(toClaimedJob);
     },
 
-    async readJobContext({ jobId, versionId, submissionId }) {
-      const [job, submission, version] = await Promise.all([
-        db.from("hackathon_grading_jobs").select("status").eq("id", jobId).maybeSingle(),
-        db
-          .from("hackathon_submissions")
-          .select("current_version_id, eligibility_override")
-          .eq("id", submissionId)
-          .maybeSingle(),
-        db.from("hackathon_submission_versions").select("eligibility").eq("id", versionId).maybeSingle(),
-      ]);
-      if (job.error) fail("read job", job.error);
-      if (submission.error) fail("read submission", submission.error);
-      if (version.error) fail("read version", version.error);
-
-      const status = (job.data as { status?: unknown } | null)?.status;
-      const sub = submission.data as { current_version_id?: unknown; eligibility_override?: unknown } | null;
-      const eligibility = (version.data as { eligibility?: unknown } | null)?.eligibility;
-      return {
-        jobStatus: typeof status === "string" && JOB_STATUSES.has(status) ? (status as GradingJobStatus) : null,
-        isCurrentVersion: sub?.current_version_id === versionId,
-        eligibilityOverride: typeof sub?.eligibility_override === "boolean" ? sub.eligibility_override : null,
-        eligibility:
-          isRecord(eligibility) && typeof eligibility.eligible === "boolean" && Array.isArray(eligibility.rules)
-            ? (eligibility as unknown as EligibilityResult)
-            : null,
-      };
-    },
-
     async setVersionEligibility(versionId, eligibility) {
       const { error } = await db.rpc("set_version_eligibility", {
         p_version_id: versionId,
@@ -271,17 +315,19 @@ export function supabaseGradingStore(client: SupabaseClient<Database>): GradingS
     },
 
     async readImage(path) {
-      const { data, error } = await db.storage.from(MINDMAP_BUCKET).download(path);
-      if (error || !data) throw new GradingStoreError("download mindmap image", null);
-      const mediaType = imageMediaType(path, data.type);
-      if (!mediaType) throw new GradingStoreError("download mindmap image (unsupported type)", null);
-      const base64 = Buffer.from(await data.arrayBuffer()).toString("base64");
-      return { mediaType, base64 };
+      try {
+        const { data, error } = await db.storage.from(MINDMAP_BUCKET).download(path);
+        if (error || !data) return { ok: false, reason: "missing" };
+        return await imageFromBlob(path, data);
+      } catch {
+        return { ok: false, reason: "unreadable" };
+      }
     },
 
-    async completeJob(jobId, run) {
+    async completeJob(jobId, attempt, run) {
       const { data, error } = await db.rpc("complete_grading_job", {
         p_job_id: jobId,
+        p_attempt: attempt,
         p_model: run.model,
         p_criteria: run.criteria,
         p_total: run.total,
@@ -295,56 +341,33 @@ export function supabaseGradingStore(client: SupabaseClient<Database>): GradingS
       return data === "done" ? "done" : "stale";
     },
 
-    async skipJob(jobId, reason) {
-      // No RPC marks a job done without a run, so this is the one direct
-      // write: the same transition complete_grading_job() makes, guarded on
-      // the job still running so a superseded job stays superseded.
-      const { data, error } = await db
-        .from("hackathon_grading_jobs")
-        .update({ status: "done", lease_until: null, last_error: reason.slice(0, 2000) })
-        .eq("id", jobId)
-        .eq("status", "running")
-        .select("id");
-      if (error) fail("skip job", error);
-      return Array.isArray(data) && data.length > 0 ? "done" : "stale";
+    async skipJob(jobId, attempt, reason) {
+      const { data, error } = await db.rpc("skip_grading_job", {
+        p_job_id: jobId,
+        p_attempt: attempt,
+        p_reason: reason.slice(0, 2000),
+      });
+      if (error) fail("skip_grading_job", error);
+      return data === "done" ? "done" : "stale";
     },
 
-    async failJob(jobId, error, retryAfterSeconds) {
-      const { data, error: rpcError } = await db.rpc("fail_grading_job", {
+    async failJob(jobId, attempt, failure) {
+      const { data, error } = await db.rpc("fail_grading_job", {
         p_job_id: jobId,
-        p_error: error.slice(0, 2000),
-        p_retry_after_seconds: retryAfterSeconds,
+        p_attempt: attempt,
+        p_error: failure.error.slice(0, 2000),
+        p_retry_after_seconds: failure.retryAfterSeconds,
+        p_permanent: failure.permanent,
+        p_count_attempt: failure.countAttempt,
       });
-      if (rpcError) fail("fail_grading_job", rpcError);
+      if (error) fail("fail_grading_job", error);
       return data === "pending" || data === "failed" ? data : "stale";
     },
 
     async readVersionProgress(versionId) {
-      const [jobs, runs] = await Promise.all([
-        db
-          .from("hackathon_grading_jobs")
-          .select("run_no, status")
-          .eq("version_id", versionId)
-          .neq("status", "superseded")
-          .order("run_no"),
-        db
-          .from("hackathon_ai_runs")
-          .select("run_no, criteria, flags, summary")
-          .eq("version_id", versionId)
-          .order("run_no"),
-      ]);
-      if (jobs.error) fail("read version jobs", jobs.error);
-      if (runs.error) fail("read version runs", runs.error);
-
-      const jobRows = (jobs.data ?? []) as { run_no: number; status: string }[];
-      const done = new Set(jobRows.filter((j) => j.status === "done").map((j) => j.run_no));
-      const runRows = (runs.data ?? []) as { run_no: number; criteria: unknown; flags: unknown; summary: unknown }[];
-      return {
-        jobs: jobRows.map((j) => ({ runNo: j.run_no, status: j.status as GradingJobStatus })),
-        runs: runRows
-          .filter((r) => done.has(r.run_no))
-          .map((r) => parseAiRun({ criteria: r.criteria, flags: r.flags ?? [], summary: r.summary ?? "" })),
-      };
+      const { data, error } = await db.rpc("hackathon_version_progress", { p_version_id: versionId });
+      if (error) fail("hackathon_version_progress", error);
+      return toVersionProgress(data);
     },
 
     async enqueueThirdRun(versionId) {

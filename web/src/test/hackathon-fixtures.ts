@@ -6,7 +6,9 @@ import type {
   CompletedRun,
   GradingJobStatus,
   GradingStore,
-  JobContext,
+  ImageRead,
+  JobFailure,
+  VersionProgress,
 } from "@/lib/hackathon/grading-store";
 import type { GradingImage } from "@/lib/hackathon/prompt";
 import type {
@@ -218,6 +220,8 @@ export interface FakeJob {
   runNo: number;
   status: GradingJobStatus;
   attempts: number;
+  /** Attempts given back (overload, budget abort); counted = attempts - freeAttempts. */
+  freeAttempts: number;
   nextAttemptAt: number;
   leaseUntil: number | null;
   lastError: string | null;
@@ -241,12 +245,13 @@ export class FakeStore implements GradingStore {
   versions = new Map<string, FakeVersion>();
   runs: { versionId: string; runNo: number; run: CompletedRun }[] = [];
   claimArgs: { limit: number; leaseSeconds: number; versionId?: string }[] = [];
-  failures: { jobId: string; error: string; retryAfterSeconds: number }[] = [];
+  failures: ({ jobId: string; attempt: number } & JobFailure)[] = [];
   eligibilityWrites: string[] = [];
   thirdRunCalls: string[] = [];
+  progressReads: string[] = [];
   imageReads: string[] = [];
-  /** Set to make readImage fail. */
-  imageError: Error | null = null;
+  /** Per path: what readImage answers instead of the image. */
+  imageResults = new Map<string, ImageRead | Error>();
   private seq = 0;
 
   constructor(readonly clock: { now: number }) {}
@@ -277,6 +282,7 @@ export class FakeStore implements GradingStore {
       runNo,
       status: "pending",
       attempts: 0,
+      freeAttempts: 0,
       nextAttemptAt: this.clock.now,
       leaseUntil: null,
       lastError: null,
@@ -302,7 +308,7 @@ export class FakeStore implements GradingStore {
         (j) =>
           j.status === "pending" &&
           j.nextAttemptAt <= now &&
-          j.attempts < 3 &&
+          j.attempts - j.freeAttempts < 3 &&
           (args.versionId == null || j.versionId === args.versionId),
       )
       .slice(0, limit);
@@ -327,19 +333,11 @@ export class FakeStore implements GradingStore {
         qditSnapshot: v.qdit,
         doqtriSnapshot: v.doqtri,
         window: WINDOW,
+        currentVersionId: v.current ? v.id : "some-newer-version",
+        eligibilityOverride: v.override,
+        storedEligibility: v.eligibility,
       };
     });
-  }
-
-  async readJobContext(job: Pick<ClaimedJob, "jobId" | "versionId" | "submissionId">): Promise<JobContext> {
-    const row = this.jobs.find((j) => j.id === job.jobId);
-    const v = this.versions.get(job.versionId)!;
-    return {
-      jobStatus: row?.status ?? null,
-      isCurrentVersion: v.current,
-      eligibilityOverride: v.override,
-      eligibility: v.eligibility,
-    };
   }
 
   async setVersionEligibility(versionId: string, eligibility: EligibilityResult): Promise<void> {
@@ -347,19 +345,21 @@ export class FakeStore implements GradingStore {
     this.versions.get(versionId)!.eligibility = eligibility;
   }
 
-  async readImage(path: string): Promise<GradingImage> {
+  async readImage(path: string): Promise<ImageRead> {
     this.imageReads.push(path);
-    if (this.imageError) throw this.imageError;
-    return IMAGE;
+    const result = this.imageResults.get(path);
+    if (result instanceof Error) throw result;
+    return result ?? { ok: true, image: IMAGE };
   }
 
-  private running(jobId: string): FakeJob | null {
+  /** The job, when it is still running under this claim (the SQL fence). */
+  private held(jobId: string, attempt: number): FakeJob | null {
     const j = this.jobs.find((x) => x.id === jobId);
-    return j && j.status === "running" ? j : null;
+    return j && j.status === "running" && j.attempts === attempt ? j : null;
   }
 
-  async completeJob(jobId: string, run: CompletedRun): Promise<"done" | "stale"> {
-    const j = this.running(jobId);
+  async completeJob(jobId: string, attempt: number, run: CompletedRun): Promise<"done" | "stale"> {
+    const j = this.held(jobId, attempt);
     if (!j) return "stale";
     this.runs.push({ versionId: j.versionId, runNo: j.runNo, run });
     j.status = "done";
@@ -367,8 +367,8 @@ export class FakeStore implements GradingStore {
     return "done";
   }
 
-  async skipJob(jobId: string, reason: string): Promise<"done" | "stale"> {
-    const j = this.running(jobId);
+  async skipJob(jobId: string, attempt: number, reason: string): Promise<"done" | "stale"> {
+    const j = this.held(jobId, attempt);
     if (!j) return "stale";
     j.status = "done";
     j.leaseUntil = null;
@@ -376,26 +376,34 @@ export class FakeStore implements GradingStore {
     return "done";
   }
 
-  async failJob(jobId: string, error: string, retryAfterSeconds: number): Promise<"pending" | "failed" | "stale"> {
-    this.failures.push({ jobId, error, retryAfterSeconds });
-    const j = this.running(jobId);
+  async failJob(jobId: string, attempt: number, failure: JobFailure): Promise<"pending" | "failed" | "stale"> {
+    this.failures.push({ jobId, attempt, ...failure });
+    const j = this.held(jobId, attempt);
     if (!j) return "stale";
-    j.status = j.attempts < 3 ? "pending" : "failed";
     j.leaseUntil = null;
-    j.nextAttemptAt = this.clock.now + retryAfterSeconds * 1000;
-    j.lastError = error;
+    j.nextAttemptAt = this.clock.now + failure.retryAfterSeconds * 1000;
+    j.lastError = failure.error;
+    if (!failure.countAttempt && !failure.permanent && j.freeAttempts < 20) {
+      j.freeAttempts += 1;
+      j.status = "pending";
+      return "pending";
+    }
+    j.status = j.attempts - j.freeAttempts < 3 && !failure.permanent ? "pending" : "failed";
     return j.status;
   }
 
-  async readVersionProgress(versionId: string) {
-    const jobs = this.jobs.filter((j) => j.versionId === versionId && j.status !== "superseded");
+  async readVersionProgress(versionId: string): Promise<VersionProgress> {
+    this.progressReads.push(versionId);
+    const jobs = this.jobs
+      .filter((j) => j.versionId === versionId && j.status !== "superseded")
+      .sort((a, b) => a.runNo - b.runNo);
     const done = new Set(jobs.filter((j) => j.status === "done").map((j) => j.runNo));
     return {
       jobs: jobs.map((j) => ({ runNo: j.runNo, status: j.status })),
       runs: this.runs
         .filter((r) => r.versionId === versionId && done.has(r.runNo))
         .sort((a, b) => a.runNo - b.runNo)
-        .map((r) => ({ criteria: r.run.criteria, summary: r.run.summary, flags: r.run.flags })),
+        .map((r) => ({ runNo: r.runNo, criteria: r.run.criteria, total: r.run.total, flags: r.run.flags })),
     };
   }
 

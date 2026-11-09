@@ -17,9 +17,18 @@ import {
   type ClaimedJob,
   type CompletedRun,
   type GradingStore,
+  type JobFailure,
+  type VersionProgress,
 } from "@/lib/hackathon/grading-store";
 import { buildGradingRequest, MAX_IMAGES, type GradingImage } from "@/lib/hackathon/prompt";
-import { clampScore, combineRuns, InvalidAiRunError, MAX_RUNS, runTotal } from "@/lib/hackathon/rubric";
+import {
+  clampScore,
+  combineRuns,
+  InvalidAiRunError,
+  MAX_RUNS,
+  runTotal,
+  type CombinedRuns,
+} from "@/lib/hackathon/rubric";
 import { createServiceClient, serviceSecretKey } from "@/lib/hackathon/service-client";
 import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput, type EligibilityResult } from "@/lib/hackathon/types";
 
@@ -28,8 +37,8 @@ import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput, type EligibilityResult } fr
  *
  * Takes leased jobs from the grading queue (claim_grading_jobs), gates each
  * entry on the deterministic eligibility rules, runs one Claude review per
- * job and records it, retries failures with backoff, and queues the third
- * run when two runs disagree. Two entry points:
+ * job and records it, retries failures with jittered backoff, and queues the
+ * third run when two runs disagree. Two entry points:
  *
  *   runGradingFor(versionId)  right after a submit, from `after()`.
  *   runSweep()                every minute from pg_cron, daily from Vercel
@@ -39,7 +48,16 @@ import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput, type EligibilityResult } fr
  * free while at least MIN_START_MS of the budget is left, and abort any
  * model call at the end of the budget or 10 s before its lease ends,
  * whichever is first. The database caps running jobs at 20 across all
- * workers and returns an expired lease to the queue.
+ * workers and returns an expired lease to the queue; every write passes the
+ * claim's attempt number, so a stale holder records nothing.
+ *
+ * Failures:
+ *   refusal, cut-off answer, invalid output    permanent: failed at once
+ *   provider 429 / 529 / overloaded            not counted; retry-after honoured
+ *   aborted at the end of the run budget       not counted
+ *   anything else (lease abort included)       counted; 30 s, then 60 s
+ * Every delay gets ±30% jitter (retry-after only upwards), so 60 teams that
+ * failed together do not retry together.
  *
  * Logs carry the version id, run number, status and timing only: never a
  * score, evidence, summary, flag, team name or any submission text.
@@ -53,19 +71,171 @@ export const SWEEP_BUDGET_MS = 240_000;
 export const MIN_START_MS = 100_000;
 /** A model call is aborted this long before its job's lease ends. */
 export const LEASE_MARGIN_MS = 10_000;
-/** Seconds before a failed attempt is retried: after the first, then after the second. */
+/** Seconds before a counted failure is retried: after the first, then after the second. */
 export const RETRY_AFTER_SECONDS = [30, 60] as const;
+/** Provider overload without a retry-after header. */
+export const OVERLOAD_RETRY_SECONDS = 30;
+/** A job aborted by the end of the run budget goes back almost at once. */
+export const BUDGET_ABORT_RETRY_SECONDS = 5;
+/** ±30% on every delay. */
+export const JITTER = 0.3;
+/** fail_grading_job() caps delays at an hour. */
+export const MAX_RETRY_SECONDS = 3600;
 
 export function retryAfterSeconds(attempts: number): number {
   return attempts <= 1 ? RETRY_AFTER_SECONDS[0] : RETRY_AFTER_SECONDS[1];
 }
 
+/** `base` ±30%, from a random number in [0, 1). Whole seconds, at least 1 when base > 0. */
+export function jittered(base: number, random: number): number {
+  if (base <= 0) return 0;
+  return Math.min(MAX_RETRY_SECONDS, Math.max(1, Math.round(base * (1 - JITTER + 2 * JITTER * random))));
+}
+
+/**
+ * The provider's own delay, in seconds: `retry-after-ms`, else `retry-after`
+ * (seconds or an HTTP date). Null when absent or unreadable.
+ */
+export function providerRetryAfter(headers: Headers | undefined, nowMs: number): number | null {
+  if (!headers) return null;
+  const ms = Number(headers.get("retry-after-ms"));
+  if (headers.get("retry-after-ms") != null && Number.isFinite(ms) && ms >= 0) return ms / 1000;
+  const value = headers.get("retry-after");
+  if (value == null) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, (date - nowMs) / 1000) : null;
+}
+
+function isOverload(error: unknown): error is InstanceType<typeof Anthropic.APIError> {
+  if (!(error instanceof Anthropic.APIError) || error instanceof Anthropic.APIUserAbortError) return false;
+  return (
+    error.status === 429 ||
+    error.status === 529 ||
+    error.type === "overloaded_error" ||
+    error.type === "rate_limit_error"
+  );
+}
+
+/** Why the worker aborted a model call, carried as the abort reason. */
+export type AbortCause = "budget" | "lease";
+
+/** The model call was aborted by the worker, not by the provider. */
+export class GradingAbortError extends Error {
+  readonly abortCause: AbortCause;
+
+  constructor(abortCause: AbortCause) {
+    super(abortCause === "budget" ? "model call aborted: run budget spent" : "model call aborted: lease ending");
+    this.name = "GradingAbortError";
+    this.abortCause = abortCause;
+  }
+}
+
+/** A short, content-free description of a failure, stored in last_error. */
+export function describeError(error: unknown): string {
+  if (error instanceof GradingAbortError) return error.message;
+  if (error instanceof GraderRefusalError) return `refusal${error.category ? ` (${error.category})` : ""}`;
+  if (error instanceof GraderTruncatedError) return `output cut off (${error.stopReason})`;
+  if (error instanceof GraderError) return `unexpected stop (${error.stopReason ?? "none"})`;
+  if (error instanceof InvalidAiRunError) return `invalid model output: ${error.issues.join("; ")}`;
+  if (error instanceof Anthropic.APIUserAbortError) return "model call aborted";
+  if (error instanceof Anthropic.APIConnectionTimeoutError) return "model call timed out";
+  if (error instanceof Anthropic.APIConnectionError) return "model call could not connect";
+  if (isOverload(error)) return `model API overloaded (${error.status ?? error.type})`;
+  if (error instanceof Anthropic.APIError) return `model API error ${error.status ?? "unknown"}`;
+  if (error instanceof GradingStoreError) return error.message;
+  if (error instanceof Error) return error.name;
+  return "unknown error";
+}
+
+/** How a failed attempt goes back to the queue. `random` in [0, 1). */
+export function planFailure(error: unknown, attempts: number, random: number, nowMs: number): JobFailure {
+  const description = describeError(error);
+  if (
+    error instanceof GraderRefusalError ||
+    error instanceof GraderTruncatedError ||
+    error instanceof InvalidAiRunError
+  ) {
+    return { error: description, retryAfterSeconds: 0, permanent: true, countAttempt: false };
+  }
+  if (isOverload(error)) {
+    const asked = providerRetryAfter(error.headers, nowMs);
+    const seconds =
+      asked == null
+        ? jittered(OVERLOAD_RETRY_SECONDS, random)
+        : // Never earlier than the provider asked: jitter only adds.
+          Math.min(MAX_RETRY_SECONDS, Math.ceil(asked * (1 + JITTER * random)));
+    return { error: description, retryAfterSeconds: seconds, permanent: false, countAttempt: false };
+  }
+  if (error instanceof GradingAbortError && error.abortCause === "budget") {
+    return {
+      error: description,
+      retryAfterSeconds: jittered(BUDGET_ABORT_RETRY_SECONDS, random),
+      permanent: false,
+      countAttempt: false,
+    };
+  }
+  return {
+    error: description,
+    retryAfterSeconds: jittered(retryAfterSeconds(attempts), random),
+    permanent: false,
+    countAttempt: true,
+  };
+}
+
 export type JobOutcome = "graded" | "ineligible" | "superseded" | "retrying" | "failed" | "error";
+
+/** Where a version's grade stands after one of its jobs settled. */
+export type VersionState =
+  | "open" // a job is still pending or running
+  | "no_runs" // nothing counted (ineligible, or every run failed)
+  | "incomplete" // one counted run and nothing left to come
+  | "needs_third_run"
+  | "final";
+
+export interface VersionGrade {
+  state: VersionState;
+  /** combineRuns over the counted runs; null without any. */
+  combined: CombinedRuns | null;
+}
+
+function storedToRun(run: VersionProgress["runs"][number]): AiRunOutput {
+  return { criteria: run.criteria, summary: "", flags: run.flags };
+}
+
+/**
+ * The grade a version's counted runs give once none of its jobs is open.
+ * When two runs disagree but the version already had a third job that
+ * produced no run (it failed, permanently or after three tries), the two-run
+ * mean stands as final and `disagreement` is added here, in code.
+ */
+export function versionGrade(progress: VersionProgress): VersionGrade {
+  if (progress.jobs.some((j) => j.status === "pending" || j.status === "running")) {
+    return { state: "open", combined: null };
+  }
+  const runs = progress.runs.slice(0, MAX_RUNS).map(storedToRun);
+  if (runs.length === 0) return { state: "no_runs", combined: null };
+
+  const combined = combineRuns(runs);
+  if (combined.status === "needs_second_run") return { state: "incomplete", combined };
+  if (combined.status === "final") return { state: "final", combined };
+
+  const thirdTried = progress.jobs.length >= MAX_RUNS;
+  if (!thirdTried) return { state: "needs_third_run", combined };
+  const flags = AI_FLAGS.filter((f) => f === "disagreement" || combined.flags.includes(f));
+  return { state: "final", combined: { ...combined, status: "final", flags } };
+}
 
 /** Everything the worker logs. Nothing else is ever written. */
 export type WorkerLogEvent =
   | { event: "grading_job"; version_id: string; run_no: number; status: JobOutcome; ms: number }
-  | { event: "grading_third_run"; version_id: string; status: "queued" | "not_needed" | "error"; ms: number }
+  | {
+      event: "grading_version";
+      version_id: string;
+      status: VersionState | "third_run_queued" | "error";
+      ms: number;
+    }
   | ({ event: "grading_sweep"; ms: number } & SweepCounts);
 
 export interface WorkerDeps {
@@ -73,6 +243,8 @@ export interface WorkerDeps {
   client: GraderClient;
   /** Epoch ms. */
   now?: () => number;
+  /** In [0, 1), for jitter. */
+  random?: () => number;
   log?: (event: WorkerLogEvent) => void;
   model?: string;
 }
@@ -100,35 +272,29 @@ function defaultLog(event: WorkerLogEvent): void {
   else console.info(line);
 }
 
-/** A short, content-free description of a failure, stored in last_error. */
-export function describeError(error: unknown): string {
-  if (error instanceof GraderRefusalError) return `refusal${error.category ? ` (${error.category})` : ""}`;
-  if (error instanceof GraderTruncatedError) return `output cut off (${error.stopReason})`;
-  if (error instanceof GraderError) return `unexpected stop (${error.stopReason ?? "none"})`;
-  if (error instanceof InvalidAiRunError) return `invalid model output: ${error.issues.join("; ")}`;
-  if (error instanceof Anthropic.APIUserAbortError) return "model call aborted: out of time";
-  if (error instanceof Anthropic.APIConnectionTimeoutError) return "model call timed out";
-  if (error instanceof Anthropic.APIConnectionError) return "model call could not connect";
-  if (error instanceof Anthropic.APIError) return `model API error ${error.status ?? "unknown"}`;
-  if (error instanceof GradingStoreError) return error.message;
-  if (error instanceof Error) return error.name;
-  return "unknown error";
-}
-
 /** The run as stored: clamped scores, the code's total and flags. */
 export function completedRun(
   run: AiRunOutput,
-  meta: { model: string; stopReason: string; usage: CompletedRun["usage"]; truncated: boolean },
+  meta: {
+    model: string;
+    stopReason: string;
+    usage: CompletedRun["usage"];
+    truncated: boolean;
+    imagesUnreadable: boolean;
+  },
 ): CompletedRun {
   const criteria = {} as CompletedRun["criteria"];
   for (const key of CRITERION_KEYS) {
     criteria[key] = { score: clampScore(run.criteria[key].score), evidence: run.criteria[key].evidence };
   }
-  // `disagreement` belongs to the combined grade, `truncated_input` to the code.
-  const flags = AI_FLAGS.filter(
-    (f) => (f !== "disagreement" && f !== "truncated_input" && run.flags.includes(f)) ||
-      (f === "truncated_input" && meta.truncated),
-  );
+  // `disagreement` belongs to the combined grade; `truncated_input` is the
+  // code's alone; `images_unreadable` is the model's or the code's.
+  const flags = AI_FLAGS.filter((f) => {
+    if (f === "disagreement") return false;
+    if (f === "truncated_input") return meta.truncated;
+    if (f === "images_unreadable") return meta.imagesUnreadable || run.flags.includes(f);
+    return run.flags.includes(f);
+  });
   return {
     model: meta.model,
     criteria,
@@ -147,6 +313,9 @@ function ineligibleReason(eligibility: EligibilityResult, override: boolean | nu
   return `not graded: ineligible (${failed.join(", ") || "no rule passed"})`;
 }
 
+/** Outcomes after which a version's grade can have changed. */
+const SETTLED: ReadonlySet<JobOutcome> = new Set(["graded", "ineligible", "failed"]);
+
 /** One loop over the queue with its own per-version caches. */
 class Sweep {
   readonly counts: SweepCounts = {
@@ -162,17 +331,19 @@ class Sweep {
   private readonly store: GradingStore;
   private readonly client: GraderClient;
   private readonly now: () => number;
+  private readonly random: () => number;
   private readonly log: (event: WorkerLogEvent) => void;
   private readonly model: string;
   private readonly eligibilityStored = new Map<string, Promise<void>>();
-  private readonly images = new Map<string, Promise<GradingImage[]>>();
-  private readonly thirdRunChecked = new Set<string>();
+  private readonly images = new Map<string, Promise<(GradingImage | null)[]>>();
+  private readonly thirdRunQueued = new Set<string>();
   private deadline = 0;
 
   constructor(deps: WorkerDeps) {
     this.store = deps.store;
     this.client = deps.client;
     this.now = deps.now ?? Date.now;
+    this.random = deps.random ?? Math.random;
     this.log = deps.log ?? defaultLog;
     this.model = deps.model ?? graderModel();
   }
@@ -206,7 +377,7 @@ class Sweep {
       }
       if (inFlight.size === 0) break;
       await Promise.race(inFlight);
-      // A settled job may have queued a third run or freed a version's slot.
+      // A settled job may have queued a third run or freed a slot.
       queueEmpty = false;
     }
 
@@ -222,7 +393,7 @@ class Sweep {
     } catch (error) {
       outcome = await this.fail(job, error);
     }
-    this.count(outcome);
+    this.counts[outcome === "error" ? "errors" : outcome] += 1;
     this.log({
       event: "grading_job",
       version_id: job.versionId,
@@ -230,24 +401,17 @@ class Sweep {
       status: outcome,
       ms: this.now() - started,
     });
-    if (outcome === "graded") await this.checkThirdRun(job.versionId);
-  }
-
-  private count(outcome: JobOutcome): void {
-    const key = outcome === "error" ? "errors" : outcome;
-    this.counts[key] += 1;
+    if (SETTLED.has(outcome)) await this.settleVersion(job.versionId);
   }
 
   private async grade(job: ClaimedJob): Promise<JobOutcome> {
-    const context = await this.store.readJobContext(job);
-    if (context.jobStatus !== "running") return "superseded";
-    if (!context.isCurrentVersion) {
-      await this.store.skipJob(job.jobId, "not graded: no longer the current version");
+    if (job.currentVersionId !== job.versionId) {
+      await this.store.skipJob(job.jobId, job.attempts, "not graded: no longer the current version");
       return "superseded";
     }
 
     const eligibility =
-      context.eligibility ??
+      job.storedEligibility ??
       checkEligibility({
         window: job.window,
         teamMemberIds: job.memberIds,
@@ -255,11 +419,15 @@ class Sweep {
         doqtri: job.doqtriSnapshot,
         hasGlobalMindmapImage: job.imagePaths.length > 0,
       });
-    if (!context.eligibility) await this.storeEligibility(job.versionId, eligibility);
+    if (!job.storedEligibility) await this.storeEligibility(job.versionId, eligibility);
 
-    const eligible = context.eligibilityOverride ?? eligibility.eligible;
+    const eligible = job.eligibilityOverride ?? eligibility.eligible;
     if (!eligible) {
-      const result = await this.store.skipJob(job.jobId, ineligibleReason(eligibility, context.eligibilityOverride));
+      const result = await this.store.skipJob(
+        job.jobId,
+        job.attempts,
+        ineligibleReason(eligibility, job.eligibilityOverride),
+      );
       return result === "done" ? "ineligible" : "superseded";
     }
 
@@ -273,23 +441,29 @@ class Sweep {
       images,
     });
 
-    const abortAt = Math.min(Date.parse(job.leaseUntil) - LEASE_MARGIN_MS, this.deadline);
+    const leaseEnd = Date.parse(job.leaseUntil) - LEASE_MARGIN_MS;
+    const cause: AbortCause = this.deadline <= leaseEnd ? "budget" : "lease";
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.max(0, abortAt - this.now()));
+    const timer = setTimeout(() => controller.abort(cause), Math.max(0, Math.min(leaseEnd, this.deadline) - this.now()));
     let graded: GradeResult;
     try {
       graded = await gradeOnce(this.client, request, { model: this.model, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) throw new GradingAbortError(cause);
+      throw error;
     } finally {
       clearTimeout(timer);
     }
 
     const result = await this.store.completeJob(
       job.jobId,
+      job.attempts,
       completedRun(graded.run, {
         model: graded.model,
         stopReason: graded.stop_reason,
         usage: graded.usage,
         truncated: request.truncated,
+        imagesUnreadable: request.imagesUnreadable,
       }),
     );
     return result === "done" ? "graded" : "superseded";
@@ -297,7 +471,8 @@ class Sweep {
 
   private async fail(job: ClaimedJob, error: unknown): Promise<JobOutcome> {
     try {
-      const status = await this.store.failJob(job.jobId, describeError(error), retryAfterSeconds(job.attempts));
+      const plan = planFailure(error, job.attempts, this.random(), this.now());
+      const status = await this.store.failJob(job.jobId, job.attempts, plan);
       return status === "pending" ? "retrying" : status === "failed" ? "failed" : "superseded";
     } catch {
       // The lease runs out and claim_grading_jobs() puts it back (or fails it).
@@ -316,47 +491,51 @@ class Sweep {
     return pending;
   }
 
-  /** The version's maps, read once per sweep for all its runs. */
-  private readImages(job: ClaimedJob): Promise<GradingImage[]> {
+  /**
+   * The version's maps, one read each, once per sweep for all its runs. A map
+   * that is missing, unreadable or too large is a null slot, never an error.
+   */
+  private readImages(job: ClaimedJob): Promise<(GradingImage | null)[]> {
     let pending = this.images.get(job.versionId);
     if (!pending) {
-      pending = Promise.all(job.imagePaths.slice(0, MAX_IMAGES).map((path) => this.store.readImage(path)));
-      pending.catch(() => this.images.delete(job.versionId));
+      pending = Promise.all(
+        job.imagePaths.slice(0, MAX_IMAGES).map(async (path) => {
+          try {
+            const read = await this.store.readImage(path);
+            return read.ok ? read.image : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
       this.images.set(job.versionId, pending);
     }
     return pending;
   }
 
   /**
-   * When none of the version's jobs is still open, combine its counted runs;
-   * two that disagree get a third (enqueue_third_run, which is also guarded in
-   * the database). At most once per version per sweep.
+   * After any job of a version settles (done, skipped or failed): once none
+   * is open, combine its counted runs; two that disagree get a third
+   * (enqueue_third_run, also guarded in the database), at most once per sweep.
    */
-  private async checkThirdRun(versionId: string): Promise<void> {
-    if (this.thirdRunChecked.has(versionId)) return;
+  private async settleVersion(versionId: string): Promise<void> {
     const started = this.now();
     try {
-      const progress = await this.store.readVersionProgress(versionId);
-      if (progress.jobs.some((j) => j.status === "pending" || j.status === "running")) return;
-      if (progress.runs.length === 0 || progress.runs.length > MAX_RUNS) return;
-      if (this.thirdRunChecked.has(versionId)) return;
-      this.thirdRunChecked.add(versionId);
-
-      if (combineRuns(progress.runs).status !== "needs_third_run") {
-        this.log({ event: "grading_third_run", version_id: versionId, status: "not_needed", ms: this.now() - started });
-        return;
+      const grade = versionGrade(await this.store.readVersionProgress(versionId));
+      if (grade.state === "open") return;
+      let status: VersionState | "third_run_queued" = grade.state;
+      if (grade.state === "needs_third_run" && !this.thirdRunQueued.has(versionId)) {
+        this.thirdRunQueued.add(versionId);
+        const id = await this.store.enqueueThirdRun(versionId);
+        if (id) {
+          this.counts.third_runs_queued += 1;
+          status = "third_run_queued";
+        }
       }
-      const id = await this.store.enqueueThirdRun(versionId);
-      if (id) this.counts.third_runs_queued += 1;
-      this.log({
-        event: "grading_third_run",
-        version_id: versionId,
-        status: id ? "queued" : "not_needed",
-        ms: this.now() - started,
-      });
+      this.log({ event: "grading_version", version_id: versionId, status, ms: this.now() - started });
     } catch {
-      this.thirdRunChecked.delete(versionId);
-      this.log({ event: "grading_third_run", version_id: versionId, status: "error", ms: this.now() - started });
+      this.thirdRunQueued.delete(versionId);
+      this.log({ event: "grading_version", version_id: versionId, status: "error", ms: this.now() - started });
     }
   }
 }

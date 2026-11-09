@@ -15,10 +15,16 @@ import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput } from "@/lib/hackathon/type
  */
 
 export const DEFAULT_GRADER_MODEL = "claude-sonnet-5-5";
-/** Per HTTP attempt. */
-export const GRADER_TIMEOUT_MS = 120_000;
-/** SDK retries on 408/409/429/5xx and connection errors. */
-export const GRADER_MAX_RETRIES = 2;
+/** Per HTTP attempt. The worker also aborts the call before the job's lease ends. */
+export const GRADER_TIMEOUT_MS = 170_000;
+/**
+ * SDK retries on 408/409/429/5xx and connection errors. One, because the
+ * queue retries too (with backoff and the provider's retry-after) and about
+ * 60 teams must be graded within minutes of closing.
+ */
+export const GRADER_MAX_RETRIES = 1;
+/** Medium: the review is short, and latency matters for 60 teams in under 3 minutes. */
+export const GRADER_EFFORT = "medium" as const;
 /** Room for adaptive thinking plus the JSON answer, within a non-streaming call. */
 export const GRADER_MAX_TOKENS = 16_000;
 
@@ -144,7 +150,7 @@ export async function gradeOnce(
       system: request.system,
       messages: request.messages,
       thinking: { type: "adaptive" },
-      output_config: { effort: "high", format: { type: "json_schema", schema: AI_RUN_SCHEMA } },
+      output_config: { effort: GRADER_EFFORT, format: { type: "json_schema", schema: AI_RUN_SCHEMA } },
     },
     { signal: options.signal, timeout: GRADER_TIMEOUT_MS, maxRetries: GRADER_MAX_RETRIES },
   );

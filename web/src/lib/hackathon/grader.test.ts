@@ -38,10 +38,10 @@ describe("gradeOnce", () => {
     expect(body.system).toBe(request.system);
     expect(body.messages).toBe(request.messages);
     expect(body.thinking).toEqual({ type: "adaptive" });
-    expect(body.output_config).toEqual({ effort: "high", format: { type: "json_schema", schema: AI_RUN_SCHEMA } });
+    expect(body.output_config).toEqual({ effort: "medium", format: { type: "json_schema", schema: AI_RUN_SCHEMA } });
     expect(client.options[0]).toMatchObject({ timeout: GRADER_TIMEOUT_MS, maxRetries: GRADER_MAX_RETRIES });
-    expect(GRADER_TIMEOUT_MS).toBe(120_000);
-    expect(GRADER_MAX_RETRIES).toBe(2);
+    expect(GRADER_TIMEOUT_MS).toBe(170_000);
+    expect(GRADER_MAX_RETRIES).toBe(1);
 
     expect(result.run.criteria.clarity.score).toBe(9);
     expect(result.run.flags).toEqual(["placeholder"]);
