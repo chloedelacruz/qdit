@@ -48,8 +48,8 @@ const SNAP_OLD = "bbbbbbbb-0000-4000-8000-000000000001";
 const SNAP_NEW = "bbbbbbbb-0000-4000-8000-000000000002";
 const MAP = `${HACKATHON}/${PROJECT}/cccccccc-0000-4000-8000-000000000001.png`;
 
-function scriptedDatabase() {
-  const db = fakeDatabase({
+function scriptedDatabase(failing?: string) {
+  const script: { from: Record<string, { data: unknown; error: unknown }[]> } = {
     from: {
       hackathons: [
         {
@@ -155,8 +155,13 @@ function scriptedDatabase() {
         },
       ],
     },
-  });
+  };
 
+  if (failing) {
+    // That table's first answer becomes a PostgREST error.
+    script.from[failing][0] = { data: null, error: { code: "57014", message: "statement timeout" } };
+  }
+  const db = fakeDatabase(script);
   const signed: unknown[][] = [];
   const client = {
     ...db.client,
@@ -253,6 +258,23 @@ describe("participant hackathon queries", () => {
 
     expect(signed).toEqual([["hackathon-mindmaps", [MAP], SIGNED_URL_SECONDS]]);
     expect(SIGNED_URL_SECONDS).toBeLessThanOrEqual(900);
+  });
+
+  it.each([
+    "hackathons",
+    "project_members",
+    "projects",
+    "hackathon_submissions",
+    "hackathon_doqtri_snapshots",
+    "hackathon_late_passes",
+    "hackathon_submission_versions",
+    "hackathon_team_members",
+    "profiles",
+  ])("throws, naming only the table, when reading %s fails", async (table) => {
+    getUser.mockResolvedValue({ id: ME, email: null });
+    scriptedDatabase(table);
+
+    await expect(getHackathonPage("bootcamp-nov")).rejects.toThrow(`hackathon page: could not read ${table}`);
   });
 
   it("returns null for an unknown slug", async () => {

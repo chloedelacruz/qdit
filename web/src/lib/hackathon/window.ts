@@ -5,7 +5,8 @@ import type { Tone } from "@/lib/constants";
  *
  * Mirrors `hackathon_window_state()` in 20261110100000_hackathons.sql, which
  * is the rule that actually decides: nothing is open after release, nothing
- * before `opens_at`, `closes_at` is inclusive, and a late pass in force keeps a
+ * before `opens_at`, open while now < `closes_at` (the end is exclusive, on
+ * `clock_timestamp()`), and a late pass in force (now < `until`) keeps a
  * closed hackathon open for its one project. `late` is the last case seen from
  * this page: closed for everyone, still open for a project the caller is on.
  *
@@ -31,8 +32,9 @@ export function windowState(
 ): WindowState {
   if (event.releasedAt !== null) return "closed";
   if (nowMs < Date.parse(event.opensAt)) return "not_open";
-  if (nowMs <= Date.parse(event.closesAt)) return "open";
-  if (latePassUntil !== null && nowMs <= Date.parse(latePassUntil)) return "late";
+  // Ends are exclusive, as in the database: at closes_at exactly it is closed.
+  if (nowMs < Date.parse(event.closesAt)) return "open";
+  if (latePassUntil !== null && nowMs < Date.parse(latePassUntil)) return "late";
   return "closed";
 }
 

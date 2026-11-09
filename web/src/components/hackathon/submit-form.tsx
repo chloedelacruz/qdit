@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Field, FormDialog, SelectField } from "@/components/form-dialog";
 import { DisabledReason } from "@/components/hint";
@@ -10,6 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { ActionState } from "@/lib/actions";
 import { submitHackathonEntry } from "@/lib/hackathon/actions";
+import { markEdited, noEdits, visibleFieldErrors } from "@/lib/hackathon/form-errors";
+import { acceptsUpload, formerMembersNote, rosterMembers } from "@/lib/hackathon/team";
 import { IMAGE_SLOTS, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
 import { ICON } from "@/lib/icons";
 
@@ -80,6 +82,15 @@ export function SubmitForm({
     </Button>
   );
 
+  // A new FormDialog per opening: its action state (and so every error from
+  // the last attempt) starts empty each time the dialog opens.
+  const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState(0);
+  const onOpenChange = useCallback((next: boolean) => {
+    if (next) setOpening((n) => n + 1);
+    setOpen(next);
+  }, []);
+
   if (disabledReason || projects.length === 0) {
     return (
       <DisabledReason reason={disabledReason ?? "Nothing to submit right now."}>
@@ -93,12 +104,16 @@ export function SubmitForm({
 
   return (
     <FormDialog
+      key={opening}
+      open={open}
+      onOpenChange={onOpenChange}
       trigger={trigger}
       title={label}
       description="Your qdit project, your latest doqtri snapshot and these images are saved together as one submission."
       submitLabel="Submit"
       successMessage="Submission received."
       action={action}
+      singleSubmit
       className="sm:max-w-lg"
     >
       {(state) => (
@@ -113,6 +128,11 @@ export function SubmitForm({
       )}
     </FormDialog>
   );
+}
+
+/** The saved team, without anyone who has left the project since. */
+function startingTeam(project: SubmitProject | undefined) {
+  return rosterMembers(project?.entry?.memberIds ?? [], project?.members ?? []);
 }
 
 function initialSlots(project: SubmitProject | undefined): (SlotValue | null)[] {
@@ -147,25 +167,46 @@ function SubmitFields({
   const project = projects.find((p) => p.id === projectId);
 
   const [teamName, setTeamName] = useState(project?.entry?.teamName ?? "");
-  const [memberIds, setMemberIds] = useState<string[]>(project?.entry?.memberIds ?? []);
+  const [memberIds, setMemberIds] = useState<string[]>(() => startingTeam(project).kept);
+  const [removedMembers, setRemovedMembers] = useState(() => startingTeam(project).removed);
   const [slots, setSlots] = useState(() => initialSlots(project));
+
+  // Read when an upload finishes, which can be after the project changed or
+  // the dialog closed (this component unmounts on close).
+  const live = useRef({ projectId, open: true });
+  useEffect(() => {
+    const current = live.current;
+    current.open = true;
+    return () => {
+      current.open = false;
+    };
+  }, []);
+
+  // A field's error from the last submit goes as soon as that field changes.
+  const [edited, setEdited] = useState(() => noEdits(state));
+  const touched = (...fields: string[]) => setEdited((current) => markEdited(current, state, ...fields));
 
   function chooseProject(id: string) {
     const next = projects.find((p) => p.id === id);
     setProjectId(id);
+    live.current.projectId = id;
+    touched("projectId", "teamName", "memberIds", "images");
     // Images are stored under the project, so they never carry over.
     setTeamName(next?.entry?.teamName ?? teamName);
-    setMemberIds(next?.entry?.memberIds ?? []);
+    const team = startingTeam(next);
+    setMemberIds(team.kept);
+    setRemovedMembers(team.removed);
     setSlots(initialSlots(next));
   }
 
   function toggleMember(id: string, checked: boolean) {
+    touched("memberIds");
     setMemberIds((current) =>
       checked ? (current.includes(id) ? current : [...current, id]) : current.filter((m) => m !== id),
     );
   }
 
-  const errors = state.fieldErrors ?? {};
+  const errors = visibleFieldErrors(state, edited);
   const full = memberIds.length >= teamMax;
   const sizeHint =
     teamMin === teamMax ? `Choose ${teamMin}.` : `Choose ${teamMin} to ${teamMax}.`;
@@ -203,7 +244,10 @@ function SubmitFields({
           id="hackathon-team-name"
           name="teamName"
           value={teamName}
-          onChange={(event) => setTeamName(event.target.value)}
+          onChange={(event) => {
+            touched("teamName");
+            setTeamName(event.target.value);
+          }}
           maxLength={TEAM_NAME_MAX}
           autoComplete="off"
           aria-invalid={errors.teamName ? true : undefined}
@@ -258,6 +302,9 @@ function SubmitFields({
         >
           {errors.memberIds ?? `${sizeHint} Each person can be on one team only.`}
         </p>
+        {formerMembersNote(removedMembers) ? (
+          <p className="text-xs text-muted-foreground">{formerMembersNote(removedMembers)}</p>
+        ) : null}
       </fieldset>
 
       <fieldset className="space-y-1.5">
@@ -275,9 +322,11 @@ function SubmitFields({
               hackathonId={hackathonId}
               projectId={projectId}
               value={slots[index]}
-              onChange={(value) =>
-                setSlots((current) => current.map((s, i) => (i === index ? value : s)))
-              }
+              onChange={(value) => {
+                if (!acceptsUpload(value, hackathonId, live.current.projectId, live.current.open)) return;
+                touched("images");
+                setSlots((current) => current.map((s, i) => (i === index ? value : s)));
+              }}
               onBusyChange={(busy) => onBusyChange(slot.name, busy)}
               disabled={!projectId}
             />

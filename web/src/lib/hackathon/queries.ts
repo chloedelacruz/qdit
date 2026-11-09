@@ -97,16 +97,29 @@ function personOf(row: { id: string; display_name: string | null; username: stri
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
+/**
+ * A failed read throws rather than reading as "nothing there": an empty
+ * entry list or a missing late pass would tell a team the wrong thing in the
+ * one window that matters. The route's error boundary offers a retry. The
+ * message names the table only, never a value.
+ */
+function must<T>(result: { data: T; error: unknown }, table: string): T {
+  if (result.error) throw new Error(`hackathon page: could not read ${table}`);
+  return result.data;
+}
+
 export async function getHackathonPage(slug: string): Promise<HackathonPage | null> {
   const user = await getUser();
   if (!user) return null;
 
   const supabase = await createClient();
 
-  const [{ data: h }, { data: roles }] = await Promise.all([
+  const [hackathonRead, rolesRead] = await Promise.all([
     supabase.from("hackathons").select(PAGE_COLUMNS.hackathons).eq("slug", slug).maybeSingle(),
     supabase.from("project_members").select(PAGE_COLUMNS.project_members).eq("user_id", user.id),
   ]);
+  const h = must(hackathonRead, "hackathons");
+  const roles = must(rolesRead, "project_members");
   if (!h) return null;
 
   const nowMs = Date.now();
@@ -129,7 +142,7 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
     .filter((row) => row.role === "owner" || row.role === "admin")
     .map((row) => row.project_id);
 
-  const [projects, submissions, snapshots, passes, roster] = await Promise.all([
+  const [projectsRead, submissionsRead, snapshotsRead, passesRead, rosterRead] = await Promise.all([
     supabase.from("projects").select(PAGE_COLUMNS.projects).in("id", projectIds),
     supabase
       .from("hackathon_submissions")
@@ -149,13 +162,17 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
       .in("project_id", projectIds),
     adminIds.length > 0
       ? supabase.from("project_members").select(PAGE_COLUMNS.project_members).in("project_id", adminIds)
-      : Promise.resolve({ data: [] as { project_id: string; user_id: string; role: string }[] }),
+      : Promise.resolve({ data: [] as { project_id: string; user_id: string; role: string }[], error: null }),
   ]);
 
-  const submissionRows = submissions.data ?? [];
+  const projectRows = must(projectsRead, "projects") ?? [];
+  const submissionRows = must(submissionsRead, "hackathon_submissions") ?? [];
+  const snapshotRows = must(snapshotsRead, "hackathon_doqtri_snapshots") ?? [];
+  const passRows = must(passesRead, "hackathon_late_passes") ?? [];
+  const rosterRows = must(rosterRead, "project_members") ?? [];
   const submissionIds = submissionRows.map((row) => row.id);
 
-  const [versions, team] =
+  const [versionsRead, teamRead] =
     submissionIds.length > 0
       ? await Promise.all([
           supabase
@@ -167,11 +184,13 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
             .select(PAGE_COLUMNS.hackathon_team_members)
             .in("submission_id", submissionIds),
         ])
-      : [{ data: [] }, { data: [] }];
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
 
-  const versionRows = versions.data ?? [];
-  const teamRows = team.data ?? [];
-  const rosterRows = roster.data ?? [];
+  const versionRows = must(versionsRead, "hackathon_submission_versions") ?? [];
+  const teamRows = must(teamRead, "hackathon_team_members") ?? [];
 
   const personIds = [...new Set([...teamRows.map((r) => r.user_id), ...rosterRows.map((r) => r.user_id)])];
   const currentVersions = new Map(
@@ -181,23 +200,29 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
   );
   const imagePaths = [...currentVersions.values()].flatMap((v) => v.image_paths);
 
-  const [profiles, signed] = await Promise.all([
+  const [profilesRead, signed] = await Promise.all([
     personIds.length > 0
       ? supabase.from("profiles").select(PAGE_COLUMNS.profiles).in("id", personIds)
-      : Promise.resolve({ data: [] as { id: string; display_name: string | null; username: string | null }[] }),
+      : Promise.resolve({
+          data: [] as { id: string; display_name: string | null; username: string | null }[],
+          error: null,
+        }),
     imagePaths.length > 0
       ? supabase.storage.from(MINDMAP_BUCKET).createSignedUrls(imagePaths, SIGNED_URL_SECONDS)
       : Promise.resolve({ data: [] as { path: string | null; signedUrl: string }[] }),
   ]);
 
-  const people = new Map((profiles.data ?? []).map((row) => [row.id, personOf(row)]));
+  const people = new Map((must(profilesRead, "profiles") ?? []).map((row) => [row.id, personOf(row)]));
+  // Signed links are the one soft read: if Storage cannot sign, the
+  // thumbnails say "Unavailable" and everything else on the page is still
+  // true, so the page stays up during the window.
   const personFor = (id: string): Person => people.get(id) ?? { id, name: "Unknown", username: null };
   const urls = new Map(
     (signed.data ?? []).flatMap((row) => (row.path && row.signedUrl ? [[row.path, row.signedUrl] as const] : [])),
   );
 
   const latestSnapshot = new Map<string, DoqtriSnapshotInfo>();
-  for (const row of snapshots.data ?? []) {
+  for (const row of snapshotRows) {
     // Ordered newest first, so the first row per project is the latest.
     if (!latestSnapshot.has(row.project_id)) {
       latestSnapshot.set(row.project_id, {
@@ -208,10 +233,10 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
     }
   }
 
-  const passFor = new Map((passes.data ?? []).map((row) => [row.project_id, row.until]));
+  const passFor = new Map(passRows.map((row) => [row.project_id, row.until]));
   const roleFor = new Map((roles ?? []).map((row) => [row.project_id, row.role]));
 
-  const rows: MyProject[] = (projects.data ?? []).map((project) => {
+  const rows: MyProject[] = projectRows.map((project) => {
     const role = roleFor.get(project.id);
     const canSubmit = role === "owner" || role === "admin";
     const submission = submissionRows.find((s) => s.project_id === project.id) ?? null;

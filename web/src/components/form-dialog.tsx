@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ActionState } from "@/lib/actions";
+import { createSubmitGate } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 import { ICON } from "@/lib/icons";
 
@@ -70,6 +71,7 @@ export function FormDialog({
   className,
   open: controlledOpen,
   onOpenChange,
+  singleSubmit = false,
   children,
 }: {
   /** Omit when driving the dialog from outside, e.g. a row's overflow menu. */
@@ -82,6 +84,12 @@ export function FormDialog({
   className?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Refuse a second submit, from the click itself, until the first has
+   * resolved. Opt-in: for a dialog where a repeat is not harmless (the
+   * hackathon submit writes a new version each time).
+   */
+  singleSubmit?: boolean;
   children: (state: ActionState) => React.ReactNode;
 }) {
   /**
@@ -94,6 +102,8 @@ export function FormDialog({
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
   const formRef = useRef<HTMLFormElement>(null);
+  const gate = useRef(createSubmitGate());
+  const [locked, setLocked] = useState(false);
 
   /**
    * Success is handled inside the action rather than an effect on `state.ok`.
@@ -103,15 +113,22 @@ export function FormDialog({
    */
   const [state, formAction, pending] = useActionState(
     async (previous: ActionState, formData: FormData) => {
-      const result = await action(previous, formData);
+      try {
+        const result = await action(previous, formData);
 
-      if (result.ok) {
-        setOpen(false);
-        formRef.current?.reset();
-        toast.success(successMessage);
+        if (result.ok) {
+          setOpen(false);
+          formRef.current?.reset();
+          toast.success(successMessage);
+        }
+
+        return result;
+      } finally {
+        if (singleSubmit) {
+          gate.current.release();
+          setLocked(false);
+        }
       }
-
-      return result;
     },
     EMPTY,
   );
@@ -140,6 +157,10 @@ export function FormDialog({
             // typed and let a retry bounce on empty fields. Dispatching from
             // here skips that reset. Success still resets, in the action above.
             event.preventDefault();
+            if (singleSubmit) {
+              if (!gate.current.enter()) return;
+              setLocked(true);
+            }
             const data = new FormData(event.currentTarget);
             startTransition(() => formAction(data));
           }}
@@ -164,7 +185,7 @@ export function FormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={pending} className="pointer-coarse:h-11">
+            <Button type="submit" disabled={pending || locked} className="pointer-coarse:h-11">
               {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
               {submitLabel}
             </Button>

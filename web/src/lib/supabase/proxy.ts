@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+import { withRequestPath } from '@/lib/auth/request-path'
 import type { Database } from '@/lib/types/database'
 
 import { getSupabasePublishableKey, getSupabaseUrl } from './env'
@@ -42,8 +43,12 @@ export function isBearerApiPath(pathname: string): boolean {
 
 export async function updateSession(request: NextRequest) {
   // Seed the response with the incoming request so cookies survive if nothing
-  // needs refreshing.
-  let response = NextResponse.next({ request })
+  // needs refreshing. The forwarded headers also carry the requested path, so
+  // the (app) layout can send a signed-out visitor to /login?next=<path>
+  // (lib/auth/request-path.ts). Rebuilt after a refresh, which rewrites the
+  // request's cookie header.
+  const forwarded = () => ({ headers: withRequestPath(request.headers, request.nextUrl) })
+  let response = NextResponse.next({ request: forwarded() })
 
   const supabase = createServerClient<Database>(
     getSupabaseUrl(),
@@ -60,7 +65,7 @@ export async function updateSession(request: NextRequest) {
             request.cookies.set(name, value)
           }
 
-          response = NextResponse.next({ request })
+          response = NextResponse.next({ request: forwarded() })
 
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options)
