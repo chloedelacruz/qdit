@@ -31,6 +31,7 @@ const SUPPORTED: Record<string, string[]> = {
   projects: ["GET"],
   "projects/[id]/docs": ["POST"],
   "projects/[id]/docs/[doc_id]": ["DELETE"],
+  "projects/[id]/hackathon-snapshots": ["POST"],
 };
 
 const V1 = dirname(fileURLToPath(import.meta.url));

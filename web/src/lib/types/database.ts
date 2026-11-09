@@ -1390,6 +1390,14 @@ export type Database = {
         Returns: string
       }
       /**
+       * Whether p_client_id is integration_settings.doqtri_oauth_client_id
+       * (D-61); false while it is unset. Callable by any signed-in caller.
+       */
+      is_doqtri_oauth_client: {
+        Args: { p_client_id: string }
+        Returns: boolean
+      }
+      /**
        * Whether the caller's own OAuth token was issued at or before that
        * user's latest revoke of its client (D-59). Reads sub, client_id and
        * iat from the request JWT; called once per /api/v1 request.

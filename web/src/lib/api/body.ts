@@ -6,7 +6,8 @@ import { ApiError, invalidRequest } from "./errors";
  * Request bodies and path ids for `/api/v1` — contract sections 4 and 6.
  *
  *   - JSON only (`Content-Type: application/json`, any parameters), at most
- *     64 KiB, and an object at the top;
+ *     64 KiB (2 MiB on `POST /projects/{id}/hackathon-snapshots`, D-118), and
+ *     an object at the top;
  *   - every field is named, and an unknown one is `400 invalid_request`
  *     rather than ignored, so a typo in a client never reads as success;
  *   - every problem found is reported at once in `details.fields`, field name
@@ -38,8 +39,24 @@ export const MAX_TITLE_LENGTH = 300;
 
 export type JsonObject = Record<string, unknown>;
 
-/** The request's JSON object body, or `400 invalid_request`. */
-export async function readJsonObject(request: Request): Promise<JsonObject> {
+/** A JSON object body and the exact bytes it was parsed from. */
+export type JsonBody = {
+  body: JsonObject;
+  /** The raw request body, as received, for hashing (D-118). */
+  bytes: Uint8Array;
+};
+
+/**
+ * The request's JSON object body, or `400 invalid_request`. `maxBytes` is
+ * 64 KiB except where the contract names a larger limit for one endpoint
+ * (section 4: `POST /projects/{id}/hackathon-snapshots`, 2 MiB, D-118).
+ */
+export async function readJsonObject(request: Request, maxBytes = MAX_BODY_BYTES): Promise<JsonObject> {
+  return (await readJsonBody(request, maxBytes)).body;
+}
+
+/** As `readJsonObject()`, and also returns the raw bytes the object came from. */
+export async function readJsonBody(request: Request, maxBytes = MAX_BODY_BYTES): Promise<JsonBody> {
   const type = request.headers.get("content-type") ?? "";
   if (type.split(";")[0].trim().toLowerCase() !== "application/json") {
     throw invalidRequest("The body must be JSON (Content-Type: application/json).", {
@@ -48,10 +65,10 @@ export async function readJsonObject(request: Request): Promise<JsonObject> {
   }
 
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw tooLarge();
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge(maxBytes);
 
   const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > MAX_BODY_BYTES) throw tooLarge();
+  if (bytes.byteLength > maxBytes) throw tooLarge(maxBytes);
 
   let parsed: unknown;
   try {
@@ -63,11 +80,19 @@ export async function readJsonObject(request: Request): Promise<JsonObject> {
   if (!isObject(parsed)) {
     throw invalidRequest("The body must be a JSON object.", { body: "must be a JSON object" });
   }
-  return parsed;
+  return { body: parsed, bytes };
 }
 
-function tooLarge(): ApiError {
-  return invalidRequest("The body is larger than 64 KiB.", { body: "must be at most 64 KiB" });
+/** `64 KiB`, `2 MiB`: how the contract names a size limit. */
+function sizeLabel(bytes: number): string {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+  if (bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+  return `${bytes} bytes`;
+}
+
+function tooLarge(maxBytes: number): ApiError {
+  const label = sizeLabel(maxBytes);
+  return invalidRequest(`The body is larger than ${label}.`, { body: `must be at most ${label}` });
 }
 
 export function isObject(value: unknown): value is JsonObject {

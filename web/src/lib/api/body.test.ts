@@ -8,6 +8,7 @@ import {
   MAX_BODY_BYTES,
   optionalDateField,
   pathId,
+  readJsonBody,
   readJsonObject,
   titleField,
 } from "./body";
@@ -127,5 +128,29 @@ describe("pathId", () => {
     expect(() => pathId("../etc", "No such thing.")).toThrow(
       expect.objectContaining({ code: "not_found", message: "No such thing." }),
     );
+  });
+});
+
+describe("readJsonObject with a larger limit (D-118)", () => {
+  const MiB2 = 2 * 1024 * 1024;
+
+  it("takes a body over 64 KiB when the endpoint allows more", async () => {
+    const raw = JSON.stringify({ t: "x".repeat(100_000) });
+    await expect(readJsonObject(json(raw), MiB2)).resolves.toEqual({ t: "x".repeat(100_000) });
+  });
+
+  it("names the endpoint's limit when the body is over it", async () => {
+    const raw = JSON.stringify({ t: "x".repeat(MiB2) });
+    expect(await fieldsOf(readJsonObject(json(raw), MiB2))).toEqual({ body: "must be at most 2 MiB" });
+    expect(await fieldsOf(readJsonObject(json("{}", { "content-length": String(MiB2 + 1) }), MiB2))).toEqual({
+      body: "must be at most 2 MiB",
+    });
+  });
+
+  it("readJsonBody returns the exact bytes it parsed", async () => {
+    const raw = '{ "a" : "€" }';
+    const { body, bytes } = await readJsonBody(json(raw));
+    expect(body).toEqual({ a: "€" });
+    expect(Buffer.from(bytes).toString("utf8")).toBe(raw);
   });
 });
