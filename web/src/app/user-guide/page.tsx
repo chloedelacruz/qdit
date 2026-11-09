@@ -635,6 +635,79 @@ const LEGEND = { id: "icons", icon: "guide", title: "Icon legend" } as const sat
   "id" | "icon" | "title"
 >;
 
+/**
+ * The staff procedure (WP-4.7, QDIT-48), kept apart from SECTIONS so the
+ * participant lane's hackathon section and this one never edit the same
+ * lines. It renders after every participant section. The guide is public:
+ * grading is "the review" here, never more.
+ */
+const STAFF_SECTIONS: Section[] = [
+  {
+    id: "hackathon-staff",
+    icon: "members",
+    title: "15. Run a hackathon as staff",
+    lead: (
+      <>
+        Hackathon admins check entries, release the results, and export them.
+        Judges score the finalists after release.
+      </>
+    ),
+    warn: (
+      <>
+        Release cannot be undone. Results stay sealed for everyone until an admin
+        releases them, and the button works only after the hackathon closes.
+      </>
+    ),
+    steps: [
+      <>
+        Add <strong>/admin</strong> to the hackathon page&apos;s address. Only
+        the hackathon&apos;s admins can open it.
+      </>,
+      <>
+        Under <strong>Staff</strong>, type a username and choose Admin or Judge.
+        Click <strong>Add or change</strong>.
+      </>,
+      <>
+        Check each entry under <strong>Submissions</strong>. Point at a rule to
+        read why it passed or failed.
+      </>,
+      <>
+        To let a team submit late, click <strong>Late pass</strong>. Set the end
+        time in Manila time.
+      </>,
+      <>
+        After closing time, wait until the review shows nothing pending or
+        running.
+      </>,
+      <>
+        Click <strong>Release grades</strong>. Type the hackathon&apos;s slug.
+        Click <strong>Release permanently</strong>.
+      </>,
+      <>
+        Under <strong>Pitch order</strong>, move finalists up or down. Click{" "}
+        <strong>Save pitch order</strong>.
+      </>,
+      <>
+        Click <strong>Export CSV</strong> to download the results for your
+        slides.
+      </>,
+      <>
+        Judges add <strong>/judge</strong> to the hackathon page&apos;s address.
+        Choose 1 to 5 for each criterion. Click <strong>Save score</strong>.
+      </>,
+    ],
+    note: (
+      <>
+        Each judge sees only their own scores. The finalists&apos; final order
+        follows the judges&apos; mean out of 25.
+      </>
+    ),
+  },
+];
+
+/** Every procedure, in reading order. */
+const ALL_SECTIONS: Section[] = [...SECTIONS, ...STAFF_SECTIONS];
+
 /** The words a first-time reader meets in the steps, explained once. */
 const TERMS: { term: string; meaning: ReactNode }[] = [
   { term: "wallet", meaning: <>The Varial extension. It holds your Stellar account and signs for you.</> },
@@ -697,7 +770,7 @@ export default function UserGuidePage() {
             On this page
           </h2>
           <ol className="mt-3 space-y-1.5">
-            {[...SECTIONS, LEGEND].map((section) => {
+            {[...ALL_SECTIONS, LEGEND].map((section) => {
               const Icon = ICON[section.icon];
               return (
                 <li key={section.id}>
@@ -715,7 +788,7 @@ export default function UserGuidePage() {
         </nav>
 
         <div className="mt-4 divide-y divide-border">
-          {SECTIONS.map((section) => (
+          {ALL_SECTIONS.map((section) => (
             <Procedure key={section.id} section={section} />
           ))}
 

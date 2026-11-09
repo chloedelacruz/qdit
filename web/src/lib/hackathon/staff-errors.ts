@@ -49,17 +49,32 @@ export const ARGUMENT_COPY: Readonly<Record<string, string>> = {
   image_paths: "Check the uploaded images.",
 };
 
+/** SQL's DETAIL for grading_incomplete: "N entries still grading" (entries, never runs). */
+const ENTRIES_STILL_GRADING = /^(\d+) (entry|entries) still grading\.?$/;
+
+/**
+ * Generic copy plus the entry count from DETAIL. The DETAIL is used only
+ * when it is the entry-count sentence: per-run counts would say how many
+ * runs an entry has, which hints at a third run and so at disagreement
+ * (D-116), so anything else falls back to the generic sentence.
+ */
+export function gradingIncompleteCopy(details: string | null | undefined): string {
+  const m = ENTRIES_STILL_GRADING.exec((details ?? "").trim());
+  const tail = "Release anyway only if you accept that those entries may miss the finals.";
+  return m
+    ? `${CONFLICT_COPY.grading_incomplete} ${m[1]} ${m[1] === "1" ? "entry" : "entries"} still grading. ${tail}`
+    : `${CONFLICT_COPY.grading_incomplete} ${tail}`;
+}
+
+/** Override after release: the generic already_released, said for eligibility. */
+export const OVERRIDE_RELEASED_COPY = "Grades are released, so eligibility can no longer be changed.";
+
 export function staffErrorMessage(error: RpcError): string {
   const code = error.code ?? "";
   const message = (error.message ?? "").trim();
 
   if (code === "QD409") {
-    if (message === "grading_incomplete") {
-      const counts = error.details?.trim();
-      return counts
-        ? `Grading is not finished: ${counts} Release anyway only if you accept that those entries may miss the finals.`
-        : `${CONFLICT_COPY.grading_incomplete} Release anyway only if you accept that some entries may miss the finals.`;
-    }
+    if (message === "grading_incomplete") return gradingIncompleteCopy(error.details);
     return CONFLICT_COPY[message] ?? "That cannot be done right now. Reload the page and try again.";
   }
   if (code === "QD413") {

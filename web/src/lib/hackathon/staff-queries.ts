@@ -24,7 +24,6 @@ import {
 import {
   AI_FLAGS,
   CRITERION_KEYS,
-  JUDGE_CRITERIA,
   type AiFlag,
   type CriterionKey,
   type EligibilityResult,
@@ -179,45 +178,8 @@ export interface LeaderboardView extends RankedRow {
   ai_criteria: Record<CriterionKey, number> | null;
   /** max - min of the counted runs' totals; null with fewer than two runs. */
   spread: number | null;
-  /** The judges' mean /25 exactly as SQL computed it. */
+  /** The judges' mean /25 as SQL computed it; `human_mean` is rankFinal's, from the same scores. */
   judge_mean: number | null;
-}
-
-/**
- * `count` judge scores whose mean /25 is `mean`.
- *
- * Admins never read other judges' rows (RLS: own rows only); the leaderboard
- * RPC gives the mean of the judges' sums and how many judges scored. Every
- * mean SQL can return is S / count for an integer S, so this spreads S over
- * `count` stand-in judges (each sum 5-25, each criterion 1-5) and rankFinal's
- * humanMean of them is that same mean, to 2 decimals. The stand-ins exist
- * only to feed rankFinal; nobody sees them. Empty when nobody has scored.
- */
-export function judgeScoresFromMean(
-  submissionId: string,
-  mean: number | null,
-  count: number,
-): JudgeScore[] {
-  if (mean == null || !Number.isFinite(mean) || count <= 0) return [];
-  const n = JUDGE_CRITERIA.length;
-  const total = Math.round(mean * count);
-  const min = n * 1 * count;
-  const max = n * 5 * count;
-  if (total < min || total > max) {
-    throw new RangeError(`Judge mean ${mean} over ${count} judges is outside 5-25`);
-  }
-  const scores: JudgeScore[] = [];
-  for (let j = 0; j < count; j++) {
-    const sum = Math.floor(total / count) + (j < total % count ? 1 : 0);
-    const per = Math.floor(sum / n);
-    const extra = sum % n;
-    const score = { judge_id: `${submissionId}:judge-${j + 1}` } as JudgeScore;
-    JUDGE_CRITERIA.forEach((key, i) => {
-      score[key] = per + (i < extra ? 1 : 0);
-    });
-    scores.push(score);
-  }
-  return scores;
 }
 
 function num(value: unknown): number | null {
@@ -301,9 +263,17 @@ export function buildLeaderboard(rows: readonly LeaderboardRow[], statusRows: re
     flags: entryFlags(r, statusBySubmission.get(r.submission_id)),
   }));
 
+  // Every judge's own scores, as the RPC gives them (empty for a non-finalist).
   const judgeScores: Record<string, JudgeScore[]> = {};
   for (const r of rows) {
-    const scores = judgeScoresFromMean(r.submission_id, num(r.judge_mean), r.judge_count ?? 0);
+    const scores = (Array.isArray(r.judge_scores) ? r.judge_scores : []).map((js) => ({
+      judge_id: js.judge_id,
+      clarity: js.clarity,
+      structure: js.structure,
+      accuracy: js.accuracy,
+      connections: js.connections,
+      pitch: js.pitch,
+    }));
     if (scores.length > 0) judgeScores[r.submission_id] = scores;
   }
 

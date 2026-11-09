@@ -60,6 +60,7 @@ function row(id: string, over: Record<string, unknown>) {
     pitch_order: null,
     judge_mean: null,
     judge_count: 0,
+    judge_scores: [] as unknown[],
     ...over,
   };
 }
@@ -119,9 +120,27 @@ describe("GET /api/hackathons/[slug]/export", () => {
   });
 
   it("returns toCsv(rankFinal(...)) as an attachment", async () => {
+    // Each judge's scores, as hackathon_leaderboard returns them: a 18 (two judges), b 23 (three).
+    const score = (judge_id: string, v: [number, number, number, number, number]) => ({
+      judge_id,
+      clarity: v[0],
+      structure: v[1],
+      accuracy: v[2],
+      connections: v[3],
+      pitch: v[4],
+    });
+    const aScores = [score("j1", [4, 4, 4, 3, 3]), score("j2", [3, 3, 4, 4, 4])];
+    const bScores = [score("j1", [5, 5, 5, 5, 5]), score("j2", [4, 4, 4, 4, 4]), score("j3", [5, 5, 5, 5, 4])];
     const board = [
-      row("a", { ai_total: 91, finalist: true, judge_mean: 18, judge_count: 2 }),
-      row("b", { ai_total: 85, finalist: true, judge_mean: 23, judge_count: 3, team_name: '=cmd|"x"' }),
+      row("a", { ai_total: 91, finalist: true, judge_mean: 18, judge_count: 2, judge_scores: aScores }),
+      row("b", {
+        ai_total: 85,
+        finalist: true,
+        judge_mean: 23,
+        judge_count: 3,
+        judge_scores: bScores,
+        team_name: '=cmd|"x"',
+      }),
       row("c", { ai_total: 70 }),
       row("d", { ai_total: 99, eligible: false }),
     ];
@@ -132,15 +151,6 @@ describe("GET /api/hackathons/[slug]/export", () => {
     expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
     expect(response.headers.get("content-disposition")).toBe('attachment; filename="manila-26-results.csv"');
 
-    // Real per-judge scores with the means the RPC reported: a 18 (two judges), b 23 (three).
-    const score = (judge_id: string, v: [number, number, number, number, number]) => ({
-      judge_id,
-      clarity: v[0],
-      structure: v[1],
-      accuracy: v[2],
-      connections: v[3],
-      pitch: v[4],
-    });
     const expected = toCsv(
       rankFinal(
         board.map((r) => ({
@@ -153,10 +163,7 @@ describe("GET /api/hackathons/[slug]/export", () => {
           project_slug: r.project_slug,
           flags: ["manipulation" as const],
         })),
-        {
-          a: [score("j1", [4, 4, 4, 3, 3]), score("j2", [3, 3, 4, 4, 4])],
-          b: [score("j1", [5, 5, 5, 5, 5]), score("j2", [4, 4, 4, 4, 4]), score("j3", [5, 5, 5, 5, 4])],
-        },
+        { a: aScores, b: bScores },
       ),
     );
     const body = await response.text();

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { savePitchOrder } from "@/lib/hackathon/staff-actions";
+import { toPlainText } from "@/lib/hackathon/staff-view";
 import { ICON } from "@/lib/icons";
 
 export interface PitchFinalist {
@@ -40,30 +41,33 @@ export function StaffPitchOrder({
   return (
     <div>
       <ol className="divide-y divide-border">
-        {order.map((f, i) => (
-          <li key={f.submission_id} className="flex min-h-9 items-center gap-3 px-3 py-1 text-sm">
-            <span className="w-6 text-right text-xs text-muted-foreground tabular-nums">{i + 1}</span>
-            <span className="min-w-0 flex-1 truncate font-medium">{f.team_name}</span>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={`Move ${f.team_name} up`}
-              disabled={i === 0 || pending}
-              onClick={() => setOrder((o) => move(o, i, -1))}
-            >
-              <ICON.chevronDown className="rotate-180" />
-            </Button>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={`Move ${f.team_name} down`}
-              disabled={i === order.length - 1 || pending}
-              onClick={() => setOrder((o) => move(o, i, 1))}
-            >
-              <ICON.chevronDown />
-            </Button>
-          </li>
-        ))}
+        {order.map((f, i) => {
+          const name = toPlainText(f.team_name, 80);
+          return (
+            <li key={f.submission_id} className="flex min-h-9 items-center gap-3 px-3 py-1 text-sm">
+              <span className="w-6 text-right text-xs text-muted-foreground tabular-nums">{i + 1}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Move ${name} up`}
+                disabled={i === 0 || pending}
+                onClick={() => setOrder((o) => move(o, i, -1))}
+              >
+                <ICON.chevronDown className="rotate-180" />
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Move ${name} down`}
+                disabled={i === order.length - 1 || pending}
+                onClick={() => setOrder((o) => move(o, i, 1))}
+              >
+                <ICON.chevronDown />
+              </Button>
+            </li>
+          );
+        })}
       </ol>
       <div className="flex flex-wrap items-center gap-3 border-t border-border px-3 py-2">
         <Button

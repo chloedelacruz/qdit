@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { LeaderboardView } from "@/lib/hackathon/staff-queries";
-import { FLAG_LABEL } from "@/lib/hackathon/staff-view";
+import { FLAG_LABEL, toPlainText } from "@/lib/hackathon/staff-view";
 import { CRITERION_KEYS, type CriterionKey } from "@/lib/hackathon/types";
 import { ICON } from "@/lib/icons";
 
@@ -51,7 +51,7 @@ export function StaffLeaderboard({ slug, rows }: { slug: string; rows: Leaderboa
           <ICON.error aria-hidden className="mt-0.5 size-4 shrink-0" />
           <p>
             <span className="font-semibold">Possible manipulation.</span> The AI review flagged{" "}
-            {manipulated.map((r) => r.team_name).join(", ")} for trying to steer the grader. Read the
+            {manipulated.map((r) => toPlainText(r.team_name, 80)).join(", ")} for trying to steer the grader. Read the
             submission before it goes on a slide.
           </p>
         </div>
@@ -91,10 +91,10 @@ export function StaffLeaderboard({ slug, rows }: { slug: string; rows: Leaderboa
                   className="transition-qdit hover:text-primary"
                   href={`/hackathons/${slug}/admin/submissions/${r.submission_id}`}
                 >
-                  {r.team_name}
+                  {toPlainText(r.team_name, 80)}
                 </Link>
               </TableCell>
-              <TableCell className="text-muted-foreground">{r.project_slug}</TableCell>
+              <TableCell className="text-muted-foreground">{toPlainText(r.project_slug, 64)}</TableCell>
               <TableCell>
                 <StatusBadge state={r.eligible ? { label: "Yes", tone: "success" } : { label: "No", tone: "neutral" }} />
               </TableCell>
