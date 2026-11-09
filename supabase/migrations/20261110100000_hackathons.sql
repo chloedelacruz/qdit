@@ -122,7 +122,8 @@
 --            member_is_staff        a team member is staff here
 --   QD413  snapshot_too_large: the qdit snapshot is over 2 MB even with
 --          text clipped to 300 characters; payload_too_large: a doqtri
---          payload over 2 MiB (2,097,152 bytes as JSON text).
+--          payload over 3 MiB (3,145,728 bytes) in jsonb's text form, a
+--          backstop for the route's exact 2 MiB on the raw body (D-118).
 --   last_error on a job holds a code only: ^[a-z0-9_:.-]{1,80}$ (22023,
 --   hint error / reason, for anything else).
 --
@@ -144,6 +145,16 @@
 -- running under that same claim. attempts only grows; uncounted retries are
 -- kept in free_attempts, and the limit of three applies to
 -- attempts - free_attempts.
+--
+-- Third runs stay sealed until release. Before release nothing a client can
+-- reach reflects a third run: hackathon_grading_status() shows only each
+-- entry's first two live jobs and computes `complete` from those two, and
+-- release_hackathon_grades() counts only entries whose first two live jobs
+-- are unsettled ("N entries still grading"). The trade-off: an entry whose
+-- third run is still pending at release does not hold it up. Release
+-- supersedes that run, and the entry's grade is the mean of its two runs;
+-- the app adds the disagreement flag for it. Waiting for third runs would
+-- tell an admin which entries disagreed, before release, through a count.
 --
 -- An entry's AI grade is combined exactly as rubric.ts combineRuns(): per
 -- criterion the one run, the mean of two or the median of three (scores
@@ -204,7 +215,8 @@ create table public.hackathons (
   closes_at      timestamptz not null,
   team_min       integer not null default 3 check (team_min >= 1),
   team_max       integer not null default 4,
-  finalist_count integer not null default 10 check (finalist_count between 1 and 100),
+  -- The bootcamp pitches ten at most.
+  finalist_count integer not null default 10 check (finalist_count between 1 and 10),
   -- Set once by release_hackathon_grades(); nothing here clears it.
   released_at    timestamptz,
   released_by    uuid references auth.users (id) on delete set null,
@@ -2027,9 +2039,14 @@ begin
     raise exception 'payload must be a JSON object with a notes array and a workspace.'
       using errcode = '22023', hint = 'payload';
   end if;
-  if octet_length(p_payload::text) > 2097152 then
+  -- Defence in depth only (D-118). The route enforces the contract's exact
+  -- 2 MiB on the raw request bytes; here only jsonb's text form can be
+  -- measured, and it adds a space after every `:` and `,`, so a compact body
+  -- just under 2 MiB reads as more than 2 MiB. 3 MiB leaves room for that
+  -- and still bounds what one row can hold.
+  if octet_length(p_payload::text) > 3145728 then
     raise exception 'payload_too_large'
-      using errcode = 'QD413', detail = 'A hackathon snapshot is at most 2 MiB.';
+      using errcode = 'QD413', detail = 'A hackathon snapshot is at most 2 MiB as sent.';
   end if;
   if p_note_count <> jsonb_array_length(p_payload -> 'notes') then
     raise exception 'note_count must be the number of notes in the payload.'
@@ -2128,7 +2145,7 @@ end;
 $$;
 
 comment on function public.push_doqtri_hackathon_snapshot(text, uuid, uuid, uuid, jsonb, text, integer) is
-  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> arguments (22023; QD413 payload_too_large over 2 MiB; note_count = notes) -> replay (same hash and hackathon: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
+  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> arguments (22023; QD413 payload_too_large over 3 MiB of jsonb text, a backstop for the route''s 2 MiB; note_count = notes) -> replay (same hash and hackathon: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
 
 
 -- ----------------------------------------------------------------------------
@@ -2188,9 +2205,10 @@ begin
     from public.hackathons h where h.id = p_hackathon_id;
 
   -- Job state and eligibility only, nothing from hackathon_ai_runs (D-116).
-  -- Before release only the first two live jobs, numbered 1 and 2: a third
-  -- run would say the first two disagreed. `complete`: no live job pending
-  -- or running.
+  -- Before release only the first two live jobs, numbered 1 and 2, and
+  -- `complete` (none of them pending or running) from those two alone: a
+  -- third run would say the first two disagreed (header). After release,
+  -- every live job.
   return query
     select s.id, s.project_id, p.slug, s.team_name, v.id, v.version_no, v.submitted_at,
            coalesce((
@@ -2214,8 +2232,15 @@ begin
               where v_released or x.ord <= 2
            ), '[]'::jsonb),
            not exists (
-             select 1 from public.hackathon_grading_jobs j
-              where j.version_id = v.id and j.status in ('pending', 'running')
+             select 1
+               from (
+                 select j.status, row_number() over (order by j.run_no) as ord
+                   from public.hackathon_grading_jobs j
+                  where j.version_id = v.id
+                    and j.status <> 'superseded'
+               ) y
+              where (v_released or y.ord <= 2)
+                and y.status in ('pending', 'running')
            ),
            v.eligibility, o.value, o.reason, lp.until
       from public.hackathon_submissions s
@@ -2255,7 +2280,8 @@ returns table (
   ai_rank              integer,
   pitch_order          integer,
   judge_mean           numeric,
-  judge_count          integer
+  judge_count          integer,
+  judge_scores         jsonb
 )
 language plpgsql
 stable
@@ -2280,7 +2306,7 @@ begin
            public.hackathon_entry_eligible(o.value, v.eligibility),
            a.run_count, a.runs, a.ai_mean, a.per_criterion, a.ai_total,
            f.submission_id is not null, fr.ai_rank, f.pitch_order,
-           js.judge_mean, coalesce(js.judge_count, 0)
+           js.judge_mean, coalesce(js.judge_count, 0), coalesce(js.judge_scores, '[]'::jsonb)
       from public.hackathon_submissions s
       join public.projects p on p.id = s.project_id
       left join public.hackathon_submission_versions v on v.id = s.current_version_id
@@ -2292,7 +2318,17 @@ begin
         on fr.hackathon_id = s.hackathon_id and fr.submission_id = s.id
       left join lateral (
         select round(avg(js0.clarity + js0.structure + js0.accuracy + js0.connections + js0.pitch), 2) as judge_mean,
-               count(*)::integer as judge_count
+               count(*)::integer as judge_count,
+               -- Every score as given, so the app ranks exactly rather
+               -- than from the rounded mean.
+               jsonb_agg(jsonb_build_object(
+                 'judge_id', js0.judge_id,
+                 'clarity', js0.clarity,
+                 'structure', js0.structure,
+                 'accuracy', js0.accuracy,
+                 'connections', js0.connections,
+                 'pitch', js0.pitch
+               ) order by js0.judge_id) as judge_scores
           from public.hackathon_judge_scores js0
          where js0.submission_id = s.id
       ) js on true
@@ -2302,7 +2338,7 @@ end;
 $$;
 
 comment on function public.hackathon_leaderboard(uuid) is
-  'SECURITY DEFINER, first-party, hackathon admin, after release only (QD409 grades_not_released). Per entry: eligibility, the counted AI runs (total, criteria, flags, summary), the mean of their totals, the combined per-criterion values and total (rubric.ts combineRuns), finalist rank and pitch order, judges'' mean /25 and count.';
+  'SECURITY DEFINER, first-party, hackathon admin, after release only (QD409 grades_not_released). Per entry: eligibility, the counted AI runs (total, criteria, flags, summary), the mean of their totals, the combined per-criterion values and total (rubric.ts combineRuns), finalist rank and pitch order, judges'' mean /25 and count, and every judge''s scores (judge_scores).';
 
 
 create or replace function public.release_hackathon_grades(
@@ -2317,8 +2353,7 @@ set search_path = ''
 as $$
 declare
   v_h       public.hackathons;
-  v_pending integer;
-  v_running integer;
+  v_grading integer;
   v_ids     uuid[];
   v_ranks   integer[];
 begin
@@ -2347,17 +2382,25 @@ begin
             detail = 'A late pass is still in force; wait for it to end or shorten it first.';
   end if;
 
-  select count(*) filter (where j.status = 'pending'),
-         count(*) filter (where j.status = 'running')
-    into v_pending, v_running
-    from public.hackathon_submissions s
-    join public.hackathon_grading_jobs j on j.version_id = s.current_version_id
-   where s.hackathon_id = v_h.id;
+  -- Entries whose first two live runs are not all settled. Third runs do
+  -- not count, and are superseded below (header: third runs stay sealed).
+  select count(distinct x.version_id)
+    into v_grading
+    from (
+      select j.version_id, j.status,
+             row_number() over (partition by j.version_id order by j.run_no) as ord
+        from public.hackathon_submissions s
+        join public.hackathon_grading_jobs j on j.version_id = s.current_version_id
+       where s.hackathon_id = v_h.id
+         and j.status <> 'superseded'
+    ) x
+   where x.ord <= 2
+     and x.status in ('pending', 'running');
 
-  if (v_pending + v_running) > 0 and not coalesce(p_allow_incomplete, false) then
+  if v_grading > 0 and not coalesce(p_allow_incomplete, false) then
     raise exception 'grading_incomplete'
       using errcode = 'QD409',
-            detail = format('%s grading runs pending and %s running.', v_pending, v_running);
+            detail = format('%s entries still grading.', v_grading);
   end if;
 
   update public.hackathons h
@@ -2405,7 +2448,7 @@ end;
 $$;
 
 comment on function public.release_hackathon_grades(uuid, boolean) is
-  'SECURITY DEFINER, first-party, hackathon admin. Irreversible (D-116): after closes_at, with no late pass in force and (unless p_allow_incomplete) no pending or running current-version job, sets released_at, writes the top finalist_count eligible entries by AI total (tie: earlier submitted_at) as finalists with their rank in hackathon_finalist_ranks, and supersedes every pending or running job of the hackathon. Returns the finalist count.';
+  'SECURITY DEFINER, first-party, hackathon admin. Irreversible (D-116): after closes_at, with no late pass in force and (unless p_allow_incomplete) no entry whose first two live runs are unsettled (third runs never hold it up), sets released_at, writes the top finalist_count eligible entries by AI total (tie: earlier submitted_at) as finalists with their rank in hackathon_finalist_ranks, and supersedes every pending or running job of the hackathon. Returns the finalist count.';
 
 
 create or replace function public.grant_late_pass(
@@ -2422,6 +2465,11 @@ as $$
 declare
   v_released timestamptz;
 begin
+  -- Any project, not only one with an entry here: a pass has to be
+  -- grantable before the team has submitted (that is often why it is
+  -- needed), and it changes only this hackathon's window, which is this
+  -- admin's to run. It reveals nothing about the project and lets it do
+  -- nothing it could not do in the window.
   perform public.assert_hackathon_admin(p_hackathon_id);
 
   select h.released_at into v_released
@@ -2489,6 +2537,12 @@ begin
   select h.released_at into v_released
     from public.hackathons h where h.id = v_hackathon for share;
 
+  -- After release the finalists are fixed; an override would contradict them.
+  if v_released is not null then
+    raise exception 'already_released'
+      using errcode = 'QD409', detail = 'Grades are released; eligibility is final.';
+  end if;
+
   if p_value is not null and (v_reason is null or char_length(v_reason) > 500) then
     raise exception 'Say why, in 1 to 500 characters.' using errcode = '22023', hint = 'reason';
   end if;
@@ -2507,10 +2561,9 @@ begin
 
   -- Let in: a version the grader skipped as ineligible (every live job done,
   -- no AI run) gets runs 1 and 2 again, under the next two run numbers.
-  -- Nothing after release, and nothing for false or null.
+  -- Nothing for false or null.
   if p_value is true
      and v_version is not null
-     and v_released is null
      and exists (select 1 from public.hackathon_grading_jobs j
                   where j.version_id = v_version and j.status <> 'superseded')
      and not exists (select 1 from public.hackathon_grading_jobs j
@@ -2535,7 +2588,7 @@ end;
 $$;
 
 comment on function public.set_eligibility_override(uuid, boolean, text) is
-  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars), null clears it; kept in hackathon_eligibility_overrides, so the entry''s own row never changes. true on a version the grader skipped (every live job done, no AI run), before release, queues two fresh runs; false and null leave the jobs alone.';
+  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars), null clears it; kept in hackathon_eligibility_overrides, so the entry''s own row never changes. QD409 already_released after release. true on a version the grader skipped (every live job done, no AI run) queues two fresh runs; false and null leave the jobs alone.';
 
 
 create or replace function public.set_hackathon_staff(
