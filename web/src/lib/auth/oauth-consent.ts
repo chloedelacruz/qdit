@@ -63,7 +63,10 @@ export type DecisionOutcome =
  * the read and create rules of that one, and the link writes of
  * 20261024120000_integration_links.sql (WP-2.4) — linking documents and their
  * headings to projects and milestones, and renaming a linked milestone, whose
- * title is then the linking app's (D-12).
+ * title is then the linking app's (D-12); and, from contract v1.2.0, sending a
+ * hackathon snapshot through push_doqtri_hackathon_snapshot()
+ * (20261110100000_hackathons.sql, D-117), which only doqtri's own client may
+ * do and which it cannot read back.
  */
 export const APP_ACCESS = {
   can: [
@@ -73,6 +76,7 @@ export const APP_ACCESS = {
     "Create milestones, as proposed, in projects where you are a member or above",
     "Link its documents to projects you administer, and link their headings to milestones where you are a member or above",
     "Rename a milestone that is linked to one of its headings — the title only",
+    "Send a snapshot of its documents to a hackathon entry for projects you administer",
   ],
   cannot: [
     "Approve or reject milestones, or delete projects or milestones",
@@ -80,6 +84,7 @@ export const APP_ACCESS = {
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, or its record of which apps you disconnected",
     "See your teammates' profiles or who else is in your projects",
+    "See or change qdit's hackathons, their staff, entries, teams, entry versions, late passes, grading queue, grades, finalists or judges' scores, or read back a hackathon snapshot it sent",
   ],
 } as const;
 
@@ -108,6 +113,21 @@ export const APP_READ_SCOPE = {
     // Which connections keep a plan linked (20261025120600_doc_link_connections.sql):
     // qdit's bookkeeping about grants, for the doc card, not data D-03 opens.
     "doc_link_connections",
+    // The hackathon portal (20261110100000_hackathons.sql, D-115 to D-117):
+    // closed to apps, the snapshot doqtri itself sent included. Grades and the
+    // grading queue (hackathon_ai_runs, hackathon_grading_jobs) are closed to
+    // every client role, not only to apps (D-116).
+    "hackathon_ai_runs",
+    "hackathon_doqtri_snapshots",
+    "hackathon_finalists",
+    "hackathon_grading_jobs",
+    "hackathon_judge_scores",
+    "hackathon_late_passes",
+    "hackathon_staff",
+    "hackathon_submission_versions",
+    "hackathon_submissions",
+    "hackathon_team_members",
+    "hackathons",
     // The webhook outbox and endpoints (20261024130000_integration_webhooks.sql):
     // qdit's own delivery state, closed to every client role, not user data.
     "integration_events",
