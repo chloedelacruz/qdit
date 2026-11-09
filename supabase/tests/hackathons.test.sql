@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(187);
+select plan(204);
 
 
 -- ----------------------------------------------------------------------------
@@ -292,7 +292,8 @@ select is_empty(
         and p.proname in ('claim_grading_jobs', 'complete_grading_job', 'fail_grading_job', 'enqueue_third_run',
                           'set_version_eligibility', 'record_doqtri_chain_check', 'prune_hackathon_doqtri_snapshots',
                           'hackathon_current_ai', 'build_hackathon_qdit_snapshot', 'hackathon_window_state',
-                          'hackathon_grading_scheduler_health', 'request_hackathon_grading')
+                          'hackathon_grading_scheduler_health', 'request_hackathon_grading',
+                          'skip_grading_job', 'hackathon_version_progress')
         and has_function_privilege('authenticated', p.oid, 'execute') $$,
   'authenticated can execute none of the service-role and internal functions'
 );
@@ -849,9 +850,9 @@ select throws_ok(
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000001');
 
 select ok(
-  public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000002', 'b7000000-0000-4000-8000-000000000001', 'Late team',
+  set_config('hk.p1h2', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000002', 'b7000000-0000-4000-8000-000000000001', 'Late team',
     array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
-    array[pg_temp.img(2, 1, 7)]) is not null,
+    array[pg_temp.img(2, 1, 7)])::text, true) is not null,
   'submit: a late pass lets a closed hackathon take the project''s entry'
 );
 
@@ -1189,43 +1190,88 @@ language sql as $$
   select id from public.hackathon_grading_jobs where version_id = current_setting(p_version)::uuid and run_no = p_run;
 $$;
 
-select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 'overloaded', 0), 'pending',
-  'fail: back to pending while attempts < 3');
+-- Fencing: the worker whose lease lapsed (claim 1) cannot settle claim 2.
+select is(public.complete_grading_job(pg_temp.job('hk.p3v1', 1), 1, 'test-model', '{}', 50, '{}', 'x', 'end_turn', '{}', false),
+  'stale', 'fencing: complete under an earlier claim is stale');
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 1, 'late', 0), 'stale',
+  'fencing: fail under an earlier claim is stale');
+select is(public.skip_grading_job(pg_temp.job('hk.p3v1', 1), 1, 'late'), 'stale',
+  'fencing: skip under an earlier claim is stale');
 
-select is((select count(*) from public.claim_grading_jobs(10, 200, current_setting('hk.p3v1')::uuid)), 1::bigint,
-  'fail: a retry with no delay is claimable at once (attempt 3)');
+select pg_temp.as_postgres();
+select results_eq(
+  format($$ select status, attempts, (select count(*)::int from public.hackathon_ai_runs r where r.version_id = j.version_id)
+              from public.hackathon_grading_jobs j where id = %L $$, pg_temp.job('hk.p3v1', 1)),
+  $$ values ('running'::text, 2, 0) $$,
+  'fencing: the current claim is untouched and nothing was recorded'
+);
+select pg_temp.as_service();
 
-select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 'overloaded again', 0), 'failed',
-  'fail: failed after the third attempt');
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 2, 'overloaded', 0, false, false), 'pending',
+  'fail: an uncounted attempt (overload) goes back to pending');
 
-select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 'late', 0), 'stale',
+select is((select attempts from public.claim_grading_jobs(10, 200, current_setting('hk.p3v1')::uuid)), 3,
+  'fail: a retry with no delay is claimable at once, as claim 3');
+
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 3, 'bad output', 0), 'pending',
+  'fail: claim 3 is only the second counted attempt, so pending again');
+
+select is((select attempts from public.claim_grading_jobs(10, 200, current_setting('hk.p3v1')::uuid)), 4,
+  'fail: claimed a fourth time');
+
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 4, 'bad output again', 0), 'failed',
+  'fail: failed after the third counted attempt');
+
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 4, 'late', 0), 'stale',
   'fail: a job no longer running is stale');
 
--- Grades for everyone. P3's run 1 failed, so it is regraded below.
-create function pg_temp.grade(p_version text, p_total numeric) returns text
+-- Grades for everyone, as the grader stores them: five criterion scores and
+-- their raw weighted total. P3's run 1 failed, so it is regraded below.
+create function pg_temp.done(p_job uuid, p_attempt int, p_scores numeric[]) returns text
+language sql as $$
+  select public.complete_grading_job(
+    p_job, p_attempt, 'test-model',
+    jsonb_build_object(
+      'clarity',     jsonb_build_object('score', p_scores[1], 'evidence', 'e'),
+      'structure',   jsonb_build_object('score', p_scores[2], 'evidence', 'e'),
+      'accuracy',    jsonb_build_object('score', p_scores[3], 'evidence', 'e'),
+      'connections', jsonb_build_object('score', p_scores[4], 'evidence', 'e'),
+      'execution',   jsonb_build_object('score', p_scores[5], 'evidence', 'e')),
+    round((p_scores[1] + p_scores[2] + p_scores[3] + p_scores[4] + p_scores[5]) * 2, 2),
+    array['placeholder'], 'ok', 'end_turn', '{}', false);
+$$;
+
+-- Claims the version's due jobs and completes run n with p_scores[n] (the
+-- last row for any run beyond them).
+create function pg_temp.grade(p_version text, p_scores numeric[]) returns text
 language plpgsql as $$
 declare
-  j record;
-  out text := '';
+  j     record;
+  out   text := '';
+  i     integer := 0;
+  n     integer := array_length(p_scores, 1);
+  row_s numeric[];
 begin
-  for j in select * from public.claim_grading_jobs(20, 200, current_setting(p_version)::uuid) loop
-    out := out || public.complete_grading_job(j.job_id, 'test-model', '{"clarity": {"score": 8}}', p_total,
-                                              array['placeholder'], 'ok', 'end_turn', '{}', false);
+  for j in select * from public.claim_grading_jobs(20, 200, current_setting(p_version)::uuid) order by run_no loop
+    i := least(i + 1, n);
+    row_s := array(select unnest(p_scores[i:i][1:5]));
+    out := out || pg_temp.done(j.job_id, j.attempts, row_s);
   end loop;
   return out;
 end;
 $$;
 
-select is(pg_temp.grade('hk.p1v2', 80), 'donedone', 'P1: runs 1 and 2 done at 80');
-select is(pg_temp.grade('hk.p2v1', 90), 'donedone', 'P2: two runs at 90');
-select is(pg_temp.grade('hk.p4v1', 40), 'donedone', 'P4: two runs at 40, regraded below');
-select is(pg_temp.grade('hk.p5v1', 99), 'donedone', 'P5: two runs at 99');
-select is(public.complete_grading_job(pg_temp.job('hk.p3v1', 2), 'test-model', '{}', 80, '{}', 'ok', 'end_turn', '{}', false),
+-- P1's two runs disagree (96 and 64): a third follows below.
+select is(pg_temp.grade('hk.p1v2', array[[10, 10, 10, 10, 8], [6, 6, 6, 6, 8]]), 'donedone', 'P1: runs 1 and 2 done at 96 and 64');
+select is(pg_temp.grade('hk.p2v1', array[[9, 9, 9, 9, 9]]), 'donedone', 'P2: two runs at 90');
+select is(pg_temp.grade('hk.p4v1', array[[4, 4, 4, 4, 4]]), 'donedone', 'P4: two runs at 40, regraded below');
+select is(pg_temp.grade('hk.p5v1', array[[10, 10, 10, 10, 9], [10, 10, 10, 10, 8]]), 'donedone', 'P5: runs at 98 and 96');
+select is(public.complete_grading_job(pg_temp.job('hk.p3v1', 2), 1, 'test-model', '{}', 80, '{}', 'ok', 'end_turn', '{}', false),
   'done', 'P3: run 2 done at 80');
 
-select is(public.complete_grading_job(pg_temp.job('hk.p1v2', 1), 'test-model', '{}', 10, '{}', 'x', 'end_turn', '{}', false),
+select is(public.complete_grading_job(pg_temp.job('hk.p1v2', 1), 1, 'test-model', '{}', 10, '{}', 'x', 'end_turn', '{}', false),
   'stale', 'complete: a job already done is stale, and records nothing');
-select is(public.complete_grading_job(pg_temp.job('hk.p1v1', 2), 'test-model', '{}', 10, '{}', 'x', 'end_turn', '{}', false),
+select is(public.complete_grading_job(pg_temp.job('hk.p1v1', 2), 1, 'test-model', '{}', 10, '{}', 'x', 'end_turn', '{}', false),
   'stale', 'complete: a superseded job is stale');
 
 -- P1's runs disagree: a third, at 20. Median 80, mean 60.
@@ -1266,7 +1312,75 @@ select is(public.regrade_submission((select submission_id from public.hackathon_
   3, 'regrade: P3 too');
 
 select pg_temp.as_service();
-select is(pg_temp.grade('hk.p4v1', 95), 'donedone', 'P4: regraded runs at 95');
+select is(pg_temp.grade('hk.p4v1', array[[10, 10, 10, 10, 8]]), 'donedone', 'P4: regraded runs at 96');
+
+select results_eq(
+  $$ select jsonb_array_length(p -> 'jobs'), jsonb_array_length(p -> 'runs'),
+            (select array_agg((r ->> 'run_no')::int order by (r ->> 'run_no')::int) from jsonb_array_elements(p -> 'runs') as r)
+       from (select public.hackathon_version_progress(current_setting('hk.p4v1')::uuid) as p) x $$,
+  $$ values (2, 2, array[3, 4]) $$,
+  'progress: a regraded version lists only its live jobs and their runs'
+);
+
+-- The late entry in H2: the grader skips both runs as ineligible.
+select is(
+  (select string_agg(public.skip_grading_job(c.job_id, c.attempts, 'ineligible: 2 notes')
+                     || ':' || (c.current_version_id = c.version_id
+                                and c.eligibility_override is null
+                                and c.eligibility is null)::text, ',' order by c.run_no)
+     from public.claim_grading_jobs(2, 200, current_setting('hk.p1h2')::uuid) as c),
+  'done:true,done:true',
+  'claim returns current_version_id, eligibility_override and eligibility; skip settles both running jobs'
+);
+select is(public.skip_grading_job(pg_temp.job('hk.p1h2', 1), 1, 'again'), 'stale', 'skip: once');
+
+select pg_temp.as_postgres();
+select results_eq(
+  format($$ select status, attempts, last_error, (select count(*)::int from public.hackathon_ai_runs r where r.version_id = j.version_id)
+              from public.hackathon_grading_jobs j where version_id = %L order by run_no $$,
+         current_setting('hk.p1h2')),
+  $$ values ('done'::text, 1, 'ineligible: 2 notes'::text, 0), ('done'::text, 1, 'ineligible: 2 notes'::text, 0) $$,
+  'skip: done, reason kept, no AI run recorded'
+);
+
+-- The admin lets it in: two fresh runs are queued.
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select lives_ok(
+  format($$ select public.set_eligibility_override((select submission_id from public.hackathon_submission_versions where id = %L), true, 'Notes were in a second workspace') $$,
+         current_setting('hk.p1h2')),
+  'override true on a skipped entry'
+);
+
+select pg_temp.as_postgres();
+select results_eq(
+  format($$ select run_no::int, status from public.hackathon_grading_jobs where version_id = %L order by run_no $$,
+         current_setting('hk.p1h2')),
+  $$ values (1, 'superseded'::text), (2, 'superseded'::text), (3, 'pending'::text), (4, 'pending'::text) $$,
+  'override true: the skipped runs are superseded and runs 3 and 4 queued'
+);
+
+select pg_temp.as_service();
+select is(
+  (select f from public.claim_grading_jobs(1, 200, current_setting('hk.p1h2')::uuid) as c,
+          lateral public.fail_grading_job(c.job_id, c.attempts, 'refusal', 60, true) as f),
+  'failed',
+  'fail: p_permanent fails on the first attempt'
+);
+
+-- false, null and true again (jobs not all done now) queue nothing more.
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select public.set_eligibility_override((select submission_id from public.hackathon_submission_versions where id = current_setting('hk.p1h2')::uuid), false, 'Changed my mind');
+select public.set_eligibility_override((select submission_id from public.hackathon_submission_versions where id = current_setting('hk.p1h2')::uuid), null, null);
+select public.set_eligibility_override((select submission_id from public.hackathon_submission_versions where id = current_setting('hk.p1h2')::uuid), true, 'Back in');
+
+select pg_temp.as_postgres();
+select results_eq(
+  format($$ select status, count(*)::int from public.hackathon_grading_jobs where version_id = %L group by status order by status $$,
+         current_setting('hk.p1h2')),
+  $$ values ('failed'::text, 1), ('pending'::text, 1), ('superseded'::text, 2) $$,
+  'override false, null, or true on an entry with live work: the jobs are left alone'
+);
+select pg_temp.as_service();
 
 -- Overrides: P2 (failed the gate) let in, P4 (passed it, top AI score) kept out.
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
@@ -1344,12 +1458,16 @@ select throws_ok(
 );
 
 select pg_temp.as_service();
-select is(pg_temp.grade('hk.p3v1', 80), 'donedone', 'P3: regraded runs at 80');
-select is(
-  (select public.complete_grading_job(j.job_id, 'test-model', '{}', 20, '{}', 'ok', 'end_turn', '{}', false)
-     from public.claim_grading_jobs(5, 200, current_setting('hk.p1v2')::uuid) as j),
-  'done',
-  'P1: third run at 20'
+-- 7.6 is clamped to 8, as clampScore() does: combined 80 though each stored total is 79.2.
+select is(pg_temp.grade('hk.p3v1', array[[8, 8, 8, 8, 7.6]]), 'donedone', 'P3: regraded runs at 79.2 (stored)');
+select is(pg_temp.grade('hk.p1v2', array[[8, 8, 8, 8, 0]]), 'done', 'P1: third run at 64');
+
+select results_eq(
+  $$ select jsonb_array_length(p -> 'jobs'),
+            (select array_agg((r ->> 'total')::numeric order by (r ->> 'run_no')::int) from jsonb_array_elements(p -> 'runs') as r)
+       from (select public.hackathon_version_progress(current_setting('hk.p1v2')::uuid) as p) x $$,
+  $$ values (3, array[96.00, 64.00, 64.00]::numeric[]) $$,
+  'progress: three jobs and their three runs'
 );
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
@@ -1367,7 +1485,7 @@ select results_eq(
       where f.hackathon_id = 'c7000000-0000-4000-8000-000000000001'
       order by f.ai_rank $$,
   $$ values ('hk-two'::text, 1), ('hk-one'::text, 2) $$,
-  'finalists: P2 (override in, 90) then P1 (median 80, earlier than P3); P5 ineligible, P4 overridden out'
+  'finalists: P2 (override in, 90) then P1 (per-criterion median 80, tied with P3 and earlier); P5 ineligible, P4 overridden out'
 );
 
 select ok((select released_at is not null and released_by = 'a7000000-0000-4000-8000-000000000022'
@@ -1393,12 +1511,24 @@ select results_eq(
   $$ select project_slug, eligible, run_count, ai_mean, ai_total, finalist, ai_rank
        from public.hackathon_leaderboard('c7000000-0000-4000-8000-000000000001')
       order by project_slug $$,
-  $$ values ('hk-five'::text,  false, 2, 99.00::numeric, 99.00::numeric, false, null::int),
-            ('hk-four'::text,  false, 2, 95.00::numeric, 95.00::numeric, false, null::int),
-            ('hk-one'::text,   true,  3, 60.00::numeric, 80.00::numeric, true,  2),
-            ('hk-three'::text, true,  2, 80.00::numeric, 80.00::numeric, false, null::int),
+  $$ values ('hk-five'::text,  false, 2, 97.00::numeric, 97.00::numeric, false, null::int),
+            ('hk-four'::text,  false, 2, 96.00::numeric, 96.00::numeric, false, null::int),
+            ('hk-one'::text,   true,  3, 74.67::numeric, 80.00::numeric, true,  2),
+            ('hk-three'::text, true,  2, 79.20::numeric, 80.00::numeric, false, null::int),
             ('hk-two'::text,   true,  2, 90.00::numeric, 90.00::numeric, true,  1) $$,
-  'leaderboard (admin, after release): counted runs only, mean, combined total (median of three), finalists'
+  'leaderboard (admin, after release): counted runs only, mean of totals, combined total per rubric.ts, finalists'
+);
+
+select is(
+  (select ai_criteria from public.hackathon_leaderboard('c7000000-0000-4000-8000-000000000001') where project_slug = 'hk-one'),
+  '{"clarity": 8.00, "structure": 8.00, "accuracy": 8.00, "connections": 8.00, "execution": 8.00}'::jsonb,
+  'leaderboard: three runs combine by per-criterion median (not the median 64 or mean 74.67 of totals)'
+);
+
+select is(
+  (select ai_criteria ->> 'execution' from public.hackathon_leaderboard('c7000000-0000-4000-8000-000000000001') where project_slug = 'hk-five'),
+  '8.50',
+  'leaderboard: two runs combine by per-criterion mean'
 );
 
 select is(

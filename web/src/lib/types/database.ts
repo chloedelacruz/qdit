@@ -1140,7 +1140,10 @@ export type Database = {
           /** 1–9: runs 1 and 2, then the third run and regrades. */
           run_no: number
           status: 'pending' | 'running' | 'done' | 'failed' | 'superseded'
+          /** Claims so far; only grows, and is the lease's fencing token. */
           attempts: number
+          /** Claims that did not count (overload, budget abort); the limit is attempts - free_attempts <= 3. */
+          free_attempts: number
           lease_until: string | null
           next_attempt_at: string
           last_error: string | null
@@ -1542,6 +1545,7 @@ export type Database = {
             run_no: number
             status: 'pending' | 'running' | 'done' | 'failed'
             attempts: number
+            free_attempts: number
             next_attempt_at: string
             last_error: string | null
             updated_at: string
@@ -1555,7 +1559,8 @@ export type Database = {
       /**
        * Hackathon admin (first-party), after release only: QD409
        * `grades_not_released` before. `runs` are the counted runs (job done)
-       * of the current version; `ai_total` is their mean (1–2) or median (3+).
+       * of the current version; `ai_criteria`/`ai_total` combine them exactly
+       * as rubric.ts combineRuns.
        */
       hackathon_leaderboard: {
         Args: { p_hackathon_id: string }
@@ -1582,7 +1587,17 @@ export type Database = {
             truncated: boolean
             created_at: string
           }[] | null
+          /** Mean of the counted runs' stored totals, for display. */
           ai_mean: number | null
+          /** Per criterion 0–10 as rubric.ts combineRuns: one run, mean of two, median of three. */
+          ai_criteria: {
+            clarity: number
+            structure: number
+            accuracy: number
+            connections: number
+            execution: number
+          } | null
+          /** Σ ai_criteria/10 × 20, 2 decimals. What release ranks by. */
           ai_total: number | null
           finalist: boolean
           ai_rank: number | null
@@ -1606,7 +1621,11 @@ export type Database = {
         Args: { p_hackathon_id: string; p_project_id: string; p_until: string }
         Returns: undefined
       }
-      /** Hackathon admin. Reason (1–500) required unless `p_value` is null. */
+      /**
+       * Hackathon admin. Reason (1–500) required unless `p_value` is null.
+       * `true` on a version the grader skipped (all live jobs done, no AI
+       * run), before release, queues two fresh runs.
+       */
       set_eligibility_override: {
         Args: { p_submission_id: string; p_value: boolean | null; p_reason: string | null }
         Returns: undefined
@@ -1675,7 +1694,10 @@ export type Database = {
           job_id: string
           version_id: string
           run_no: number
-          /** Including the attempt this claim is for. */
+          /**
+           * Including the attempt this claim is for. Pass it back as
+           * `p_attempt` to complete, fail or skip: any other value is stale.
+           */
           attempts: number
           lease_until: string
           submission_id: string
@@ -1692,12 +1714,21 @@ export type Database = {
           closes_at: string
           team_min: number
           team_max: number
+          /** The entry's current version; a claim for another is stale work. */
+          current_version_id: string | null
+          eligibility_override: boolean | null
+          /** The version's stored eligibility result, or null. */
+          eligibility: Json | null
         }[]
       }
-      /** Grader. Records the run and marks the job done; `stale` if not running. */
+      /**
+       * Grader. Records the run and marks the job done; `stale` unless it is
+       * still running under claim `p_attempt`.
+       */
       complete_grading_job: {
         Args: {
           p_job_id: string
+          p_attempt: number
           p_model: string
           p_criteria: Json
           p_total: number
@@ -1709,10 +1740,52 @@ export type Database = {
         }
         Returns: 'done' | 'stale'
       }
-      /** Grader. Back to pending while attempts < 3, else failed. */
+      /**
+       * Grader. Back to pending while counted attempts < 3, else failed;
+       * `p_permanent` (refusal, invalid output) fails it at once;
+       * `p_count_attempt: false` (overload, budget abort) requeues it without
+       * counting the attempt. `stale` unless running under claim `p_attempt`.
+       */
       fail_grading_job: {
-        Args: { p_job_id: string; p_error: string; p_retry_after_seconds?: number }
+        Args: {
+          p_job_id: string
+          p_attempt: number
+          p_error: string
+          p_retry_after_seconds?: number
+          p_permanent?: boolean
+          p_count_attempt?: boolean
+        }
         Returns: 'pending' | 'failed' | 'stale'
+      }
+      /**
+       * Grader. Done with no AI run (an ineligible entry); reason in
+       * last_error. `stale` unless running under claim `p_attempt`.
+       */
+      skip_grading_job: {
+        Args: { p_job_id: string; p_attempt: number; p_reason: string }
+        Returns: 'done' | 'stale'
+      }
+      /**
+       * Grader. A version's live (not superseded) jobs and the runs of its
+       * done jobs; P0002 for an unknown version.
+       */
+      hackathon_version_progress: {
+        Args: { p_version_id: string }
+        Returns: {
+          version_id: string
+          jobs: {
+            id: string
+            run_no: number
+            status: 'pending' | 'running' | 'done' | 'failed'
+          }[]
+          runs: {
+            run_no: number
+            criteria: Json
+            total: number
+            flags: string[]
+            model: string
+          }[]
+        }
       }
       /** Grader. The tie-break run; null when not needed or not current. */
       enqueue_third_run: {

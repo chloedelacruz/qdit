@@ -106,6 +106,18 @@
 -- towards a grade. Nine numbers allow the first grading plus three regrades
 -- (each possibly with a third run); past that regrade_limit.
 --
+-- Leases are fenced: claim_grading_jobs() returns `attempts`, and
+-- complete_grading_job(), fail_grading_job() and skip_grading_job() take it
+-- back as p_attempt and do nothing (answer `stale`) unless the job is still
+-- running under that same claim. attempts only grows; uncounted retries are
+-- kept in free_attempts, and the limit of three applies to
+-- attempts - free_attempts.
+--
+-- An entry's AI grade is combined exactly as rubric.ts combineRuns(): per
+-- criterion the one run, the mean of two or the median of three (scores
+-- clamped to integers 0-10), total = sum of value/10 x 20, 2 decimals
+-- (hackathon_current_ai()). Release and the leaderboard both use it.
+--
 -- ---------------------------------------------------------------------------
 -- THE SNAPSHOT
 -- ---------------------------------------------------------------------------
@@ -339,15 +351,24 @@ create table public.hackathon_grading_jobs (
   run_no          smallint not null check (run_no between 1 and 9),
   status          text not null default 'pending'
     check (status in ('pending', 'running', 'done', 'failed', 'superseded')),
-  -- Claims so far, the one in progress included. Three at most.
-  attempts        integer not null default 0 check (attempts between 0 and 3),
+  -- Claims so far, the one in progress included. Only grows, so it is also
+  -- the lease's fencing token: complete/fail/skip act only for the claim
+  -- whose `attempts` they pass (p_attempt).
+  attempts        integer not null default 0 check (attempts >= 0),
+  -- Of those, the claims that do not count towards the limit of three
+  -- (fail_grading_job with p_count_attempt false: provider overload, budget
+  -- abort). Counted attempts = attempts - free_attempts. At most 20, after
+  -- which a failure counts whatever is passed.
+  free_attempts   integer not null default 0 check (free_attempts between 0 and 20),
   lease_until     timestamptz,
   next_attempt_at timestamptz not null default now(),
   last_error      text check (last_error is null or char_length(last_error) <= 2000),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
 
-  constraint hackathon_grading_jobs_run_key unique (version_id, run_no)
+  constraint hackathon_grading_jobs_run_key unique (version_id, run_no),
+  constraint hackathon_grading_jobs_counted_attempts
+    check (attempts - free_attempts between 0 and 3)
 );
 
 create index hackathon_grading_jobs_due_idx
@@ -625,8 +646,12 @@ $$;
 
 
 -- The AI grade of each entry's current version, from the runs whose job is
--- `done` (a regrade supersedes the rest): mean of one or two, median of
--- three or more, as rubric.ts combineRuns(). Internal: callers check access.
+-- `done` (a regrade supersedes the rest), exactly as rubric.ts
+-- combineRuns(): each criterion's score clamped to an integer 0-10; per
+-- criterion the one run, the mean of two, or the median of three or more,
+-- rounded to 2 decimals; total = sum of (value / 10 x 20), rounded to 2
+-- decimals. Never the median of run totals. ai_mean is the plain mean of the
+-- stored run totals, for display. Internal: callers check access.
 create or replace function public.hackathon_current_ai(p_hackathon_id uuid)
 returns table (
   submission_id uuid,
@@ -634,6 +659,7 @@ returns table (
   run_count     integer,
   runs          jsonb,
   ai_mean       numeric,
+  per_criterion jsonb,
   ai_total      numeric
 )
 language sql
@@ -641,37 +667,76 @@ stable
 security definer
 set search_path = ''
 as $$
-  select s.id,
-         s.current_version_id,
-         count(r.id)::integer,
-         coalesce(jsonb_agg(jsonb_build_object(
-           'run_no', r.run_no,
-           'model', r.model,
-           'total', r.total,
-           'criteria', r.criteria,
-           'flags', to_jsonb(r.flags),
-           'summary', r.summary,
-           'truncated', r.truncated,
-           'created_at', r.created_at
-         ) order by r.run_no) filter (where r.id is not null), '[]'::jsonb),
-         round(avg(r.total), 2),
-         case
-           when count(r.id) = 0 then null
-           when count(r.id) >= 3
-             then round((percentile_cont(0.5) within group (order by r.total))::numeric, 2)
-           else round(avg(r.total), 2)
-         end
-    from public.hackathon_submissions s
-    left join public.hackathon_grading_jobs j
-      on j.version_id = s.current_version_id and j.status = 'done'
-    left join public.hackathon_ai_runs r
-      on r.version_id = j.version_id and r.run_no = j.run_no
-   where s.hackathon_id = p_hackathon_id
-   group by s.id, s.current_version_id;
+  with entries as (
+    select s.id, s.current_version_id
+      from public.hackathon_submissions s
+     where s.hackathon_id = p_hackathon_id
+  ),
+  counted as (
+    select r.*
+      from entries e
+      join public.hackathon_grading_jobs j
+        on j.version_id = e.current_version_id and j.status = 'done'
+      join public.hackathon_ai_runs r
+        on r.version_id = j.version_id and r.run_no = j.run_no
+  ),
+  run_stats as (
+    select c.version_id,
+           count(*)::integer as run_count,
+           jsonb_agg(jsonb_build_object(
+             'run_no', c.run_no,
+             'model', c.model,
+             'total', c.total,
+             'criteria', c.criteria,
+             'flags', to_jsonb(c.flags),
+             'summary', c.summary,
+             'truncated', c.truncated,
+             'created_at', c.created_at
+           ) order by c.run_no) as runs,
+           round(avg(c.total), 2) as ai_mean
+      from counted c
+     group by c.version_id
+  ),
+  scores as (
+    -- clampScore(): round to an integer, then 0-10. A score that is not a
+    -- number is left out (the grader stores only parsed runs).
+    select c.version_id, k.key,
+           least(10, greatest(0, round((c.criteria -> k.key ->> 'score')::numeric))) as score
+      from counted c
+     cross join unnest(array['clarity', 'structure', 'accuracy', 'connections', 'execution']) as k (key)
+     where jsonb_typeof(c.criteria -> k.key -> 'score') = 'number'
+  ),
+  per_key as (
+    select sc.version_id, sc.key,
+           round(case
+                   when rs.run_count >= 3
+                     then (percentile_cont(0.5) within group (order by sc.score))::numeric
+                   else avg(sc.score)
+                 end, 2) as value
+      from scores sc
+      join run_stats rs on rs.version_id = sc.version_id
+     group by sc.version_id, sc.key, rs.run_count
+  ),
+  combined as (
+    select pk.version_id,
+           jsonb_object_agg(pk.key, pk.value) as per_criterion,
+           round(sum(pk.value / 10 * 20), 2) as ai_total
+      from per_key pk
+     group by pk.version_id
+  )
+  select e.id, e.current_version_id,
+         coalesce(rs.run_count, 0),
+         coalesce(rs.runs, '[]'::jsonb),
+         rs.ai_mean,
+         cb.per_criterion,
+         cb.ai_total
+    from entries e
+    left join run_stats rs on rs.version_id = e.current_version_id
+    left join combined cb on cb.version_id = e.current_version_id;
 $$;
 
 comment on function public.hackathon_current_ai(uuid) is
-  'Internal, no client grant. Per entry of p_hackathon_id: the current version''s counted AI runs (job done) as jsonb, their mean, and the combined total (mean of 1-2, median of 3+, rubric.ts combineRuns).';
+  'Internal, no client grant. Per entry of p_hackathon_id: the current version''s counted AI runs (job done) as jsonb, the mean of their totals, and the combined grade exactly as rubric.ts combineRuns (clamped integer scores; per criterion one run, mean of two or median of three; total = sum of value/10 x 20, 2 decimals).';
 
 
 -- QditSnapshotV1 of one project, now. Internal: called by
@@ -1954,6 +2019,7 @@ begin
                       'run_no', j.run_no,
                       'status', j.status,
                       'attempts', j.attempts,
+                      'free_attempts', j.free_attempts,
                       'next_attempt_at', j.next_attempt_at,
                       'last_error', j.last_error,
                       'updated_at', j.updated_at
@@ -1993,6 +2059,7 @@ returns table (
   run_count            integer,
   runs                 jsonb,
   ai_mean              numeric,
+  ai_criteria          jsonb,
   ai_total             numeric,
   finalist             boolean,
   ai_rank              integer,
@@ -2021,7 +2088,7 @@ begin
     select s.id, s.project_id, p.slug, s.team_name, v.id, v.version_no, v.submitted_at,
            v.eligibility, s.eligibility_override, s.override_reason,
            public.hackathon_entry_eligible(s.eligibility_override, v.eligibility),
-           a.run_count, a.runs, a.ai_mean, a.ai_total,
+           a.run_count, a.runs, a.ai_mean, a.per_criterion, a.ai_total,
            f.submission_id is not null, f.ai_rank, f.pitch_order,
            js.judge_mean, coalesce(js.judge_count, 0)
       from public.hackathon_submissions s
@@ -2042,7 +2109,7 @@ end;
 $$;
 
 comment on function public.hackathon_leaderboard(uuid) is
-  'SECURITY DEFINER, first-party, hackathon admin, after release only (QD409 grades_not_released). Per entry: eligibility, the counted AI runs (total, criteria, flags, summary) with their mean and combined total, finalist rank and pitch order, judges'' mean /25 and count.';
+  'SECURITY DEFINER, first-party, hackathon admin, after release only (QD409 grades_not_released). Per entry: eligibility, the counted AI runs (total, criteria, flags, summary), the mean of their totals, the combined per-criterion values and total (rubric.ts combineRuns), finalist rank and pitch order, judges'' mean /25 and count.';
 
 
 create or replace function public.release_hackathon_grades(
@@ -2179,12 +2246,15 @@ set search_path = ''
 as $$
 declare
   v_hackathon uuid;
+  v_version   uuid;
+  v_next      integer;
   v_reason    text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
   perform public.assert_first_party_session();
 
-  select s.hackathon_id into v_hackathon
-    from public.hackathon_submissions s where s.id = p_submission_id;
+  -- Locked: two overrides of one entry queue runs once.
+  select s.hackathon_id, s.current_version_id into v_hackathon, v_version
+    from public.hackathon_submissions s where s.id = p_submission_id for update;
   if not found then
     raise exception 'No such submission.' using errcode = 'P0002';
   end if;
@@ -2200,11 +2270,38 @@ begin
          override_reason = case when p_value is null then null else v_reason end,
          overridden_by = case when p_value is null then null else auth.uid() end
    where s.id = p_submission_id;
+
+  -- Let in: a version the grader skipped as ineligible (every live job done,
+  -- no AI run) gets runs 1 and 2 again, under the next two run numbers.
+  -- Nothing after release, and nothing for false or null.
+  if p_value is true
+     and v_version is not null
+     and not exists (select 1 from public.hackathons h where h.id = v_hackathon and h.released_at is not null)
+     and exists (select 1 from public.hackathon_grading_jobs j
+                  where j.version_id = v_version and j.status <> 'superseded')
+     and not exists (select 1 from public.hackathon_grading_jobs j
+                      where j.version_id = v_version and j.status not in ('done', 'superseded'))
+     and not exists (select 1 from public.hackathon_ai_runs r where r.version_id = v_version) then
+    select coalesce(max(j.run_no), 0) + 1 into v_next
+      from public.hackathon_grading_jobs j where j.version_id = v_version;
+
+    if v_next + 1 > 9 then
+      raise exception 'regrade_limit'
+        using errcode = 'QD409', detail = 'This version has been regraded as often as it can be.';
+    end if;
+
+    update public.hackathon_grading_jobs j
+       set status = 'superseded'
+     where j.version_id = v_version and j.status = 'done';
+
+    insert into public.hackathon_grading_jobs (version_id, run_no)
+    values (v_version, v_next), (v_version, v_next + 1);
+  end if;
 end;
 $$;
 
 comment on function public.set_eligibility_override(uuid, boolean, text) is
-  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars); null clears the override.';
+  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars); null clears the override. true on a version the grader skipped (every live job done, no AI run), before release, queues two fresh runs; false and null leave the jobs alone.';
 
 
 create or replace function public.set_hackathon_staff(
@@ -2524,7 +2621,11 @@ returns table (
   opens_at        timestamptz,
   closes_at       timestamptz,
   team_min        integer,
-  team_max        integer
+  team_max        integer,
+  -- So the grader can skip a stale version and an entry already decided.
+  current_version_id   uuid,
+  eligibility_override boolean,
+  eligibility          jsonb
 )
 language plpgsql
 volatile
@@ -2543,7 +2644,7 @@ begin
 
   -- A lease that ran out: back to the queue, or failed after the third try.
   update public.hackathon_grading_jobs j
-     set status = case when j.attempts >= 3 then 'failed' else 'pending' end,
+     set status = case when j.attempts - j.free_attempts >= 3 then 'failed' else 'pending' end,
          lease_until = null,
          next_attempt_at = now(),
          last_error = left(coalesce(j.last_error || '; ', '') || 'lease expired', 2000)
@@ -2565,7 +2666,7 @@ begin
       from public.hackathon_grading_jobs d
      where d.status = 'pending'
        and d.next_attempt_at <= now()
-       and d.attempts < 3
+       and d.attempts - d.free_attempts < 3
        and (p_version_id is null or d.version_id = p_version_id)
      order by d.next_attempt_at, d.created_at, d.id
      limit v_limit
@@ -2583,7 +2684,8 @@ begin
   select c.id, c.version_id, c.run_no, c.attempts, c.lease_until,
          s.id, s.hackathon_id, s.project_id, v.team_name, v.member_ids, v.image_paths,
          v.submitted_at, v.qdit_snapshot, ds.payload,
-         h.opens_at, h.closes_at, h.team_min, h.team_max
+         h.opens_at, h.closes_at, h.team_min, h.team_max,
+         s.current_version_id, s.eligibility_override, v.eligibility
     from claimed c
     join public.hackathon_submission_versions v on v.id = c.version_id
     join public.hackathon_submissions s on s.id = v.submission_id
@@ -2594,11 +2696,12 @@ end;
 $$;
 
 comment on function public.claim_grading_jobs(integer, integer, uuid) is
-  'SECURITY DEFINER, service_role only. Expires lapsed leases (failed after 3 attempts), then leases up to p_limit due pending jobs (optionally of one version) with skip locked, never more than 20 running in total. Returns each with the frozen version, its doqtri payload and the hackathon window.';
+  'SECURITY DEFINER, service_role only. Expires lapsed leases (failed after 3 attempts), then leases up to p_limit due pending jobs (optionally of one version) with skip locked, never more than 20 running in total. Returns each with the frozen version, its doqtri payload, the hackathon window, the entry''s current_version_id and eligibility_override, and the version''s stored eligibility.';
 
 
 create or replace function public.complete_grading_job(
   p_job_id      uuid,
+  p_attempt     integer,
   p_model       text,
   p_criteria    jsonb,
   p_total       numeric,
@@ -2622,8 +2725,9 @@ begin
     raise exception 'No such job.' using errcode = 'P0002';
   end if;
 
-  -- Superseded, failed, or settled by another worker: nothing to record.
-  if v_job.status <> 'running' then
+  -- Superseded, failed, settled, or leased again since this claim: nothing
+  -- to record.
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
     return 'stale';
   end if;
 
@@ -2651,14 +2755,17 @@ begin
 end;
 $$;
 
-comment on function public.complete_grading_job(uuid, text, jsonb, numeric, text[], text, text, jsonb, boolean) is
-  'SECURITY DEFINER, service_role only. Records one AI run for a running job and marks it done; returns done, or stale when the job is no longer running (nothing recorded).';
+comment on function public.complete_grading_job(uuid, integer, text, jsonb, numeric, text[], text, text, jsonb, boolean) is
+  'SECURITY DEFINER, service_role only. Records one AI run for a job still running under claim p_attempt and marks it done; returns done, or stale otherwise (nothing recorded).';
 
 
 create or replace function public.fail_grading_job(
   p_job_id              uuid,
+  p_attempt             integer,
   p_error               text,
-  p_retry_after_seconds integer default 60
+  p_retry_after_seconds integer default 60,
+  p_permanent           boolean default false,
+  p_count_attempt       boolean default true
 )
 returns text
 language plpgsql
@@ -2675,12 +2782,30 @@ begin
     raise exception 'No such job.' using errcode = 'P0002';
   end if;
 
-  if v_job.status <> 'running' then
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
     return 'stale';
   end if;
 
+  -- An uncounted attempt (overload, budget abort) is given back, while fewer
+  -- than 20 have been; a permanent failure ignores it.
+  if not coalesce(p_count_attempt, true)
+     and not coalesce(p_permanent, false)
+     and v_job.free_attempts < 20 then
+    update public.hackathon_grading_jobs j
+       set status = 'pending',
+           free_attempts = j.free_attempts + 1,
+           lease_until = null,
+           next_attempt_at = now() + make_interval(secs => greatest(0, least(coalesce(p_retry_after_seconds, 60), 3600))),
+           last_error = left(coalesce(p_error, 'unknown error'), 2000)
+     where j.id = p_job_id;
+    return 'pending';
+  end if;
+
   update public.hackathon_grading_jobs j
-     set status = case when j.attempts < 3 then 'pending' else 'failed' end,
+     set status = case
+                    when j.attempts - j.free_attempts < 3 and not coalesce(p_permanent, false) then 'pending'
+                    else 'failed'
+                  end,
          lease_until = null,
          next_attempt_at = now() + make_interval(secs => greatest(0, least(coalesce(p_retry_after_seconds, 60), 3600))),
          last_error = left(coalesce(p_error, 'unknown error'), 2000)
@@ -2691,8 +2816,87 @@ begin
 end;
 $$;
 
-comment on function public.fail_grading_job(uuid, text, integer) is
-  'SECURITY DEFINER, service_role only. A running job''s attempt failed: back to pending after p_retry_after_seconds while attempts < 3, else failed. Returns pending, failed or stale.';
+comment on function public.fail_grading_job(uuid, integer, text, integer, boolean, boolean) is
+  'SECURITY DEFINER, service_role only. The claim p_attempt of a running job failed: back to pending after p_retry_after_seconds while counted attempts (attempts - free_attempts) < 3, else failed; p_permanent (refusal, invalid output) fails it at once; p_count_attempt false (overload, budget abort) returns it to pending without counting the attempt (free_attempts + 1, at most 20). Returns pending, failed or stale (not running under that claim).';
+
+
+create or replace function public.skip_grading_job(
+  p_job_id  uuid,
+  p_attempt integer,
+  p_reason  text
+)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_job public.hackathon_grading_jobs;
+begin
+  select * into v_job from public.hackathon_grading_jobs j where j.id = p_job_id for update;
+  if not found then
+    raise exception 'No such job.' using errcode = 'P0002';
+  end if;
+
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
+    return 'stale';
+  end if;
+
+  -- Done with no hackathon_ai_runs row: nothing counts towards a grade.
+  update public.hackathon_grading_jobs j
+     set status = 'done',
+         lease_until = null,
+         last_error = left(coalesce(nullif(btrim(p_reason), ''), 'skipped'), 2000)
+   where j.id = p_job_id;
+
+  return 'done';
+end;
+$$;
+
+comment on function public.skip_grading_job(uuid, integer, text) is
+  'SECURITY DEFINER, service_role only. Settles a job running under claim p_attempt as done without an AI run (an ineligible entry is not scored); p_reason goes in last_error. Returns done, or stale otherwise. set_eligibility_override(true) queues fresh runs for such a version.';
+
+
+create or replace function public.hackathon_version_progress(p_version_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (select 1 from public.hackathon_submission_versions v where v.id = p_version_id) then
+    raise exception 'No such version.' using errcode = 'P0002';
+  end if;
+
+  return jsonb_build_object(
+    'version_id', p_version_id,
+    'jobs', coalesce((
+      select jsonb_agg(jsonb_build_object('id', j.id, 'run_no', j.run_no, 'status', j.status) order by j.run_no)
+        from public.hackathon_grading_jobs j
+       where j.version_id = p_version_id
+         and j.status <> 'superseded'
+    ), '[]'::jsonb),
+    'runs', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'run_no', r.run_no,
+               'criteria', r.criteria,
+               'total', r.total,
+               'flags', to_jsonb(r.flags),
+               'model', r.model
+             ) order by r.run_no)
+        from public.hackathon_ai_runs r
+        join public.hackathon_grading_jobs j
+          on j.version_id = r.version_id and j.run_no = r.run_no and j.status = 'done'
+       where r.version_id = p_version_id
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+
+comment on function public.hackathon_version_progress(uuid) is
+  'SECURITY DEFINER, service_role only. {version_id, jobs: [{id, run_no, status}] (not superseded), runs: [{run_no, criteria, total, flags, model}] (job done)}: what the grader needs to decide on a third run.';
 
 
 create or replace function public.enqueue_third_run(p_version_id uuid)
@@ -2860,18 +3064,22 @@ grant execute on function public.upsert_judge_score(uuid, integer, integer, inte
 -- The grader and the snapshot route, with the service role.
 revoke all on function public.record_doqtri_chain_check(uuid, jsonb)         from public, anon, authenticated;
 revoke all on function public.claim_grading_jobs(integer, integer, uuid)     from public, anon, authenticated;
-revoke all on function public.complete_grading_job(uuid, text, jsonb, numeric, text[], text, text, jsonb, boolean)
+revoke all on function public.complete_grading_job(uuid, integer, text, jsonb, numeric, text[], text, text, jsonb, boolean)
   from public, anon, authenticated;
-revoke all on function public.fail_grading_job(uuid, text, integer)          from public, anon, authenticated;
+revoke all on function public.fail_grading_job(uuid, integer, text, integer, boolean, boolean) from public, anon, authenticated;
+revoke all on function public.skip_grading_job(uuid, integer, text)          from public, anon, authenticated;
+revoke all on function public.hackathon_version_progress(uuid)               from public, anon, authenticated;
 revoke all on function public.enqueue_third_run(uuid)                        from public, anon, authenticated;
 revoke all on function public.set_version_eligibility(uuid, jsonb)           from public, anon, authenticated;
 revoke all on function public.prune_hackathon_doqtri_snapshots()             from public, anon, authenticated;
 
 grant execute on function public.record_doqtri_chain_check(uuid, jsonb)      to service_role;
 grant execute on function public.claim_grading_jobs(integer, integer, uuid)  to service_role;
-grant execute on function public.complete_grading_job(uuid, text, jsonb, numeric, text[], text, text, jsonb, boolean)
+grant execute on function public.complete_grading_job(uuid, integer, text, jsonb, numeric, text[], text, text, jsonb, boolean)
   to service_role;
-grant execute on function public.fail_grading_job(uuid, text, integer)       to service_role;
+grant execute on function public.fail_grading_job(uuid, integer, text, integer, boolean, boolean) to service_role;
+grant execute on function public.skip_grading_job(uuid, integer, text)       to service_role;
+grant execute on function public.hackathon_version_progress(uuid)            to service_role;
 grant execute on function public.enqueue_third_run(uuid)                     to service_role;
 grant execute on function public.set_version_eligibility(uuid, jsonb)        to service_role;
 grant execute on function public.prune_hackathon_doqtri_snapshots()          to service_role;
