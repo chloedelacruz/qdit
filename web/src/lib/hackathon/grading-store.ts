@@ -92,7 +92,7 @@ export interface CompletedRun {
 
 /** How a failed attempt goes back to the queue: fail_grading_job(). */
 export interface JobFailure {
-  /** Content-free; stored in last_error. */
+  /** A code for last_error, matching ERROR_CODE_PATTERN. */
   error: string;
   retryAfterSeconds: number;
   /** Fail now, whatever the attempts (refusal, cut-off or invalid output). */
@@ -115,7 +115,7 @@ export interface GradingStore {
   readImage(path: string): Promise<ImageRead>;
   /** complete_grading_job(): stores the run and marks the job done; "stale" unless still running under `attempt`. */
   completeJob(jobId: string, attempt: number, run: CompletedRun): Promise<"done" | "stale">;
-  /** skip_grading_job(): done without a run (an ineligible entry), the reason in last_error. */
+  /** skip_grading_job(): done without a run (an ineligible entry), the reason code in last_error. */
   skipJob(jobId: string, attempt: number, reason: string): Promise<"done" | "stale">;
   /** fail_grading_job(). */
   failJob(jobId: string, attempt: number, failure: JobFailure): Promise<"pending" | "failed" | "stale">;
@@ -136,6 +136,19 @@ export class GradingStoreError extends Error {
     this.operation = operation;
     this.code = code;
   }
+}
+
+/** What the queue accepts in last_error (fail_grading_job, skip_grading_job). */
+export const ERROR_CODE_PATTERN = /^[a-z0-9_:.-]{1,80}$/;
+
+/**
+ * Any string as an error code: lowercased, every other character as `_`,
+ * at most 80 characters. The worker sends codes already; this is the last
+ * guard before the database's own check.
+ */
+export function toErrorCode(text: string): string {
+  const code = text.toLowerCase().replace(/[^a-z0-9_:.-]/g, "_").slice(0, 80);
+  return code.length > 0 ? code : "unknown_error";
 }
 
 export const MINDMAP_BUCKET = "hackathon-mindmaps";
@@ -345,7 +358,7 @@ export function supabaseGradingStore(client: SupabaseClient<Database>): GradingS
       const { data, error } = await db.rpc("skip_grading_job", {
         p_job_id: jobId,
         p_attempt: attempt,
-        p_reason: reason.slice(0, 2000),
+        p_reason: toErrorCode(reason),
       });
       if (error) fail("skip_grading_job", error);
       return data === "done" ? "done" : "stale";
@@ -355,7 +368,7 @@ export function supabaseGradingStore(client: SupabaseClient<Database>): GradingS
       const { data, error } = await db.rpc("fail_grading_job", {
         p_job_id: jobId,
         p_attempt: attempt,
-        p_error: failure.error.slice(0, 2000),
+        p_error: toErrorCode(failure.error),
         p_retry_after_seconds: failure.retryAfterSeconds,
         p_permanent: failure.permanent,
         p_count_attempt: failure.countAttempt,
