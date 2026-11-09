@@ -2,41 +2,22 @@ import { after } from "next/server";
 
 import { requireRole } from "@/lib/api/access";
 import { pathId, readJsonBody } from "@/lib/api/body";
-import {
-  ApiError,
-  databaseError,
-  internalError,
-  invalidRequest,
-  unauthorized,
-  type DatabaseErrorLike,
-} from "@/lib/api/errors";
+import { ApiError, databaseError, internalError, invalidRequest } from "@/lib/api/errors";
 import { apiRoute, endpointNotFound, ok } from "@/lib/api/handler";
 import {
   MAX_SNAPSHOT_BODY_BYTES,
   sha256Hex,
   validateHackathonSnapshot,
 } from "@/lib/api/hackathon-snapshot-body";
+import { NO_PROJECT, pushError } from "@/lib/api/hackathon-snapshot-errors";
 import { recordChainCheck } from "@/lib/hackathon/chain-check";
 import type { Json } from "@/lib/types/database";
-
-const NO_PROJECT = "No such project.";
-const NO_HACKATHON = "No such hackathon.";
 
 /**
  * The chain check runs in `after()` within this budget: at most 45 s of
  * registry reads (`lib/hackathon/chain-check.ts`) plus the write.
  */
 export const maxDuration = 60;
-
-/** Section 8's four 409 reasons for this endpoint, with a sentence a caller may show. */
-const SNAPSHOT_CONFLICTS = {
-  snapshot_conflict: "This snapshot_id was already sent to this project with a different body. Send a new snapshot_id.",
-  snapshot_limit: "This project has sent the most snapshots it may (30) to this hackathon.",
-  hackathon_not_open: "This hackathon has not opened yet.",
-  hackathon_closed: "This hackathon is closed for this project.",
-} as const;
-
-type SnapshotConflict = keyof typeof SNAPSHOT_CONFLICTS;
 
 /**
  * `POST /api/v1/projects/{id}/hackathon-snapshots` — doqtri sends a
@@ -46,7 +27,10 @@ type SnapshotConflict = keyof typeof SNAPSHOT_CONFLICTS;
  *
  * The contract fixes the check order, first failure wins:
  *
- *   1. the token (`apiRoute`, 401), then the client: not doqtri's is 403.
+ *   1. the token (`apiRoute`, 401): `authenticate()` verifies it and asks
+ *      `oauth_token_revoked()` (D-59) before this handler runs at all, so a
+ *      revoked token is refused before any step below. Then the client: not
+ *      doqtri's is 403.
  *      `is_doqtri_oauth_client()` answers from integration_settings, which
  *      no client reads; unset, every client is refused;
  *   2. the project: not a member (or a malformed id) is 404;
@@ -62,8 +46,10 @@ type SnapshotConflict = keyof typeof SNAPSHOT_CONFLICTS;
  * push learns nothing from how its body is judged, and pays no 2 MiB parse.
  *
  * The idempotency hash is the SHA-256 of the raw body bytes, as received,
- * not of a re-serialization: a retry with the same bytes is a replay
- * whatever its key order or whitespace.
+ * not of a re-serialization: only a retry with the very same bytes is a
+ * replay (any other body under the key, even one that parses the same, is
+ * `snapshot_conflict`). What is stored is the parsed object; for duplicate
+ * keys that is the last one (`readJsonBody`).
  *
  * Everything here runs with the caller's token. The one service-role write,
  * the chain check's result, happens after the response in `after()`, and
@@ -101,6 +87,7 @@ export const POST = apiRoute<{ id: string }>(async ({ request, auth, params }) =
     p_payload_sha256: sha256Hex(bytes),
     p_note_count: snapshot.notes.length,
   });
+  // The function's errors, mapped in `@/lib/api/hackathon-snapshot-errors`.
   if (error) throw pushError(error);
 
   const row = Array.isArray(data) ? data[0] : data;
@@ -124,53 +111,6 @@ export const POST = apiRoute<{ id: string }>(async ({ request, auth, params }) =
     row.replay ? 200 : 201,
   );
 });
-
-/**
- * Maps `push_doqtri_hackathon_snapshot()`'s errors onto the contract
- * (20261110100000_hackathons.sql):
- *
- *   42501 revoked       -> 401 (the token was revoked after `authenticate`)
- *   42501 otherwise     -> 403 (not doqtri's client, below admin)
- *   P0002               -> 404 (the hackathon, or the project if membership
- *                               changed since step 2)
- *   QD409 <reason>      -> 409 with details.reason, for the four reasons
- *   QD413               -> 400 body (not raised by this function today;
- *                               the contract never answers 413 itself)
- *   22023 snapshot_id   -> 400 on that field; 22023 payload -> 400 body;
- *                          any other 22023 is the route's bug -> 500
- *   anything else       -> databaseError() (503 unreachable, 401 JWT, 500)
- */
-function pushError(error: DatabaseErrorLike): ApiError {
-  switch (error.code) {
-    case "42501":
-      if (error.message === "This app's access to qdit was revoked.") return unauthorized();
-      return new ApiError("forbidden", "This token is not allowed to send a snapshot to this project.");
-    case "P0002":
-      return new ApiError("not_found", error.message === NO_HACKATHON ? NO_HACKATHON : NO_PROJECT);
-    case "QD409": {
-      const reason = error.message as SnapshotConflict;
-      if (Object.prototype.hasOwnProperty.call(SNAPSHOT_CONFLICTS, reason)) {
-        return new ApiError("conflict", SNAPSHOT_CONFLICTS[reason], { details: { reason } });
-      }
-      console.error("api v1 hackathon snapshots: unknown conflict", error);
-      return internalError();
-    }
-    case "QD413":
-      return invalidRequest("The snapshot is too large to store.", { body: "is too large to store" });
-    case "22023":
-      if (error.hint === "snapshot_id") {
-        return invalidRequest("Some fields are missing or invalid. See details.fields.", { snapshot_id: error.message ?? "is invalid" });
-      }
-      if (error.hint === "payload") {
-        return invalidRequest("Some fields are missing or invalid. See details.fields.", { body: error.message ?? "is invalid" });
-      }
-      console.error("api v1 hackathon snapshots: the push refused an argument", error);
-      return internalError();
-    default:
-      console.error("api v1 hackathon snapshots: push failed", error);
-      return databaseError(error);
-  }
-}
 
 // Every other method is an unknown endpoint (D-27, see `endpointNotFound`).
 export const GET = endpointNotFound;

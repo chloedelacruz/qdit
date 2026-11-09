@@ -67,9 +67,12 @@ export async function readJsonBody(request: Request, maxBytes = MAX_BODY_BYTES):
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge(maxBytes);
 
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > maxBytes) throw tooLarge(maxBytes);
+  const bytes = await readLimited(request, maxBytes);
 
+  // Duplicate keys: JSON.parse keeps the last one, and so does the object
+  // this returns. A caller hashing `bytes` (the hackathon snapshot's
+  // idempotency key, D-118) hashes what was sent, duplicates and all, while
+  // what is stored is the parsed object, as the contract says.
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -81,6 +84,38 @@ export async function readJsonBody(request: Request, maxBytes = MAX_BODY_BYTES):
     throw invalidRequest("The body must be a JSON object.", { body: "must be a JSON object" });
   }
   return { body: parsed, bytes };
+}
+
+/**
+ * The body's bytes, at most `maxBytes` of them. Read from the stream with a
+ * running count, and the stream cancelled as soon as the count passes the
+ * limit, so a body without a (truthful) `Content-Length` costs no more than
+ * the limit to refuse.
+ */
+async function readLimited(request: Request, maxBytes: number): Promise<Uint8Array> {
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge(maxBytes);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 /** `64 KiB`, `2 MiB`: how the contract names a size limit. */
@@ -110,7 +145,12 @@ export function pathId(value: string | undefined, notFound: string): string {
  * fields the way a client wrote them (`link.node_id`).
  */
 export class FieldErrors {
-  readonly fields: Record<string, string> = {};
+  /**
+   * Null prototype: a client's key is a field name like any other, so
+   * `constructor`, `toString` or `__proto__` must be recorded, not read off
+   * `Object.prototype` and skipped.
+   */
+  readonly fields: Record<string, string> = Object.create(null);
 
   add(field: string, problem: string): void {
     this.fields[field] ??= problem;
@@ -119,7 +159,7 @@ export class FieldErrors {
   /** Every key of `body` not in `allowed` is an unknown field. */
   rejectUnknown(body: JsonObject, allowed: readonly string[], prefix = "", hints: Record<string, string> = {}): void {
     for (const key of Object.keys(body)) {
-      if (!allowed.includes(key)) this.add(prefix + key, hints[key] ?? "unknown field");
+      if (!allowed.includes(key)) this.add(prefix + key, Object.hasOwn(hints, key) ? hints[key] : "unknown field");
     }
   }
 

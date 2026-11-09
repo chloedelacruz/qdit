@@ -239,6 +239,17 @@ describe("POST /api/v1/projects/{id}/hackathon-snapshots: the check order", () =
     expect((await errorOf(response)).code).toBe("unauthorized");
   });
 
+  it("runs nothing of its own before authentication, which checks revocation (D-59)", async () => {
+    const db = signedIn({ push: [pushed()] });
+    authenticate.mockRejectedValueOnce(unauthorized());
+
+    const response = await post(snapshotBody());
+
+    expect(response.status).toBe(401);
+    expect(db.requests).toEqual([]);
+    expect(afterCallbacks).toHaveLength(0);
+  });
+
   it("refuses a token revoked after authentication when the function says so: 401", async () => {
     signedIn({ push: [dbError("42501", "This app's access to qdit was revoked.")] });
 
@@ -470,6 +481,23 @@ describe("POST /api/v1/projects/{id}/hackathon-snapshots: the body (400)", () =>
       "global_mindmap.nodes": "must hold at most 5,000 nodes",
       "global_mindmap.links": "must hold at most 20,000 links",
     });
+  });
+
+  it("refuses a lone surrogate sent as a JSON escape, on its field, without calling the function", async () => {
+    const db = signedIn();
+    const raw = JSON.stringify(snapshotBody()).replace('"title":"Payroll v1 plan"', '"title":"Payroll \\ud800 plan"');
+    expect(raw).toContain("\\ud800");
+
+    expect(await fieldsFor(await postRaw(raw))).toEqual({
+      "notes[0].title": "must be well-formed Unicode (no lone surrogates)",
+    });
+    expect(pushRequest(db)).toBeUndefined();
+  });
+
+  it("records a __proto__ key as unknown", async () => {
+    signedIn();
+    const raw = `{"__proto__":{"admin":true},${JSON.stringify(snapshotBody()).slice(1)}`;
+    expect(await fieldsFor(await postRaw(raw))).toEqual({ ["__proto__"]: "unknown field" });
   });
 
   it("counts emoji as one character each: 301 in a title is one too many", async () => {

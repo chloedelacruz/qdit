@@ -19,10 +19,20 @@ import { isObject, type JsonObject } from "./body";
  *   - `mindmap` is measured as the UTF-8 length of `JSON.stringify(mindmap)`
  *     (no whitespace), not as it was sent.
  *
+ *   - every string is well-formed Unicode: a lone UTF-16 surrogate (which
+ *     JSON's `\ud800` escape can carry, and which Postgres's jsonb refuses)
+ *     is a 400 on its field, inside `mindmap` too;
+ *   - `mindmap` nests at most 64 levels, checked without recursion before
+ *     anything serializes it.
+ *
  * The 2 MiB limit on the whole body is the route's (`readJsonBody`), checked
  * before this runs. An array over its count limit is reported once, on the
- * array, without looking inside it, so a body cannot buy one problem per
- * element past the limit.
+ * array, without looking inside it, and at most 50 problems are reported,
+ * then a `"…"` marker, so a bad body cannot buy an answer as large as itself.
+ *
+ * Duplicate keys: JSON.parse keeps the last, and this checks (and the route
+ * stores) that parsed object; the idempotency hash is over the raw bytes
+ * (`./body.ts`).
  *
  * Pure: no Next, no Supabase.
  */
@@ -36,12 +46,20 @@ export const SNAPSHOT_LIMITS = {
   titleLength: 300,
   markdownBytes: 102_400,
   mindmapBytes: 65_536,
+  mindmapDepth: 64,
   nodes: 5_000,
   nodeIdLength: 128,
   labelLength: 300,
   kindLength: 32,
   links: 20_000,
+  /** Per node: never more than the notes sent, and never more than 200. */
+  docIdsPerNode: 200,
+  /** Problems reported in `details.fields` before the `"…"` marker. */
+  problems: 50,
 } as const;
+
+/** The key `details.fields` carries when problems past the cap were left out. */
+export const MORE_PROBLEMS_KEY = "…";
 
 export const NOTE_SOURCES = ["editor", "template", "import"] as const;
 export type NoteSource = (typeof NOTE_SOURCES)[number];
@@ -107,11 +125,29 @@ export function sha256Hex(data: Uint8Array | string): string {
   return createHash("sha256").update(typeof data === "string" ? Buffer.from(data, "utf8") : data).digest("hex");
 }
 
+const NOT_WELL_FORMED = "must be well-formed Unicode (no lone surrogates)";
+
 class Problems {
-  readonly fields: Record<string, string> = {};
+  /** Null prototype, so `constructor` or `__proto__` is a path like any other. */
+  private readonly found: Record<string, string> = Object.create(null);
+  private count = 0;
+  private omitted = false;
 
   add(path: string, problem: string): void {
-    this.fields[path] ??= problem;
+    if (Object.hasOwn(this.found, path)) return;
+    if (this.count >= SNAPSHOT_LIMITS.problems) {
+      this.omitted = true;
+      return;
+    }
+    this.found[path] = problem;
+    this.count += 1;
+  }
+
+  get fields(): Record<string, string> {
+    const fields: Record<string, string> = Object.create(null);
+    Object.assign(fields, this.found);
+    if (this.omitted) fields[MORE_PROBLEMS_KEY] = "more problems omitted";
+    return fields;
   }
 
   unknown(value: JsonObject, allowed: readonly string[], prefix: string): void {
@@ -121,7 +157,7 @@ class Problems {
   }
 
   get any(): boolean {
-    return Object.keys(this.fields).length > 0;
+    return this.count > 0;
   }
 }
 
@@ -159,6 +195,7 @@ function timestamp(problems: Problems, path: string, value: unknown): void {
 function text(problems: Problems, path: string, value: unknown, min: number, max: number): void {
   if (value === undefined) return problems.add(path, "is required");
   if (typeof value !== "string") return problems.add(path, "must be a string");
+  if (!value.isWellFormed()) return problems.add(path, NOT_WELL_FORMED);
   const length = codePoints(value);
   if (length < min || length > max) {
     problems.add(path, min > 0 ? `must be ${min} to ${max} characters` : `must be at most ${max} characters`);
@@ -173,6 +210,40 @@ function list(problems: Problems, path: string, value: unknown, max: number, nou
   return value;
 }
 
+/**
+ * What is wrong with a note's mindmap, or null. Walked with an explicit
+ * stack, so no depth of nesting can overflow the call stack, and only then
+ * serialized to be measured.
+ */
+function mindmapProblem(mindmap: JsonObject): string | null {
+  const stack: [value: unknown, depth: number][] = [[mindmap, 1]];
+  while (stack.length > 0) {
+    const [value, depth] = stack.pop()!;
+    if (typeof value === "string") {
+      if (!value.isWellFormed()) return NOT_WELL_FORMED;
+      continue;
+    }
+    if (typeof value !== "object" || value === null) continue;
+    if (depth > SNAPSHOT_LIMITS.mindmapDepth) return "must nest at most 64 levels";
+    if (Array.isArray(value)) {
+      for (const item of value) stack.push([item, depth + 1]);
+    } else {
+      for (const [key, item] of Object.entries(value)) {
+        if (!key.isWellFormed()) return NOT_WELL_FORMED;
+        stack.push([item, depth + 1]);
+      }
+    }
+  }
+
+  let json: string;
+  try {
+    json = JSON.stringify(mindmap);
+  } catch {
+    return "must be serializable as JSON";
+  }
+  return utf8Bytes(json) > SNAPSHOT_LIMITS.mindmapBytes ? "must be at most 65,536 bytes as JSON" : null;
+}
+
 function checkNote(problems: Problems, path: string, value: unknown): string | undefined {
   if (!isObject(value)) return void problems.add(path, "must be an object");
   const at = `${path}.`;
@@ -183,16 +254,19 @@ function checkNote(problems: Problems, path: string, value: unknown): string | u
 
   if (value.markdown === undefined) problems.add(`${at}markdown`, "is required");
   else if (typeof value.markdown !== "string") problems.add(`${at}markdown`, "must be a string");
+  else if (!value.markdown.isWellFormed()) problems.add(`${at}markdown`, NOT_WELL_FORMED);
   else if (utf8Bytes(value.markdown) > SNAPSHOT_LIMITS.markdownBytes) {
     problems.add(`${at}markdown`, "must be at most 102,400 bytes in UTF-8");
   }
 
-  // Not looked inside: stored as sent (the unknown-field rule stops here).
+  // Its shape is not checked: stored as sent (the unknown-field rule stops
+  // here). Only its nesting, its strings and its size.
   if (value.mindmap === undefined) problems.add(`${at}mindmap`, "is required");
   else if (value.mindmap !== null && !isObject(value.mindmap)) {
     problems.add(`${at}mindmap`, "must be a JSON object or null");
-  } else if (value.mindmap !== null && utf8Bytes(JSON.stringify(value.mindmap)) > SNAPSHOT_LIMITS.mindmapBytes) {
-    problems.add(`${at}mindmap`, "must be at most 65,536 bytes as JSON");
+  } else if (value.mindmap !== null) {
+    const problem = mindmapProblem(value.mindmap);
+    if (problem) problems.add(`${at}mindmap`, problem);
   }
 
   timestamp(problems, `${at}created_at`, value.created_at);
@@ -216,8 +290,14 @@ function checkNote(problems: Problems, path: string, value: unknown): string | u
   return docId;
 }
 
-function checkMindmap(problems: Problems, value: unknown, docIds: ReadonlySet<string> | null): void {
+function checkMindmap(
+  problems: Problems,
+  value: unknown,
+  docIds: ReadonlySet<string> | null,
+  noteCount: number | null,
+): void {
   const path = "global_mindmap";
+  const maxDocIds = Math.min(SNAPSHOT_LIMITS.docIdsPerNode, noteCount ?? SNAPSHOT_LIMITS.docIdsPerNode);
   if (value === undefined) return problems.add(path, "is required");
   if (!isObject(value)) return problems.add(path, "must be an object");
   problems.unknown(value, MAP_KEYS, `${path}.`);
@@ -242,10 +322,11 @@ function checkMindmap(problems: Problems, value: unknown, docIds: ReadonlySet<st
       problems.add(`${at}.depth`, "must be an integer >= 0");
     }
 
-    // At most one per note in practice; the note count bounds a sane list,
-    // the body size bounds the rest.
+    // At most one per note sent, and never more than 200 (refused on the
+    // array, unread past that).
     if (node.doc_ids === undefined) problems.add(`${at}.doc_ids`, "is required");
     else if (!Array.isArray(node.doc_ids)) problems.add(`${at}.doc_ids`, "must be an array");
+    else if (node.doc_ids.length > maxDocIds) problems.add(`${at}.doc_ids`, `must hold at most ${maxDocIds} doc_ids`);
     else {
       node.doc_ids.forEach((id, j) => {
         const idAt = `${at}.doc_ids[${j}]`;
@@ -265,6 +346,7 @@ function checkMindmap(problems: Problems, value: unknown, docIds: ReadonlySet<st
       const id = link[end];
       if (id === undefined) problems.add(`${at}.${end}`, "is required");
       else if (typeof id !== "string") problems.add(`${at}.${end}`, "must be a string");
+      else if (!id.isWellFormed()) problems.add(`${at}.${end}`, NOT_WELL_FORMED);
       // Only against a node list that was read; a refused list is its own problem.
       else if (nodes && !nodeIds.has(id)) problems.add(`${at}.${end}`, "must be the id of a node in nodes");
     }
@@ -302,7 +384,7 @@ export function validateHackathonSnapshot(body: JsonObject): SnapshotValidation 
     if (!unreadable) docIds = seen;
   }
 
-  checkMindmap(problems, body.global_mindmap, docIds);
+  checkMindmap(problems, body.global_mindmap, docIds, notes ? notes.length : null);
 
   if (problems.any) return { ok: false, fields: problems.fields };
 

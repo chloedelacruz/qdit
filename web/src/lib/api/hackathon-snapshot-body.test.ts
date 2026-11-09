@@ -4,6 +4,7 @@ import { SNAPSHOT_DOC, SNAPSHOT_DOC_2, snapshotBody, snapshotNote as note } from
 
 import {
   codePoints,
+  MORE_PROBLEMS_KEY,
   sha256Hex,
   SNAPSHOT_LIMITS,
   validateHackathonSnapshot,
@@ -314,11 +315,13 @@ describe("validateHackathonSnapshot: global_mindmap", () => {
   });
 
   it("holds doc_ids to the notes sent", () => {
-    const body = snapshotBody(map([node({ doc_ids: [DOC, DOC_2, "nope"] }), node({ id: "m", doc_ids: "x" })]));
+    const body = snapshotBody(
+      map([node({ doc_ids: [DOC_2] }), node({ id: "m", doc_ids: "x" }), node({ id: "o", doc_ids: ["nope"] })]),
+    );
     expect(fieldsOf(validateHackathonSnapshot(body))).toEqual({
-      "global_mindmap.nodes[0].doc_ids[1]": "must be the doc_id of a note in notes",
-      "global_mindmap.nodes[0].doc_ids[2]": "must be a UUID",
+      "global_mindmap.nodes[0].doc_ids[0]": "must be the doc_id of a note in notes",
       "global_mindmap.nodes[1].doc_ids": "must be an array",
+      "global_mindmap.nodes[2].doc_ids[0]": "must be a UUID",
     });
   });
 
@@ -337,5 +340,124 @@ describe("sha256Hex", () => {
     expect(sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     expect(sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     expect(sha256Hex(new TextEncoder().encode("€"))).toBe(sha256Hex("€"));
+  });
+});
+
+describe("validateHackathonSnapshot: review hardening", () => {
+  const LONE = "\ud800";
+
+  it.each([
+    ["notes[0].title", { notes: [note({ title: `a${LONE}b` })] }],
+    ["notes[0].markdown", { notes: [note({ markdown: `# x\udc00` })] }],
+    ["global_mindmap.nodes[0].id", map([node({ id: LONE })])],
+    ["global_mindmap.nodes[0].label", map([node({ label: LONE })])],
+    ["global_mindmap.nodes[0].kind", map([node({ kind: LONE })])],
+    ["global_mindmap.links[0].source", map([node()], [{ source: LONE, target: "n" }])],
+    ["notes[0].mindmap", { notes: [note({ mindmap: { deep: [{ text: LONE }] } })] }],
+    ["notes[0].mindmap", { notes: [note({ mindmap: { [LONE]: 1 } })] }],
+  ])("refuses a lone surrogate on %s", (field, overrides) => {
+    expect(fieldsOf(validateHackathonSnapshot(snapshotBody(overrides)))).toEqual({
+      [field]: "must be well-formed Unicode (no lone surrogates)",
+    });
+  });
+
+  it("refuses lone surrogates in the regex-held fields by their own rule", () => {
+    const fields = fieldsOf(
+      validateHackathonSnapshot(snapshotBody({ hackathon_slug: LONE, snapshot_id: LONE, generated_at: LONE })),
+    );
+    expect(Object.keys(fields).sort()).toEqual(["generated_at", "hackathon_slug", "snapshot_id"]);
+  });
+
+  it("accepts a well-formed surrogate pair (an emoji)", () => {
+    expect(validateHackathonSnapshot(snapshotBody({ notes: [note({ title: "\ud83d\ude80" })] })).ok).toBe(true);
+  });
+
+  const nested = (levels: number) => {
+    let value: Record<string, unknown> = {};
+    for (let i = 1; i < levels; i++) value = { c: value };
+    return value;
+  };
+
+  it("takes a mindmap 64 levels deep and refuses 65", () => {
+    expect(validateHackathonSnapshot(snapshotBody({ notes: [note({ mindmap: nested(64) })] })).ok).toBe(true);
+    expect(fieldsOf(validateHackathonSnapshot(snapshotBody({ notes: [note({ mindmap: nested(65) })] })))).toEqual({
+      "notes[0].mindmap": "must nest at most 64 levels",
+    });
+    const arrays = { a: JSON.parse("[".repeat(64) + "]".repeat(64)) };
+    expect(fieldsOf(validateHackathonSnapshot(snapshotBody({ notes: [note({ mindmap: arrays })] })))).toEqual({
+      "notes[0].mindmap": "must nest at most 64 levels",
+    });
+  });
+
+  it("walks a very deep mindmap without overflowing the stack", () => {
+    const deep = JSON.parse(`{"a":${"[".repeat(200_000)}${"]".repeat(200_000)}}`);
+    expect(fieldsOf(validateHackathonSnapshot(snapshotBody({ notes: [note({ mindmap: deep })] })))).toEqual({
+      "notes[0].mindmap": "must nest at most 64 levels",
+    });
+  });
+
+  it("refuses a mindmap that JSON.stringify throws on, rather than failing", () => {
+    // Not reachable from a parsed body; the guard is for a future caller.
+    const mindmap = { n: BigInt(1) } as unknown as Record<string, unknown>;
+    expect(fieldsOf(validateHackathonSnapshot(snapshotBody({ notes: [note({ mindmap })] })))).toEqual({
+      "notes[0].mindmap": "must be serializable as JSON",
+    });
+  });
+
+  it("holds a node's doc_ids to the number of notes sent, without reading past it", () => {
+    const body = snapshotBody({
+      notes: [note(), note({ doc_id: DOC_2 })],
+      ...map([node({ doc_ids: [DOC, DOC_2] }), node({ id: "m", doc_ids: [DOC, DOC_2, DOC] })]),
+    });
+    expect(fieldsOf(validateHackathonSnapshot(body))).toEqual({
+      "global_mindmap.nodes[1].doc_ids": "must hold at most 2 doc_ids",
+    });
+  });
+
+  it("holds a node's doc_ids to 200 even when the notes could not be read", () => {
+    const body = snapshotBody({
+      notes: "not a list",
+      ...map([node({ doc_ids: Array.from({ length: 201 }, () => DOC) })]),
+    });
+    expect(fieldsOf(validateHackathonSnapshot(body))).toMatchObject({
+      "global_mindmap.nodes[0].doc_ids": "must hold at most 200 doc_ids",
+    });
+  });
+
+  it("reports at most 50 problems, then a marker", () => {
+    const links = Array.from({ length: 80 }, () => ({ source: "ghost", target: "n" }));
+    const fields = fieldsOf(validateHackathonSnapshot(snapshotBody(map([node()], links))));
+    expect(Object.keys(fields)).toHaveLength(51);
+    expect(fields[MORE_PROBLEMS_KEY]).toBe("more problems omitted");
+    expect(fields["global_mindmap.links[49].source"]).toBeDefined();
+    expect(fields["global_mindmap.links[50].source"]).toBeUndefined();
+  });
+
+  it("does not add the marker at exactly 50 problems", () => {
+    const links = Array.from({ length: 50 }, () => ({ source: "ghost", target: "n" }));
+    const fields = fieldsOf(validateHackathonSnapshot(snapshotBody(map([node()], links))));
+    expect(Object.keys(fields)).toHaveLength(50);
+    expect(fields[MORE_PROBLEMS_KEY]).toBeUndefined();
+  });
+
+  it.each(["__proto__", "constructor", "toString"])("records an unknown %s key at every level", (key) => {
+    const raw = JSON.stringify(snapshotBody({ notes: [note()], ...map([node({ doc_ids: [DOC] })], [{ source: "n", target: "n" }]) }));
+    const body = JSON.parse(raw);
+    for (const target of [body, body.notes[0], body.global_mindmap, body.global_mindmap.nodes[0], body.global_mindmap.links[0]]) {
+      Object.defineProperty(target, key, { value: 1, enumerable: true, configurable: true, writable: true });
+    }
+    expect(fieldsOf(validateHackathonSnapshot(body))).toEqual({
+      [key]: "unknown field",
+      [`notes[0].${key}`]: "unknown field",
+      [`global_mindmap.${key}`]: "unknown field",
+      [`global_mindmap.nodes[0].${key}`]: "unknown field",
+      [`global_mindmap.links[0].${key}`]: "unknown field",
+    });
+  });
+
+  it("keeps the last of duplicate keys, as JSON.parse does", () => {
+    const raw = JSON.stringify(snapshotBody()).replace('"hackathon_slug":', '"hackathon_slug":"BAD SLUG","hackathon_slug":');
+    const result = validateHackathonSnapshot(JSON.parse(raw));
+    expect(result.ok && result.snapshot.hackathon_slug).toBe("stellar-build-2026");
   });
 });
