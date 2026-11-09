@@ -1020,11 +1020,10 @@ export type Database = {
 
       /**
        * One entry per project per hackathon (D-115). Read by the project's
-       * members and the hackathon's staff; written by `submit_hackathon_entry`
-       * and `set_eligibility_override`. The three override columns are not
-       * granted to clients (teams never see eligibility, D-116): select the
-       * other columns by name, since `select('*')` is refused. Admins read
-       * them through `hackathon_grading_status`.
+       * members and the hackathon's staff; written by `submit_hackathon_entry`.
+       * `updated_at` is not granted to clients (D-116): select the other
+       * columns by name, since `select('*')` is refused. An admin's
+       * eligibility override is in `hackathon_eligibility_overrides`.
        */
       hackathon_submissions: {
         Row: {
@@ -1037,11 +1036,8 @@ export type Database = {
           current_version_id: string | null
           created_by: string | null
           created_at: string
+          /** Not granted to clients. */
           updated_at: string
-          /** Not granted to clients. An admin's call; wins over the computed eligibility. */
-          eligibility_override: boolean | null
-          override_reason: string | null
-          overridden_by: string | null
         }
         Insert: Record<string, never>
         Update: Record<string, never>
@@ -1152,6 +1148,7 @@ export type Database = {
           free_attempts: number
           lease_until: string | null
           next_attempt_at: string
+          /** A code (`^[a-z0-9_:.-]{1,80}$`), never prose. */
           last_error: string | null
           created_at: string
           updated_at: string
@@ -1203,17 +1200,14 @@ export type Database = {
       }
 
       /**
-       * Written by `release_hackathon_grades`. Staff read it, but only
-       * `hackathon_id`, `submission_id` and `pitch_order` are granted:
-       * select those columns by name (`select('*')` is refused because of
-       * `ai_rank`, which admins read through `hackathon_leaderboard`).
+       * Written by `release_hackathon_grades`. No client grant: judges list
+       * finalists through `hackathon_finals_for_judge`, admins through
+       * `hackathon_leaderboard`.
        */
       hackathon_finalists: {
         Row: {
           hackathon_id: string
           submission_id: string
-          /** Not granted to clients. */
-          ai_rank: number
           pitch_order: number | null
         }
         Insert: Record<string, never>
@@ -1221,6 +1215,58 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'hackathon_finalists_submission_fkey'
+            columns: ['submission_id', 'hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submissions'
+            referencedColumns: ['id', 'hackathon_id']
+          },
+        ]
+      }
+
+      /**
+       * Sealed (D-116): each finalist's AI rank. No client grant; admins read
+       * it through `hackathon_leaderboard`.
+       */
+      hackathon_finalist_ranks: {
+        Row: {
+          hackathon_id: string
+          submission_id: string
+          ai_rank: number
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_finalist_ranks_finalist_fkey'
+            columns: ['hackathon_id', 'submission_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_finalists'
+            referencedColumns: ['hackathon_id', 'submission_id']
+          },
+        ]
+      }
+
+      /**
+       * An admin's eligibility call on an entry (D-116). Staff-only, no
+       * client grant: written by `set_eligibility_override`, read through
+       * `hackathon_grading_status` and `hackathon_leaderboard`.
+       */
+      hackathon_eligibility_overrides: {
+        Row: {
+          submission_id: string
+          hackathon_id: string
+          /** Wins over the computed eligibility. */
+          value: boolean
+          reason: string
+          overridden_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_eligibility_overrides_submission_fkey'
             columns: ['submission_id', 'hackathon_id']
             isOneToOne: false
             referencedRelation: 'hackathon_submissions'
@@ -1496,8 +1542,9 @@ export type Database = {
        * admin+). Returns the new version id. Raises 42501 (OAuth token, role
        * below admin), P0002 (`No such hackathon.` / `No such project.`),
        * 22023 with hint `team_name` | `member_ids` | `image_paths`, QD409
-       * `hackathon_not_open` | `hackathon_closed` | `member_on_other_team`,
-       * QD413 `snapshot_too_large`. Messages: 20261110100000_hackathons.sql.
+       * `hackathon_not_open` | `hackathon_closed` | `member_on_other_team` |
+       * `member_is_staff`, QD413 `snapshot_too_large` (still over 2 MB with
+       * text clipped to 300 characters). Messages: 20261110100000_hackathons.sql.
        */
       submit_hackathon_entry: {
         Args: {
@@ -1513,8 +1560,10 @@ export type Database = {
        * POST /api/v1/projects/{id}/hackathon-snapshots (doqtri's OAuth client
        * only, project admin+). 42501 for a first-party session, another
        * client, a revoked token or a role below admin; P0002 for an unknown
-       * project or slug; QD409 `snapshot_conflict` | `snapshot_limit` |
-       * `hackathon_not_open` | `hackathon_closed`; 22023 for bad arguments.
+       * project or slug; QD409 `snapshot_conflict` (also for the same key
+       * to another hackathon) | `snapshot_limit` | `hackathon_not_open` |
+       * `hackathon_closed`; QD413 `payload_too_large` over 2 MiB; 22023 for
+       * bad arguments, `note_count` must equal the payload's notes.
        * A replay (same project, snapshot_id and hash) returns the first
        * answer with `replay: true`.
        */
@@ -1555,6 +1604,10 @@ export type Database = {
           version_id: string | null
           version_no: number | null
           submitted_at: string | null
+          /**
+           * Live jobs. Before release only the first two, numbered 1 and 2;
+           * after release all of them, with their real run_no.
+           */
           jobs: {
             run_no: number
             status: 'pending' | 'running' | 'done' | 'failed'
@@ -1564,6 +1617,8 @@ export type Database = {
             last_error: string | null
             updated_at: string
           }[]
+          /** No live job pending or running. */
+          complete: boolean
           eligibility: Json | null
           eligibility_override: boolean | null
           override_reason: string | null
@@ -1623,8 +1678,8 @@ export type Database = {
       /**
        * Hackathon admin (first-party). Irreversible. QD409
        * `already_released` | `hackathon_not_closed` | `late_pass_active` |
-       * `grading_incomplete` (DETAIL has the counts). Returns the finalist
-       * count.
+       * `grading_incomplete` (DETAIL has the counts). Supersedes the
+       * hackathon's pending and running jobs. Returns the finalist count.
        */
       release_hackathon_grades: {
         Args: { p_hackathon_id: string; p_allow_incomplete?: boolean }
@@ -1646,7 +1701,8 @@ export type Database = {
       }
       /**
        * Hackathon admin. Adds, changes or (role null) removes a staff member
-       * by username; QD409 `last_admin`, P0002 for an unknown username.
+       * by username; QD409 `last_admin` | `staff_on_team`, P0002 for an
+       * unknown username.
        * Returns their user id.
        */
       set_hackathon_staff: {
@@ -1656,6 +1712,19 @@ export type Database = {
           p_role: Database['public']['Enums']['hackathon_role'] | null
         }
         Returns: string
+      }
+      /**
+       * Judge+ (first-party), after release (QD409 `grades_not_released`).
+       * Finalists by pitch order, then submission id; never by AI rank.
+       */
+      hackathon_finals_for_judge: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          submission_id: string
+          team_name: string
+          project_slug: string
+          pitch_order: number | null
+        }[]
       }
       /** Hackathon admin. The staff with username and display name. */
       hackathon_staff_list: {

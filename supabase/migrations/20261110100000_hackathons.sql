@@ -49,22 +49,37 @@
 --   hackathon_doqtri_snapshots     the project's members (any role) and the
 --                                  hackathon's staff, judges included, before
 --                                  release too (Q-15: judges may read content)
---   hackathon_finalists            that hackathon's staff, and only the
---                                  columns hackathon_id, submission_id and
---                                  pitch_order (ai_rank is reached through
---                                  hackathon_leaderboard() by admins)
+--   hackathon_finalists,
+--   hackathon_finalist_ranks,
+--   hackathon_eligibility_overrides
+--                                  nobody directly. Judges list finalists
+--                                  through hackathon_finals_for_judge() (by
+--                                  pitch order, never by rank); admins read
+--                                  ranks and overrides through
+--                                  hackathon_leaderboard() and
+--                                  hackathon_grading_status(). The AI rank
+--                                  lives in its own sealed table so no
+--                                  readable row order or index carries it.
 --   hackathon_judge_scores         a judge their own rows, after release
 --
 -- Eligibility is not shown to teams (participants only ever see "Received",
--- D-116): hackathon_submission_versions.eligibility and
--- hackathon_submissions.eligibility_override, override_reason and
--- overridden_by are left out of the column grants to authenticated, for
--- everyone, staff included. Admins read them through
--- hackathon_grading_status() and hackathon_leaderboard(); the grader writes
--- them through the service-role RPCs. Column grants rather than a side
--- table, so RLS, the frozen-row trigger and every RPC stay as they are; the
--- cost is that a client must name its columns (`select *` on those two
--- tables is refused), as on hackathon_finalists.
+-- D-116). hackathon_submission_versions.eligibility is left out of the
+-- column grant to authenticated (staff included), and so is
+-- hackathon_submissions.updated_at, which would otherwise date admin
+-- activity. An admin's override lives in hackathon_eligibility_overrides, a
+-- staff-only side table, so setting one never touches a row a team can read
+-- (not its columns, not its xmin, which column-only grants also refuse).
+-- Admins read both through hackathon_grading_status() and
+-- hackathon_leaderboard(); the grader writes eligibility through the
+-- service-role RPCs. A client must name its columns on those two tables:
+-- `select *` is refused.
+--
+-- Races with release: every RPC that writes hackathon state locks the
+-- hackathon row FOR SHARE (set_hackathon_staff FOR NO KEY UPDATE, release
+-- FOR UPDATE) and re-checks released_at after the lock, so nothing lands
+-- half before and half after a release. Windows are judged on
+-- clock_timestamp(), not the transaction start, and end exclusively:
+-- open while clock_timestamp() < closes_at (a late pass: < until).
 --   hackathon_grading_jobs,
 --   hackathon_ai_runs              nobody (no policy, no grant)
 --
@@ -103,7 +118,13 @@
 --            not_finalist           judge score for a non-finalist
 --            last_admin             removing or demoting the last admin
 --            regrade_limit          run numbers exhausted (see below)
---   QD413  snapshot_too_large: the qdit snapshot is over 2 MB after the caps.
+--            staff_on_team          staffing someone on a team here
+--            member_is_staff        a team member is staff here
+--   QD413  snapshot_too_large: the qdit snapshot is over 2 MB even with
+--          text clipped to 300 characters; payload_too_large: a doqtri
+--          payload over 2 MiB (2,097,152 bytes as JSON text).
+--   last_error on a job holds a code only: ^[a-z0-9_:.-]{1,80}$ (22023,
+--   hint error / reason, for anything else).
 --
 -- ---------------------------------------------------------------------------
 -- RUN NUMBERS AND REGRADE
@@ -137,6 +158,7 @@
 -- web/src/lib/hackathon/types.ts. Caps: 500 milestones, 2,000 tasks, 2,000
 -- of each other list, free text clipped to 4,000 characters ending in
 -- " [truncated]"; `truncated` is true when any cap or clip applied. Over 2 MB
+-- it is rebuilt with text clipped to 1,000, then 300 characters; over 2 MB
 -- after that is QD413. The doqtri part is a reference to the newest snapshot
 -- (by received_at) the project pushed for that hackathon.
 --
@@ -151,9 +173,12 @@
 --                                   nothing while a secret is missing (with a
 --                                   WARNING) and nothing while the queue has
 --                                   no pending or running job.
---   qdit-prune-hackathon-snapshots  daily: deletes doqtri snapshots 90 days
---                                   after their hackathon closed (versions
---                                   keep a null reference).
+--   qdit-prune-hackathon-snapshots  daily: deletes doqtri snapshots of a
+--                                   released hackathon 90 days after its
+--                                   close or its last late pass, whichever
+--                                   is later, and of an unreleased one 180
+--                                   days after its close (versions keep a
+--                                   null reference).
 --   The operator stores the URL once per environment:
 --     select vault.create_secret('https://<qdit host>/api/cron/grade-hackathon',
 --                                'qdit_grade_hackathon_url');
@@ -211,8 +236,8 @@ comment on table public.hackathon_staff is
 create table public.hackathon_late_passes (
   hackathon_id uuid not null references public.hackathons (id) on delete cascade,
   project_id   uuid not null references public.projects (id) on delete cascade,
-  -- While now() <= until, closes_at does not apply to this project (submit
-  -- and push). A pass never opens a hackathon early, and none applies once
+  -- While clock_timestamp() < until, closes_at does not apply to this
+  -- project (submit and push). A pass never opens a hackathon early, and none applies once
   -- grades are released.
   until        timestamptz not null,
   granted_by   uuid references auth.users (id) on delete set null,
@@ -269,22 +294,13 @@ create table public.hackathon_submissions (
   current_version_id   uuid,
   created_by           uuid references auth.users (id) on delete set null,
   created_at           timestamptz not null default now(),
+  -- Not granted to clients (header).
   updated_at           timestamptz not null default now(),
-  -- An admin's call on eligibility: true or false wins over the computed
-  -- answer, null means the computed answer stands.
-  eligibility_override boolean,
-  override_reason      text,
-  overridden_by        uuid references auth.users (id) on delete set null,
 
   constraint hackathon_submissions_entry_key unique (hackathon_id, project_id),
   -- Target of the composite keys below, so a child row's hackathon is its
   -- submission's.
-  constraint hackathon_submissions_id_hackathon_key unique (id, hackathon_id),
-  constraint hackathon_submissions_override_reason check (
-    (eligibility_override is null and override_reason is null)
-    or (eligibility_override is not null
-        and char_length(btrim(override_reason)) between 1 and 500)
-  )
+  constraint hackathon_submissions_id_hackathon_key unique (id, hackathon_id)
 );
 
 create index hackathon_submissions_project_idx on public.hackathon_submissions (project_id);
@@ -294,7 +310,7 @@ create trigger hackathon_submissions_set_updated_at
   for each row execute function public.set_updated_at();
 
 comment on table public.hackathon_submissions is
-  'One entry per project per hackathon (D-115). Written only by submit_hackathon_entry() and set_eligibility_override().';
+  'One entry per project per hackathon (D-115). Written only by submit_hackathon_entry().';
 
 
 create table public.hackathon_team_members (
@@ -356,6 +372,32 @@ create index hackathon_submissions_current_version_idx
   on public.hackathon_submissions (current_version_id);
 
 
+create table public.hackathon_eligibility_overrides (
+  submission_id uuid primary key,
+  hackathon_id  uuid not null,
+  -- true or false wins over the computed eligibility. No row: it stands.
+  value         boolean not null,
+  reason        text not null check (char_length(btrim(reason)) between 1 and 500),
+  overridden_by uuid references auth.users (id) on delete set null,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint hackathon_eligibility_overrides_submission_fkey
+    foreign key (submission_id, hackathon_id)
+    references public.hackathon_submissions (id, hackathon_id)
+    on delete cascade
+);
+
+create index hackathon_eligibility_overrides_hackathon_idx
+  on public.hackathon_eligibility_overrides (hackathon_id);
+
+create trigger hackathon_eligibility_overrides_set_updated_at
+  before update on public.hackathon_eligibility_overrides
+  for each row execute function public.set_updated_at();
+
+comment on table public.hackathon_eligibility_overrides is
+  'An admin''s eligibility call on an entry, with the reason (D-116). Staff-only: no client grant; written by set_eligibility_override(), read through hackathon_grading_status() and hackathon_leaderboard(). Kept apart from hackathon_submissions so an override leaves no trace a team can see.';
+
+
 create table public.hackathon_grading_jobs (
   id              uuid primary key default gen_random_uuid(),
   version_id      uuid not null references public.hackathon_submission_versions (id) on delete cascade,
@@ -373,7 +415,8 @@ create table public.hackathon_grading_jobs (
   free_attempts   integer not null default 0 check (free_attempts between 0 and 20),
   lease_until     timestamptz,
   next_attempt_at timestamptz not null default now(),
-  last_error      text check (last_error is null or char_length(last_error) <= 2000),
+  -- A code, never prose (it can echo model output otherwise).
+  last_error      text check (last_error is null or last_error ~ '^[a-z0-9_:.-]{1,80}$'),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
 
@@ -421,10 +464,8 @@ comment on table public.hackathon_ai_runs is
 create table public.hackathon_finalists (
   hackathon_id  uuid not null references public.hackathons (id) on delete cascade,
   submission_id uuid not null,
-  ai_rank       integer not null check (ai_rank >= 1),
   pitch_order   integer check (pitch_order >= 1),
   primary key (hackathon_id, submission_id),
-  constraint hackathon_finalists_rank_key unique (hackathon_id, ai_rank),
   constraint hackathon_finalists_pitch_key unique (hackathon_id, pitch_order),
   constraint hackathon_finalists_submission_fkey
     foreign key (submission_id, hackathon_id)
@@ -433,7 +474,23 @@ create table public.hackathon_finalists (
 );
 
 comment on table public.hackathon_finalists is
-  'Written once by release_hackathon_grades() (top finalist_count eligible by AI score); pitch_order by set_pitch_order(). Clients read only hackathon_id, submission_id and pitch_order.';
+  'Written once by release_hackathon_grades() (top finalist_count eligible by AI score); pitch_order by set_pitch_order(). No client grant: judges list finalists through hackathon_finals_for_judge(). The AI rank is in hackathon_finalist_ranks.';
+
+
+create table public.hackathon_finalist_ranks (
+  hackathon_id  uuid not null,
+  submission_id uuid not null,
+  ai_rank       integer not null check (ai_rank >= 1),
+  primary key (hackathon_id, submission_id),
+  constraint hackathon_finalist_ranks_rank_key unique (hackathon_id, ai_rank),
+  constraint hackathon_finalist_ranks_finalist_fkey
+    foreign key (hackathon_id, submission_id)
+    references public.hackathon_finalists (hackathon_id, submission_id)
+    on delete cascade
+);
+
+comment on table public.hackathon_finalist_ranks is
+  'Sealed (D-116): each finalist''s rank by AI score, written by release_hackathon_grades(). No client grant or policy; admins read it through hackathon_leaderboard().';
 
 
 create table public.hackathon_judge_scores (
@@ -568,28 +625,30 @@ comment on function public.is_hackathon_staff(uuid, text) is
   'SECURITY DEFINER. Whether the caller is staff of p_hackathon_id with at least p_min_role (judge < admin). Always auth.uid(); returns only a boolean.';
 
 
--- not_open | open | closed for one project, at now(). A late pass in force
--- keeps a closed hackathon open for that project; nothing is open after
--- release. Internal: it reads late passes of any project.
+-- not_open | open | closed for one project, at clock_timestamp() (not the
+-- transaction's start, so a long transaction gains nothing). The end is
+-- exclusive. A late pass in force keeps a closed hackathon open for that
+-- project; nothing is open after release. Internal: it reads late passes of
+-- any project.
 create or replace function public.hackathon_window_state(
   p_hackathon_id uuid,
   p_project_id   uuid
 )
 returns text
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
   select case
            when h.released_at is not null then 'closed'
-           when now() < h.opens_at then 'not_open'
-           when now() <= h.closes_at then 'open'
+           when clock_timestamp() < h.opens_at then 'not_open'
+           when clock_timestamp() < h.closes_at then 'open'
            when exists (
              select 1 from public.hackathon_late_passes lp
               where lp.hackathon_id = h.id
                 and lp.project_id = p_project_id
-                and lp.until >= now()
+                and clock_timestamp() < lp.until
            ) then 'open'
            else 'closed'
          end
@@ -598,7 +657,7 @@ as $$
 $$;
 
 comment on function public.hackathon_window_state(uuid, uuid) is
-  'not_open | open | closed for p_project_id in p_hackathon_id at now(): closes_at does not apply while a late pass is in force; nothing is open after release. Null for an unknown hackathon. Internal.';
+  'not_open | open | closed for p_project_id in p_hackathon_id at clock_timestamp(), ends exclusive: closes_at does not apply while a late pass is in force (clock_timestamp() < until); nothing is open after release. Null for an unknown hackathon. Internal.';
 
 
 -- Raises QD409 hackathon_not_open / hackathon_closed unless open.
@@ -608,7 +667,7 @@ create or replace function public.assert_hackathon_open(
 )
 returns void
 language plpgsql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -641,17 +700,17 @@ as $$
 $$;
 
 
--- Clips free text for the snapshot: at most 4,000 characters, the last 12
--- being the marker.
-create or replace function public.hackathon_clip_text(p_text text)
+-- Clips free text for the snapshot: at most p_max characters (not bytes),
+-- the last 12 being the marker.
+create or replace function public.hackathon_clip_text(p_text text, p_max integer default 4000)
 returns text
 language sql
 immutable
 set search_path = ''
 as $$
   select case
-           when p_text is null or char_length(p_text) <= 4000 then p_text
-           else left(p_text, 4000 - 12) || ' [truncated]'
+           when p_text is null or char_length(p_text) <= p_max then p_text
+           else left(p_text, p_max - 12) || ' [truncated]'
          end;
 $$;
 
@@ -752,7 +811,10 @@ comment on function public.hackathon_current_ai(uuid) is
 
 -- QditSnapshotV1 of one project, now. Internal: called by
 -- submit_hackathon_entry() after its role check.
-create or replace function public.build_hackathon_qdit_snapshot(p_project_id uuid)
+create or replace function public.build_hackathon_qdit_snapshot(
+  p_project_id uuid,
+  p_clip       integer default 4000
+)
 returns jsonb
 language plpgsql
 stable
@@ -777,32 +839,32 @@ begin
       select 1 from public.projects p
        where p.id = p_project_id
          and greatest(char_length(p.description), char_length(p.repo_url),
-                      char_length(p.demo_url), char_length(p.docs_url)) > 4000)
+                      char_length(p.demo_url), char_length(p.docs_url)) > p_clip)
     or exists (
       select 1 from public.milestones m
-       where m.project_id = p_project_id and char_length(m.description) > 4000)
+       where m.project_id = p_project_id and char_length(m.description) > p_clip)
     or exists (
       select 1 from public.tasks t
-       where t.project_id = p_project_id and char_length(t.description) > 4000)
+       where t.project_id = p_project_id and char_length(t.description) > p_clip)
     or exists (
       select 1 from public.project_members pm
         join public.profiles pr on pr.id = pm.user_id
-       where pm.project_id = p_project_id and char_length(pr.display_name) > 4000)
+       where pm.project_id = p_project_id and char_length(pr.display_name) > p_clip)
     or exists (
       select 1 from public.stellar_proofs sp
        where sp.project_id = p_project_id
          and greatest(char_length(sp.contract_id), char_length(sp.tx_hash),
                       char_length(sp.wallet_address), char_length(sp.proof_url),
-                      char_length(sp.notes)) > 4000)
+                      char_length(sp.notes)) > p_clip)
     or exists (
       select 1 from public.deployments d
        where d.project_id = p_project_id
          and greatest(char_length(d.contract_id), char_length(d.tx_hash),
-                      char_length(d.release_notes)) > 4000)
+                      char_length(d.release_notes)) > p_clip)
     or exists (
       select 1 from public.milestone_anchors a
        where a.project_id = p_project_id
-         and greatest(char_length(a.contract_id), char_length(a.signer_address)) > 4000);
+         and greatest(char_length(a.contract_id), char_length(a.signer_address)) > p_clip);
 
   select jsonb_build_object(
     'schema_version', 1,
@@ -813,11 +875,11 @@ begin
         'id', p.id,
         'slug', p.slug,
         'name', p.name,
-        'description', public.hackathon_clip_text(p.description),
+        'description', public.hackathon_clip_text(p.description, p_clip),
         'status', p.status,
-        'repo_url', public.hackathon_clip_text(p.repo_url),
-        'demo_url', public.hackathon_clip_text(p.demo_url),
-        'docs_url', public.hackathon_clip_text(p.docs_url),
+        'repo_url', public.hackathon_clip_text(p.repo_url, p_clip),
+        'demo_url', public.hackathon_clip_text(p.demo_url, p_clip),
+        'docs_url', public.hackathon_clip_text(p.docs_url, p_clip),
         'created_at', p.created_at,
         'chain_contract_id', p.chain_contract_id,
         'public_proofs', p.public_proofs
@@ -833,7 +895,7 @@ begin
                    'role', pm.role,
                    'joined_at', pm.joined_at,
                    'username', pr.username,
-                   'display_name', public.hackathon_clip_text(pr.display_name),
+                   'display_name', public.hackathon_clip_text(pr.display_name, p_clip),
                    'wallet_address', pr.wallet_address
                  ) as j
             from public.project_members pm
@@ -850,7 +912,7 @@ begin
                  jsonb_build_object(
                    'id', m.id,
                    'title', m.title,
-                   'description', public.hackathon_clip_text(m.description),
+                   'description', public.hackathon_clip_text(m.description, p_clip),
                    'status', m.status,
                    'due_date', m.due_date,
                    'order_index', m.order_index,
@@ -871,7 +933,7 @@ begin
                    'id', t.id,
                    'milestone_id', t.milestone_id,
                    'title', t.title,
-                   'description', public.hackathon_clip_text(t.description),
+                   'description', public.hackathon_clip_text(t.description, p_clip),
                    'status', t.status,
                    'assignee_id', t.assignee_id,
                    'priority', t.priority,
@@ -894,7 +956,7 @@ begin
                    'milestone_id', r.milestone_id,
                    'from_status', r.from_status,
                    'to_status', r.to_status,
-                   'reason', public.hackathon_clip_text(r.reason),
+                   'reason', public.hackathon_clip_text(r.reason, p_clip),
                    'reviewer_id', r.reviewer_id,
                    'created_at', r.created_at
                  ) as j
@@ -914,10 +976,10 @@ begin
                    'action', a.action,
                    'proof_hash', a.proof_hash,
                    'version', a.version,
-                   'contract_id', public.hackathon_clip_text(a.contract_id),
+                   'contract_id', public.hackathon_clip_text(a.contract_id, p_clip),
                    'network', a.network,
                    'tx_hash', a.tx_hash,
-                   'signer_address', public.hackathon_clip_text(a.signer_address),
+                   'signer_address', public.hackathon_clip_text(a.signer_address, p_clip),
                    'ledger', a.ledger,
                    'created_at', a.created_at
                  ) as j
@@ -934,12 +996,12 @@ begin
                  jsonb_build_object(
                    'id', sp.id,
                    'milestone_id', sp.milestone_id,
-                   'contract_id', public.hackathon_clip_text(sp.contract_id),
-                   'tx_hash', public.hackathon_clip_text(sp.tx_hash),
+                   'contract_id', public.hackathon_clip_text(sp.contract_id, p_clip),
+                   'tx_hash', public.hackathon_clip_text(sp.tx_hash, p_clip),
                    'network', sp.network,
-                   'wallet_address', public.hackathon_clip_text(sp.wallet_address),
-                   'proof_url', public.hackathon_clip_text(sp.proof_url),
-                   'notes', public.hackathon_clip_text(sp.notes),
+                   'wallet_address', public.hackathon_clip_text(sp.wallet_address, p_clip),
+                   'proof_url', public.hackathon_clip_text(sp.proof_url, p_clip),
+                   'notes', public.hackathon_clip_text(sp.notes, p_clip),
                    'created_at', sp.created_at
                  ) as j
             from public.stellar_proofs sp
@@ -956,9 +1018,9 @@ begin
                    'id', d.id,
                    'status', d.status,
                    'network', d.network,
-                   'contract_id', public.hackathon_clip_text(d.contract_id),
-                   'tx_hash', public.hackathon_clip_text(d.tx_hash),
-                   'release_notes', public.hackathon_clip_text(d.release_notes),
+                   'contract_id', public.hackathon_clip_text(d.contract_id, p_clip),
+                   'tx_hash', public.hackathon_clip_text(d.tx_hash, p_clip),
+                   'release_notes', public.hackathon_clip_text(d.release_notes, p_clip),
                    'deployed_at', d.deployed_at,
                    'created_at', d.created_at
                  ) as j
@@ -1006,8 +1068,8 @@ begin
 end;
 $$;
 
-comment on function public.build_hackathon_qdit_snapshot(uuid) is
-  'Internal, no client grant. The QditSnapshotV1 (web/src/lib/hackathon/types.ts) of one project at now(): 500 milestones, 2,000 of every other list, free text clipped to 4,000 characters with " [truncated]"; truncated = any cap or clip applied.';
+comment on function public.build_hackathon_qdit_snapshot(uuid, integer) is
+  'Internal, no client grant. The QditSnapshotV1 (web/src/lib/hackathon/types.ts) of one project at now(): 500 milestones, 2,000 of every other list, free text clipped to p_clip characters (default 4,000) with " [truncated]"; truncated = any cap or clip applied.';
 
 
 -- Storage path rules for bucket hackathon-mindmaps:
@@ -1033,7 +1095,7 @@ $$;
 create or replace function public.hackathon_mindmap_upload_allowed(p_name text)
 returns boolean
 language plpgsql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -1092,6 +1154,8 @@ alter table public.hackathon_submission_versions enable row level security;
 alter table public.hackathon_grading_jobs        enable row level security;
 alter table public.hackathon_ai_runs             enable row level security;
 alter table public.hackathon_finalists           enable row level security;
+alter table public.hackathon_finalist_ranks      enable row level security;
+alter table public.hackathon_eligibility_overrides enable row level security;
 alter table public.hackathon_judge_scores        enable row level security;
 
 
@@ -1107,6 +1171,8 @@ revoke all on table public.hackathon_submission_versions from anon, authenticate
 revoke all on table public.hackathon_grading_jobs        from anon, authenticated;
 revoke all on table public.hackathon_ai_runs             from anon, authenticated;
 revoke all on table public.hackathon_finalists           from anon, authenticated;
+revoke all on table public.hackathon_finalist_ranks      from anon, authenticated;
+revoke all on table public.hackathon_eligibility_overrides from anon, authenticated;
 revoke all on table public.hackathon_judge_scores        from anon, authenticated;
 
 grant select on table public.hackathons                    to authenticated;
@@ -1114,16 +1180,16 @@ grant select on table public.hackathon_staff               to authenticated;
 grant select on table public.hackathon_late_passes         to authenticated;
 grant select on table public.hackathon_doqtri_snapshots    to authenticated;
 grant select on table public.hackathon_team_members        to authenticated;
--- Everything but eligibility and the override (header: not shown to teams).
+-- Everything but updated_at (header: not shown to teams).
 grant select (id, hackathon_id, project_id, team_name, current_version_id,
-              created_by, created_at, updated_at)
+              created_by, created_at)
   on table public.hackathon_submissions to authenticated;
 grant select (id, submission_id, version_no, team_name, member_ids, qdit_snapshot,
               doqtri_snapshot_id, image_paths, submitted_by, submitted_at)
   on table public.hackathon_submission_versions to authenticated;
 grant select on table public.hackathon_judge_scores        to authenticated;
--- ai_rank is grade-derived (D-116): admins read it through the leaderboard.
-grant select (hackathon_id, submission_id, pitch_order) on table public.hackathon_finalists to authenticated;
+-- hackathon_finalists, hackathon_finalist_ranks, hackathon_eligibility_overrides,
+-- hackathon_grading_jobs, hackathon_ai_runs: no client grant (header).
 
 
 -- Permissive reads ---------------------------------------------------------
@@ -1196,12 +1262,6 @@ create policy "hackathon_submission_versions: read as project member or staff"
     )
   );
 
-create policy "hackathon_finalists: read as staff"
-  on public.hackathon_finalists
-  for select
-  to authenticated
-  using (public.is_hackathon_staff(hackathon_id, 'judge'));
-
 create policy "hackathon_judge_scores: read own after release"
   on public.hackathon_judge_scores
   for select
@@ -1216,7 +1276,9 @@ create policy "hackathon_judge_scores: read own after release"
     )
   );
 
--- hackathon_grading_jobs, hackathon_ai_runs: no permissive policy (D-116).
+-- hackathon_grading_jobs, hackathon_ai_runs, hackathon_finalists,
+-- hackathon_finalist_ranks, hackathon_eligibility_overrides: no permissive
+-- policy (D-116).
 
 
 -- Restrictive OAuth guards (20261024110000_oauth_client_guards.sql) --------
@@ -1513,6 +1575,64 @@ create policy "hackathon_finalists: no delete by oauth clients"
   to public
   using (((select auth.jwt()) ->> 'client_id') is null);
 
+create policy "hackathon_finalist_ranks: no select by oauth clients"
+  on public.hackathon_finalist_ranks
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_finalist_ranks: no insert by oauth clients"
+  on public.hackathon_finalist_ranks
+  as restrictive
+  for insert
+  to public
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_finalist_ranks: no update by oauth clients"
+  on public.hackathon_finalist_ranks
+  as restrictive
+  for update
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null)
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_finalist_ranks: no delete by oauth clients"
+  on public.hackathon_finalist_ranks
+  as restrictive
+  for delete
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_eligibility_overrides: no select by oauth clients"
+  on public.hackathon_eligibility_overrides
+  as restrictive
+  for select
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_eligibility_overrides: no insert by oauth clients"
+  on public.hackathon_eligibility_overrides
+  as restrictive
+  for insert
+  to public
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_eligibility_overrides: no update by oauth clients"
+  on public.hackathon_eligibility_overrides
+  as restrictive
+  for update
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null)
+  with check (((select auth.jwt()) ->> 'client_id') is null);
+
+create policy "hackathon_eligibility_overrides: no delete by oauth clients"
+  on public.hackathon_eligibility_overrides
+  as restrictive
+  for delete
+  to public
+  using (((select auth.jwt()) ->> 'client_id') is null);
+
 create policy "hackathon_judge_scores: no select by oauth clients"
   on public.hackathon_judge_scores
   as restrictive
@@ -1641,6 +1761,7 @@ declare
   v_taken      text;
   v_snapshot   jsonb;
   v_size       integer;
+  v_clip       integer;
   v_sub_id     uuid;
   v_version_no integer;
   v_doqtri_id  uuid;
@@ -1652,7 +1773,10 @@ begin
     raise exception 'Sign in to submit.' using errcode = '42501';
   end if;
 
-  select * into v_h from public.hackathons h where h.id = p_hackathon_id;
+  -- FOR SHARE until commit: a release (FOR UPDATE) or a staff change (FOR NO
+  -- KEY UPDATE) waits for this submit, or this submit for it, and the window
+  -- below then sees released_at as it is after the lock.
+  select * into v_h from public.hackathons h where h.id = p_hackathon_id for share;
   if not found then
     raise exception 'No such hackathon.' using errcode = 'P0002';
   end if;
@@ -1708,6 +1832,20 @@ begin
             detail = format('Already on another team in this hackathon: %s.', v_taken);
   end if;
 
+  -- Staff judge the entries, so none of them is on one.
+  select string_agg(coalesce(pr.username, st.user_id::text), ', ' order by pr.username)
+    into v_taken
+    from public.hackathon_staff st
+    left join public.profiles pr on pr.id = st.user_id
+   where st.hackathon_id = v_h.id
+     and st.user_id = any (v_members);
+
+  if v_taken is not null then
+    raise exception 'member_is_staff'
+      using errcode = 'QD409',
+            detail = format('Staff of this hackathon cannot be on a team: %s.', v_taken);
+  end if;
+
   if cardinality(coalesce(p_image_paths, '{}'::text[])) not between 1 and 3
      or array_position(p_image_paths, null) is not null
      or (select count(distinct x) from unnest(p_image_paths) as x) <> cardinality(p_image_paths) then
@@ -1741,12 +1879,16 @@ begin
     end if;
   end loop;
 
-  v_snapshot := public.build_hackathon_qdit_snapshot(p_project_id);
-  v_size := pg_column_size(v_snapshot);
+  -- 4,000 characters of free text, then 1,000, then 300, until it fits.
+  foreach v_clip in array array[4000, 1000, 300] loop
+    v_snapshot := public.build_hackathon_qdit_snapshot(p_project_id, v_clip);
+    v_size := pg_column_size(v_snapshot);
+    exit when v_size <= 2 * 1024 * 1024;
+  end loop;
   if v_size > 2 * 1024 * 1024 then
     raise exception 'snapshot_too_large'
       using errcode = 'QD413',
-            detail = format('The project snapshot is %s bytes after trimming; the limit is 2 MB.', v_size);
+            detail = format('The project snapshot is %s bytes with text clipped to 300 characters; the limit is 2 MB.', v_size);
   end if;
 
   -- The entry row, locked by the upsert for the rest of this transaction, so
@@ -1880,9 +2022,18 @@ begin
   if p_note_count is null or p_note_count not between 0 and 200 then
     raise exception 'note_count must be 0 to 200.' using errcode = '22023', hint = 'note_count';
   end if;
-  if p_payload is null or jsonb_typeof(p_payload) <> 'object' or p_workspace_id is null then
-    raise exception 'payload must be a JSON object with a workspace.'
+  if p_payload is null or jsonb_typeof(p_payload) <> 'object' or p_workspace_id is null
+     or jsonb_typeof(p_payload -> 'notes') is distinct from 'array' then
+    raise exception 'payload must be a JSON object with a notes array and a workspace.'
       using errcode = '22023', hint = 'payload';
+  end if;
+  if octet_length(p_payload::text) > 2097152 then
+    raise exception 'payload_too_large'
+      using errcode = 'QD413', detail = 'A hackathon snapshot is at most 2 MiB.';
+  end if;
+  if p_note_count <> jsonb_array_length(p_payload -> 'notes') then
+    raise exception 'note_count must be the number of notes in the payload.'
+      using errcode = '22023', hint = 'note_count';
   end if;
 
   -- (3) Replay or conflict, before the slug and the window, so a retry of a
@@ -1893,7 +2044,10 @@ begin
      and ds.snapshot_id = p_snapshot_id;
 
   if found then
-    if v_existing.payload_sha256 <> p_payload_sha256 then
+    -- Same key: a replay only for the same body to the same hackathon.
+    if v_existing.payload_sha256 <> p_payload_sha256
+       or not exists (select 1 from public.hackathons h
+                       where h.id = v_existing.hackathon_id and h.slug = p_hackathon_slug) then
       raise exception 'snapshot_conflict'
         using errcode = 'QD409',
               detail = 'This snapshot_id was already sent to this project with a different body.';
@@ -1901,8 +2055,8 @@ begin
     v_row := v_existing;
     v_replay := true;
   else
-    -- (4) The hackathon.
-    select * into v_h from public.hackathons h where h.slug = p_hackathon_slug;
+    -- (4) The hackathon, FOR SHARE until commit (header: races with release).
+    select * into v_h from public.hackathons h where h.slug = p_hackathon_slug for share;
     if not found then
       raise exception 'No such hackathon.' using errcode = 'P0002';
     end if;
@@ -1940,7 +2094,7 @@ begin
         from public.hackathon_doqtri_snapshots ds
        where ds.project_id = p_project_id
          and ds.snapshot_id = p_snapshot_id;
-      if v_row.payload_sha256 <> p_payload_sha256 then
+      if v_row.payload_sha256 <> p_payload_sha256 or v_row.hackathon_id <> v_h.id then
         raise exception 'snapshot_conflict'
           using errcode = 'QD409',
                 detail = 'This snapshot_id was already sent to this project with a different body.';
@@ -1974,7 +2128,7 @@ end;
 $$;
 
 comment on function public.push_doqtri_hackathon_snapshot(text, uuid, uuid, uuid, jsonb, text, integer) is
-  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> replay (same hash: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
+  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> arguments (22023; QD413 payload_too_large over 2 MiB; note_count = notes) -> replay (same hash and hackathon: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
 
 
 -- ----------------------------------------------------------------------------
@@ -2014,6 +2168,7 @@ returns table (
   version_no           integer,
   submitted_at         timestamptz,
   jobs                 jsonb,
+  complete             boolean,
   eligibility          jsonb,
   eligibility_override boolean,
   override_reason      text,
@@ -2024,30 +2179,49 @@ stable
 security definer
 set search_path = ''
 as $$
+declare
+  v_released boolean;
 begin
   perform public.assert_hackathon_admin(p_hackathon_id);
 
-  -- Job state and eligibility only. Nothing from hackathon_ai_runs (D-116).
+  select h.released_at is not null into v_released
+    from public.hackathons h where h.id = p_hackathon_id;
+
+  -- Job state and eligibility only, nothing from hackathon_ai_runs (D-116).
+  -- Before release only the first two live jobs, numbered 1 and 2: a third
+  -- run would say the first two disagreed. `complete`: no live job pending
+  -- or running.
   return query
     select s.id, s.project_id, p.slug, s.team_name, v.id, v.version_no, v.submitted_at,
            coalesce((
              select jsonb_agg(jsonb_build_object(
-                      'run_no', j.run_no,
-                      'status', j.status,
-                      'attempts', j.attempts,
-                      'free_attempts', j.free_attempts,
-                      'next_attempt_at', j.next_attempt_at,
-                      'last_error', j.last_error,
-                      'updated_at', j.updated_at
-                    ) order by j.run_no)
-               from public.hackathon_grading_jobs j
-              where j.version_id = v.id
-                and j.status <> 'superseded'
+                      'run_no', case when v_released then x.run_no else x.ord end,
+                      'status', x.status,
+                      'attempts', x.attempts,
+                      'free_attempts', x.free_attempts,
+                      'next_attempt_at', x.next_attempt_at,
+                      'last_error', x.last_error,
+                      'updated_at', x.updated_at
+                    ) order by x.ord)
+               from (
+                 select j.run_no::integer as run_no, j.status, j.attempts, j.free_attempts,
+                        j.next_attempt_at, j.last_error, j.updated_at,
+                        row_number() over (order by j.run_no)::integer as ord
+                   from public.hackathon_grading_jobs j
+                  where j.version_id = v.id
+                    and j.status <> 'superseded'
+               ) x
+              where v_released or x.ord <= 2
            ), '[]'::jsonb),
-           v.eligibility, s.eligibility_override, s.override_reason, lp.until
+           not exists (
+             select 1 from public.hackathon_grading_jobs j
+              where j.version_id = v.id and j.status in ('pending', 'running')
+           ),
+           v.eligibility, o.value, o.reason, lp.until
       from public.hackathon_submissions s
       join public.projects p on p.id = s.project_id
       left join public.hackathon_submission_versions v on v.id = s.current_version_id
+      left join public.hackathon_eligibility_overrides o on o.submission_id = s.id
       left join public.hackathon_late_passes lp
         on lp.hackathon_id = s.hackathon_id and lp.project_id = s.project_id
      where s.hackathon_id = p_hackathon_id
@@ -2056,7 +2230,7 @@ end;
 $$;
 
 comment on function public.hackathon_grading_status(uuid) is
-  'SECURITY DEFINER, first-party, hackathon admin. Per entry: project slug, team, current version, submitted_at, non-superseded job states, eligibility and override. Never scores, totals or flags (D-116).';
+  'SECURITY DEFINER, first-party, hackathon admin. Per entry: project slug, team, current version, submitted_at, live job states (before release only the first two, numbered 1 and 2), complete (no live job pending or running), eligibility and override. Never scores, totals or flags (D-116).';
 
 
 create or replace function public.hackathon_leaderboard(p_hackathon_id uuid)
@@ -2102,17 +2276,20 @@ begin
 
   return query
     select s.id, s.project_id, p.slug, s.team_name, v.id, v.version_no, v.submitted_at,
-           v.eligibility, s.eligibility_override, s.override_reason,
-           public.hackathon_entry_eligible(s.eligibility_override, v.eligibility),
+           v.eligibility, o.value, o.reason,
+           public.hackathon_entry_eligible(o.value, v.eligibility),
            a.run_count, a.runs, a.ai_mean, a.per_criterion, a.ai_total,
-           f.submission_id is not null, f.ai_rank, f.pitch_order,
+           f.submission_id is not null, fr.ai_rank, f.pitch_order,
            js.judge_mean, coalesce(js.judge_count, 0)
       from public.hackathon_submissions s
       join public.projects p on p.id = s.project_id
       left join public.hackathon_submission_versions v on v.id = s.current_version_id
       left join public.hackathon_current_ai(p_hackathon_id) a on a.submission_id = s.id
+      left join public.hackathon_eligibility_overrides o on o.submission_id = s.id
       left join public.hackathon_finalists f
         on f.hackathon_id = s.hackathon_id and f.submission_id = s.id
+      left join public.hackathon_finalist_ranks fr
+        on fr.hackathon_id = s.hackathon_id and fr.submission_id = s.id
       left join lateral (
         select round(avg(js0.clarity + js0.structure + js0.accuracy + js0.connections + js0.pitch), 2) as judge_mean,
                count(*)::integer as judge_count
@@ -2120,7 +2297,7 @@ begin
          where js0.submission_id = s.id
       ) js on true
      where s.hackathon_id = p_hackathon_id
-     order by f.ai_rank nulls last, a.ai_total desc nulls last, v.submitted_at, s.id;
+     order by fr.ai_rank nulls last, a.ai_total desc nulls last, v.submitted_at, s.id;
 end;
 $$;
 
@@ -2142,11 +2319,13 @@ declare
   v_h       public.hackathons;
   v_pending integer;
   v_running integer;
-  v_count   integer;
+  v_ids     uuid[];
+  v_ranks   integer[];
 begin
   perform public.assert_hackathon_admin(p_hackathon_id);
 
-  -- Locked: two presses release once.
+  -- FOR UPDATE: waits for every writer holding the row FOR SHARE, and two
+  -- presses release once.
   select * into v_h from public.hackathons h where h.id = p_hackathon_id for update;
 
   if v_h.released_at is not null then
@@ -2154,14 +2333,14 @@ begin
       using errcode = 'QD409', detail = 'Grades for this hackathon were already released.';
   end if;
 
-  if now() < v_h.closes_at then
+  if clock_timestamp() < v_h.closes_at then
     raise exception 'hackathon_not_closed'
       using errcode = 'QD409', detail = 'Grades can be released only after the hackathon closes.';
   end if;
 
   if exists (
     select 1 from public.hackathon_late_passes lp
-     where lp.hackathon_id = v_h.id and lp.until >= now()
+     where lp.hackathon_id = v_h.id and clock_timestamp() < lp.until
   ) then
     raise exception 'late_pass_active'
       using errcode = 'QD409',
@@ -2186,27 +2365,47 @@ begin
          released_by = auth.uid()
    where h.id = v_h.id;
 
-  insert into public.hackathon_finalists (hackathon_id, submission_id, ai_rank)
-  select v_h.id, ranked.submission_id, ranked.ai_rank
+  -- The top finalist_count eligible entries by AI total, tie earlier
+  -- submission. Finalists in submission-id order; the rank only in the
+  -- sealed table.
+  select coalesce(array_agg(ranked.submission_id order by ranked.ai_rank), '{}'),
+         coalesce(array_agg(ranked.ai_rank order by ranked.ai_rank), '{}')
+    into v_ids, v_ranks
     from (
-      select s.id as submission_id,
-             row_number() over (order by a.ai_total desc, v.submitted_at, s.id)::integer as ai_rank
-        from public.hackathon_submissions s
-        join public.hackathon_submission_versions v on v.id = s.current_version_id
-        join public.hackathon_current_ai(v_h.id) a on a.submission_id = s.id
-       where s.hackathon_id = v_h.id
-         and a.ai_total is not null
-         and public.hackathon_entry_eligible(s.eligibility_override, v.eligibility)
-    ) ranked
+        select s.id as submission_id,
+               row_number() over (order by a.ai_total desc, v.submitted_at, s.id)::integer as ai_rank
+          from public.hackathon_submissions s
+          join public.hackathon_submission_versions v on v.id = s.current_version_id
+          join public.hackathon_current_ai(v_h.id) a on a.submission_id = s.id
+          left join public.hackathon_eligibility_overrides o on o.submission_id = s.id
+         where s.hackathon_id = v_h.id
+           and a.ai_total is not null
+           and public.hackathon_entry_eligible(o.value, v.eligibility)
+      ) ranked
    where ranked.ai_rank <= v_h.finalist_count;
 
-  get diagnostics v_count = row_count;
-  return v_count;
+  insert into public.hackathon_finalists (hackathon_id, submission_id)
+  select v_h.id, x from unnest(v_ids) as x order by x;
+
+  insert into public.hackathon_finalist_ranks (hackathon_id, submission_id, ai_rank)
+  select v_h.id, r.id, r.rank from unnest(v_ids, v_ranks) as r (id, rank);
+
+  -- Grading stops: nothing left in the queue for this hackathon runs.
+  update public.hackathon_grading_jobs j
+     set status = 'superseded',
+         lease_until = null
+    from public.hackathon_submission_versions v
+    join public.hackathon_submissions s on s.id = v.submission_id
+   where v.id = j.version_id
+     and s.hackathon_id = v_h.id
+     and j.status in ('pending', 'running');
+
+  return cardinality(v_ids);
 end;
 $$;
 
 comment on function public.release_hackathon_grades(uuid, boolean) is
-  'SECURITY DEFINER, first-party, hackathon admin. Irreversible (D-116): after closes_at, with no late pass in force and (unless p_allow_incomplete) no pending or running current-version job, sets released_at and writes the top finalist_count eligible entries by AI total (tie: earlier submitted_at) as finalists. Returns the finalist count.';
+  'SECURITY DEFINER, first-party, hackathon admin. Irreversible (D-116): after closes_at, with no late pass in force and (unless p_allow_incomplete) no pending or running current-version job, sets released_at, writes the top finalist_count eligible entries by AI total (tie: earlier submitted_at) as finalists with their rank in hackathon_finalist_ranks, and supersedes every pending or running job of the hackathon. Returns the finalist count.';
 
 
 create or replace function public.grant_late_pass(
@@ -2220,10 +2419,15 @@ volatile
 security definer
 set search_path = ''
 as $$
+declare
+  v_released timestamptz;
 begin
   perform public.assert_hackathon_admin(p_hackathon_id);
 
-  if exists (select 1 from public.hackathons h where h.id = p_hackathon_id and h.released_at is not null) then
+  select h.released_at into v_released
+    from public.hackathons h where h.id = p_hackathon_id for share;
+
+  if v_released is not null then
     raise exception 'already_released'
       using errcode = 'QD409', detail = 'Grades are released; no late pass applies any more.';
   end if;
@@ -2263,36 +2467,50 @@ as $$
 declare
   v_hackathon uuid;
   v_version   uuid;
+  v_released  timestamptz;
   v_next      integer;
   v_reason    text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
   perform public.assert_first_party_session();
 
-  -- Locked: two overrides of one entry queue runs once.
+  -- Not a row lock: nothing on the entry's row may change (header).
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('hackathon_submissions:' || p_submission_id, 0)
+  );
+
   select s.hackathon_id, s.current_version_id into v_hackathon, v_version
-    from public.hackathon_submissions s where s.id = p_submission_id for update;
+    from public.hackathon_submissions s where s.id = p_submission_id;
   if not found then
     raise exception 'No such submission.' using errcode = 'P0002';
   end if;
 
   perform public.assert_hackathon_admin(v_hackathon);
 
+  select h.released_at into v_released
+    from public.hackathons h where h.id = v_hackathon for share;
+
   if p_value is not null and (v_reason is null or char_length(v_reason) > 500) then
     raise exception 'Say why, in 1 to 500 characters.' using errcode = '22023', hint = 'reason';
   end if;
 
-  update public.hackathon_submissions s
-     set eligibility_override = p_value,
-         override_reason = case when p_value is null then null else v_reason end,
-         overridden_by = case when p_value is null then null else auth.uid() end
-   where s.id = p_submission_id;
+  if p_value is null then
+    delete from public.hackathon_eligibility_overrides o where o.submission_id = p_submission_id;
+  else
+    insert into public.hackathon_eligibility_overrides as o
+      (submission_id, hackathon_id, value, reason, overridden_by)
+    values (p_submission_id, v_hackathon, p_value, v_reason, auth.uid())
+    on conflict (submission_id) do update
+      set value = excluded.value,
+          reason = excluded.reason,
+          overridden_by = excluded.overridden_by;
+  end if;
 
   -- Let in: a version the grader skipped as ineligible (every live job done,
   -- no AI run) gets runs 1 and 2 again, under the next two run numbers.
   -- Nothing after release, and nothing for false or null.
   if p_value is true
      and v_version is not null
-     and not exists (select 1 from public.hackathons h where h.id = v_hackathon and h.released_at is not null)
+     and v_released is null
      and exists (select 1 from public.hackathon_grading_jobs j
                   where j.version_id = v_version and j.status <> 'superseded')
      and not exists (select 1 from public.hackathon_grading_jobs j
@@ -2317,7 +2535,7 @@ end;
 $$;
 
 comment on function public.set_eligibility_override(uuid, boolean, text) is
-  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars); null clears the override. true on a version the grader skipped (every live job done, no AI run), before release, queues two fresh runs; false and null leave the jobs alone.';
+  'SECURITY DEFINER, first-party, hackathon admin. true/false overrides the computed eligibility (reason required, 1-500 chars), null clears it; kept in hackathon_eligibility_overrides, so the entry''s own row never changes. true on a version the grader skipped (every live job done, no AI run), before release, queues two fresh runs; false and null leave the jobs alone.';
 
 
 create or replace function public.set_hackathon_staff(
@@ -2345,9 +2563,21 @@ begin
     raise exception 'No account uses that username.' using errcode = 'P0002';
   end if;
 
+  -- FOR NO KEY UPDATE on the hackathon: conflicts with a submit's FOR SHARE
+  -- and with another staff change, so the team and staff checks below hold.
+  perform 1 from public.hackathons h where h.id = p_hackathon_id for no key update;
+
   -- Every staff row of this hackathon, locked, so two admins demoting each
   -- other cannot both pass the last-admin check.
   perform 1 from public.hackathon_staff s where s.hackathon_id = p_hackathon_id for update;
+
+  if p_role is not null and exists (
+    select 1 from public.hackathon_team_members tm
+     where tm.hackathon_id = p_hackathon_id and tm.user_id = v_user
+  ) then
+    raise exception 'staff_on_team'
+      using errcode = 'QD409', detail = 'This person is on a team in this hackathon and cannot be staff.';
+  end if;
 
   select s.role into v_current
     from public.hackathon_staff s
@@ -2378,7 +2608,7 @@ end;
 $$;
 
 comment on function public.set_hackathon_staff(uuid, text, public.hackathon_role) is
-  'SECURITY DEFINER, first-party, hackathon admin. Adds, changes (p_role) or removes (p_role null) the staff member with that username; QD409 last_admin when that would leave no admin. Returns their user id.';
+  'SECURITY DEFINER, first-party, hackathon admin. Adds, changes (p_role) or removes (p_role null) the staff member with that username; QD409 last_admin when that would leave no admin, staff_on_team for someone on a team in this hackathon. Returns their user id.';
 
 
 create or replace function public.hackathon_staff_list(p_hackathon_id uuid)
@@ -2420,10 +2650,15 @@ volatile
 security definer
 set search_path = ''
 as $$
+declare
+  v_released timestamptz;
 begin
   perform public.assert_hackathon_admin(p_hackathon_id);
 
-  if not exists (select 1 from public.hackathons h where h.id = p_hackathon_id and h.released_at is not null) then
+  select h.released_at into v_released
+    from public.hackathons h where h.id = p_hackathon_id for share;
+
+  if v_released is null then
     raise exception 'grades_not_released'
       using errcode = 'QD409', detail = 'Finalists exist only once grades are released.';
   end if;
@@ -2463,19 +2698,28 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_sub  public.hackathon_submissions;
-  v_next integer;
+  v_sub      public.hackathon_submissions;
+  v_next     integer;
+  v_released timestamptz;
 begin
   perform public.assert_first_party_session();
 
-  select * into v_sub from public.hackathon_submissions s where s.id = p_submission_id for update;
+  -- Not a row lock: nothing on the entry's row may change (header).
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('hackathon_submissions:' || p_submission_id, 0)
+  );
+
+  select * into v_sub from public.hackathon_submissions s where s.id = p_submission_id;
   if not found or v_sub.current_version_id is null then
     raise exception 'No such submission.' using errcode = 'P0002';
   end if;
 
   perform public.assert_hackathon_admin(v_sub.hackathon_id);
 
-  if exists (select 1 from public.hackathons h where h.id = v_sub.hackathon_id and h.released_at is not null) then
+  select h.released_at into v_released
+    from public.hackathons h where h.id = v_sub.hackathon_id for share;
+
+  if v_released is not null then
     raise exception 'already_released'
       using errcode = 'QD409', detail = 'Grades are released; finalists are fixed.';
   end if;
@@ -2510,6 +2754,50 @@ comment on function public.regrade_submission(uuid) is
 -- 9. Judges (first-party, judge+, after release, finalists only)
 -- ----------------------------------------------------------------------------
 
+-- The finalists to judge, in pitch order, then by submission id: never in
+-- AI rank order (D-116).
+create or replace function public.hackathon_finals_for_judge(p_hackathon_id uuid)
+returns table (
+  submission_id uuid,
+  team_name     text,
+  project_slug  text,
+  pitch_order   integer
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.assert_first_party_session();
+
+  if not exists (select 1 from public.hackathons h where h.id = p_hackathon_id) then
+    raise exception 'No such hackathon.' using errcode = 'P0002';
+  end if;
+
+  if not public.is_hackathon_staff(p_hackathon_id, 'judge') then
+    raise exception 'Only this hackathon''s judges can see its finalists.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.hackathons h where h.id = p_hackathon_id and h.released_at is not null) then
+    raise exception 'grades_not_released'
+      using errcode = 'QD409', detail = 'Finalists are known once grades are released.';
+  end if;
+
+  return query
+    select f.submission_id, s.team_name, p.slug, f.pitch_order
+      from public.hackathon_finalists f
+      join public.hackathon_submissions s on s.id = f.submission_id
+      join public.projects p on p.id = s.project_id
+     where f.hackathon_id = p_hackathon_id
+     order by f.pitch_order nulls last, f.submission_id;
+end;
+$$;
+
+comment on function public.hackathon_finals_for_judge(uuid) is
+  'SECURITY DEFINER, first-party, hackathon judge+ (admins included), after release. The finalists (submission, team, project slug, pitch order) ordered by pitch_order nulls last, then submission_id: never by AI rank.';
+
+
 create or replace function public.upsert_judge_score(
   p_submission_id uuid,
   p_clarity       integer,
@@ -2527,6 +2815,7 @@ set search_path = ''
 as $$
 declare
   v_hackathon uuid;
+  v_released  timestamptz;
   v_note      text := nullif(btrim(coalesce(p_note, '')), '');
 begin
   perform public.assert_first_party_session();
@@ -2538,7 +2827,10 @@ begin
     raise exception 'Only this hackathon''s judges can score its finalists.' using errcode = '42501';
   end if;
 
-  if not exists (select 1 from public.hackathons h where h.id = v_hackathon and h.released_at is not null) then
+  select h.released_at into v_released
+    from public.hackathons h where h.id = v_hackathon for share;
+
+  if v_released is null then
     raise exception 'grades_not_released'
       using errcode = 'QD409', detail = 'Judging opens when grades are released.';
   end if;
@@ -2614,6 +2906,28 @@ comment on function public.record_doqtri_chain_check(uuid, jsonb) is
   'SECURITY DEFINER, service_role only. Stores the route''s per-note registry check on a doqtri snapshot (qdit id).';
 
 
+-- Whether a version belongs to a hackathon whose grades are released:
+-- nothing is graded after that. Internal.
+create or replace function public.hackathon_version_released(p_version_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce((
+    select h.released_at is not null
+      from public.hackathon_submission_versions v
+      join public.hackathon_submissions s on s.id = v.submission_id
+      join public.hackathons h on h.id = s.hackathon_id
+     where v.id = p_version_id
+  ), true);
+$$;
+
+comment on function public.hackathon_version_released(uuid) is
+  'Internal. True when p_version_id''s hackathon has released grades (or the version is gone): the queue functions then do nothing.';
+
+
 create or replace function public.claim_grading_jobs(
   p_limit         integer default 5,
   p_lease_seconds integer default 200,
@@ -2663,7 +2977,7 @@ begin
      set status = case when j.attempts - j.free_attempts >= 3 then 'failed' else 'pending' end,
          lease_until = null,
          next_attempt_at = now(),
-         last_error = left(coalesce(j.last_error || '; ', '') || 'lease expired', 2000)
+         last_error = 'lease_expired'
    where j.status = 'running'
      and j.lease_until < now();
 
@@ -2684,6 +2998,7 @@ begin
        and d.next_attempt_at <= now()
        and d.attempts - d.free_attempts < 3
        and (p_version_id is null or d.version_id = p_version_id)
+       and not public.hackathon_version_released(d.version_id)
      order by d.next_attempt_at, d.created_at, d.id
      limit v_limit
      for update of d skip locked
@@ -2701,18 +3016,19 @@ begin
          s.id, s.hackathon_id, s.project_id, v.team_name, v.member_ids, v.image_paths,
          v.submitted_at, v.qdit_snapshot, ds.payload,
          h.opens_at, h.closes_at, h.team_min, h.team_max,
-         s.current_version_id, s.eligibility_override, v.eligibility
+         s.current_version_id, o.value, v.eligibility
     from claimed c
     join public.hackathon_submission_versions v on v.id = c.version_id
     join public.hackathon_submissions s on s.id = v.submission_id
     join public.hackathons h on h.id = s.hackathon_id
     left join public.hackathon_doqtri_snapshots ds on ds.id = v.doqtri_snapshot_id
+    left join public.hackathon_eligibility_overrides o on o.submission_id = s.id
    order by c.lease_until, c.id;
 end;
 $$;
 
 comment on function public.claim_grading_jobs(integer, integer, uuid) is
-  'SECURITY DEFINER, service_role only. Expires lapsed leases (failed after 3 attempts), then leases up to p_limit due pending jobs (optionally of one version) with skip locked, never more than 20 running in total. Returns each with the frozen version, its doqtri payload, the hackathon window, the entry''s current_version_id and eligibility_override, and the version''s stored eligibility.';
+  'SECURITY DEFINER, service_role only. Expires lapsed leases (failed after 3 counted attempts), then leases up to p_limit due pending jobs (optionally of one version, never of a released hackathon) with skip locked, never more than 20 running in total. Returns each with the frozen version, its doqtri payload, the hackathon window, the entry''s current_version_id and eligibility_override, and the version''s stored eligibility.';
 
 
 create or replace function public.complete_grading_job(
@@ -2743,7 +3059,8 @@ begin
 
   -- Superseded, failed, settled, or leased again since this claim: nothing
   -- to record.
-  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt
+     or public.hackathon_version_released(v_job.version_id) then
     return 'stale';
   end if;
 
@@ -2792,13 +3109,19 @@ as $$
 declare
   v_job    public.hackathon_grading_jobs;
   v_status text;
+  v_error  text := coalesce(p_error, 'unknown_error');
 begin
+  if v_error !~ '^[a-z0-9_:.-]{1,80}$' then
+    raise exception 'error must be a code: ^[a-z0-9_:.-]{1,80}$.' using errcode = '22023', hint = 'error';
+  end if;
+
   select * into v_job from public.hackathon_grading_jobs j where j.id = p_job_id for update;
   if not found then
     raise exception 'No such job.' using errcode = 'P0002';
   end if;
 
-  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt
+     or public.hackathon_version_released(v_job.version_id) then
     return 'stale';
   end if;
 
@@ -2812,7 +3135,7 @@ begin
            free_attempts = j.free_attempts + 1,
            lease_until = null,
            next_attempt_at = now() + make_interval(secs => greatest(0, least(coalesce(p_retry_after_seconds, 60), 3600))),
-           last_error = left(coalesce(p_error, 'unknown error'), 2000)
+           last_error = v_error
      where j.id = p_job_id;
     return 'pending';
   end if;
@@ -2824,7 +3147,7 @@ begin
                   end,
          lease_until = null,
          next_attempt_at = now() + make_interval(secs => greatest(0, least(coalesce(p_retry_after_seconds, 60), 3600))),
-         last_error = left(coalesce(p_error, 'unknown error'), 2000)
+         last_error = v_error
    where j.id = p_job_id
   returning j.status into v_status;
 
@@ -2848,14 +3171,20 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_job public.hackathon_grading_jobs;
+  v_job    public.hackathon_grading_jobs;
+  v_reason text := coalesce(nullif(btrim(p_reason), ''), 'skipped');
 begin
+  if v_reason !~ '^[a-z0-9_:.-]{1,80}$' then
+    raise exception 'reason must be a code: ^[a-z0-9_:.-]{1,80}$.' using errcode = '22023', hint = 'reason';
+  end if;
+
   select * into v_job from public.hackathon_grading_jobs j where j.id = p_job_id for update;
   if not found then
     raise exception 'No such job.' using errcode = 'P0002';
   end if;
 
-  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt then
+  if v_job.status <> 'running' or v_job.attempts is distinct from p_attempt
+     or public.hackathon_version_released(v_job.version_id) then
     return 'stale';
   end if;
 
@@ -2863,7 +3192,7 @@ begin
   update public.hackathon_grading_jobs j
      set status = 'done',
          lease_until = null,
-         last_error = left(coalesce(nullif(btrim(p_reason), ''), 'skipped'), 2000)
+         last_error = v_reason
    where j.id = p_job_id;
 
   return 'done';
@@ -2929,7 +3258,7 @@ declare
 begin
   if not exists (
     select 1 from public.hackathon_submissions s where s.current_version_id = p_version_id
-  ) then
+  ) or public.hackathon_version_released(p_version_id) then
     return null;
   end if;
 
@@ -3001,12 +3330,20 @@ as $$
 declare
   v_count integer;
 begin
+  -- Released: 90 days after the close or the last late pass, whichever is
+  -- later. Never released: 180 days after the close.
   delete from public.hackathon_doqtri_snapshots ds
    where ds.id in (
      select d.id
        from public.hackathon_doqtri_snapshots d
        join public.hackathons h on h.id = d.hackathon_id
-      where h.closes_at < now() - interval '90 days'
+      where (h.released_at is not null
+             and now() > greatest(
+                   h.closes_at,
+                   (select max(lp.until) from public.hackathon_late_passes lp where lp.hackathon_id = h.id)
+                 ) + interval '90 days')
+         or (h.released_at is null
+             and now() > h.closes_at + interval '180 days')
       limit 5000
    );
   get diagnostics v_count = row_count;
@@ -3015,7 +3352,7 @@ end;
 $$;
 
 comment on function public.prune_hackathon_doqtri_snapshots() is
-  'Run daily by pg_cron (qdit-prune-hackathon-snapshots): deletes doqtri snapshots of hackathons that closed over 90 days ago, 5,000 per run. Versions keep a null reference. Returns the count.';
+  'Run daily by pg_cron (qdit-prune-hackathon-snapshots): deletes doqtri snapshots of a released hackathon 90 days after the later of its close and its last late pass, and of an unreleased one 180 days after its close; 5,000 per run. Versions keep a null reference. Returns the count.';
 
 
 -- ----------------------------------------------------------------------------
@@ -3028,11 +3365,11 @@ comment on function public.prune_hackathon_doqtri_snapshots() is
 -- Pure helpers, harmless anywhere a policy needs them.
 revoke all on function public.hackathon_role_rank(public.hackathon_role) from public, anon;
 revoke all on function public.hackathon_entry_eligible(boolean, jsonb)   from public, anon;
-revoke all on function public.hackathon_clip_text(text)                  from public, anon;
+revoke all on function public.hackathon_clip_text(text, integer)         from public, anon;
 revoke all on function public.hackathon_mindmap_path(text)               from public, anon;
 grant execute on function public.hackathon_role_rank(public.hackathon_role) to authenticated, service_role;
 grant execute on function public.hackathon_entry_eligible(boolean, jsonb)   to authenticated, service_role;
-grant execute on function public.hackathon_clip_text(text)                  to authenticated, service_role;
+grant execute on function public.hackathon_clip_text(text, integer)         to authenticated, service_role;
 grant execute on function public.hackathon_mindmap_path(text)               to authenticated, service_role;
 
 -- Called from policies as the signed-in user.
@@ -3048,7 +3385,8 @@ revoke all on function public.hackathon_window_state(uuid, uuid)        from pub
 revoke all on function public.assert_hackathon_open(uuid, uuid)         from public, anon, authenticated, service_role;
 revoke all on function public.assert_hackathon_admin(uuid)              from public, anon, authenticated, service_role;
 revoke all on function public.hackathon_current_ai(uuid)                from public, anon, authenticated, service_role;
-revoke all on function public.build_hackathon_qdit_snapshot(uuid)       from public, anon, authenticated, service_role;
+revoke all on function public.build_hackathon_qdit_snapshot(uuid, integer) from public, anon, authenticated, service_role;
+revoke all on function public.hackathon_version_released(uuid)          from public, anon, authenticated, service_role;
 
 -- Signed-in users (each checks session kind and role itself).
 revoke all on function public.submit_hackathon_entry(uuid, uuid, text, uuid[], text[]) from public, anon;
@@ -3060,6 +3398,7 @@ revoke all on function public.grant_late_pass(uuid, uuid, timestamptz)       fro
 revoke all on function public.set_eligibility_override(uuid, boolean, text)  from public, anon;
 revoke all on function public.set_hackathon_staff(uuid, text, public.hackathon_role) from public, anon;
 revoke all on function public.hackathon_staff_list(uuid)                     from public, anon;
+revoke all on function public.hackathon_finals_for_judge(uuid)               from public, anon;
 revoke all on function public.set_pitch_order(uuid, uuid[])                  from public, anon;
 revoke all on function public.regrade_submission(uuid)                       from public, anon;
 revoke all on function public.upsert_judge_score(uuid, integer, integer, integer, integer, integer, text) from public, anon;
@@ -3073,6 +3412,7 @@ grant execute on function public.grant_late_pass(uuid, uuid, timestamptz)       
 grant execute on function public.set_eligibility_override(uuid, boolean, text)  to authenticated;
 grant execute on function public.set_hackathon_staff(uuid, text, public.hackathon_role) to authenticated;
 grant execute on function public.hackathon_staff_list(uuid)                     to authenticated;
+grant execute on function public.hackathon_finals_for_judge(uuid)               to authenticated;
 grant execute on function public.set_pitch_order(uuid, uuid[])                  to authenticated;
 grant execute on function public.regrade_submission(uuid)                       to authenticated;
 grant execute on function public.upsert_judge_score(uuid, integer, integer, integer, integer, integer, text) to authenticated;
