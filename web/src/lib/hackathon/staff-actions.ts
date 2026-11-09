@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { ActionState } from "@/lib/actions";
-import { staffErrorMessage, type RpcError } from "@/lib/hackathon/staff-errors";
+import { OVERRIDE_RELEASED_COPY, staffErrorMessage, type RpcError } from "@/lib/hackathon/staff-errors";
 import { manilaLocalToIso } from "@/lib/hackathon/staff-view";
 import { MAX_JUDGE_SCORE, MIN_JUDGE_SCORE } from "@/lib/hackathon/leaderboard";
 import { createClient } from "@/lib/supabase/server";
@@ -73,6 +73,7 @@ export async function setEligibilityOverride(
     p_value: value === "clear" ? null : value === "true",
     p_reason: value === "clear" ? null : reason,
   });
+  if (error?.code === "QD409" && error.message === "already_released") return { error: OVERRIDE_RELEASED_COPY };
   if (error) return fail(error);
 
   revalidate();

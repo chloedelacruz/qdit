@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { ARGUMENT_COPY, CONFLICT_COPY, staffErrorMessage } from "@/lib/hackathon/staff-errors";
+import { ARGUMENT_COPY, CONFLICT_COPY, gradingIncompleteCopy, staffErrorMessage } from "@/lib/hackathon/staff-errors";
 
 /**
  * Every QD409 token and every 22023 hint the hackathon migration can raise
@@ -56,12 +56,29 @@ describe("staffErrorMessage", () => {
     expect(text).not.toMatch(GENERIC);
   });
 
-  it("says how incomplete grading is, from DETAIL", () => {
-    expect(
-      staffErrorMessage({ code: "QD409", message: "grading_incomplete", details: "3 grading runs pending and 1 running." }),
-    ).toBe(
-      "Grading is not finished: 3 grading runs pending and 1 running. Release anyway only if you accept that those entries may miss the finals.",
+  it("says how many entries are still grading, from DETAIL", () => {
+    expect(staffErrorMessage({ code: "QD409", message: "grading_incomplete", details: "3 entries still grading" })).toBe(
+      "Grading is not finished. 3 entries still grading. Release anyway only if you accept that those entries may miss the finals.",
     );
+    // SQL's own format() says "1 entries"; the copy says it properly.
+    for (const details of ["1 entries still grading.", "1 entry still grading."]) {
+      expect(staffErrorMessage({ code: "QD409", message: "grading_incomplete", details })).toContain(
+        " 1 entry still grading. ",
+      );
+    }
+  });
+
+  it("never shows per-run counts for grading_incomplete", () => {
+    const text = staffErrorMessage({
+      code: "QD409",
+      message: "grading_incomplete",
+      details: "2 grading runs pending and 1 running.",
+    });
+    expect(text).toBe(
+      "Grading is not finished. Release anyway only if you accept that those entries may miss the finals.",
+    );
+    expect(text).not.toMatch(/run/);
+    expect(gradingIncompleteCopy(null)).toBe(text);
   });
 
   it("names the last-admin rule in plain words", () => {

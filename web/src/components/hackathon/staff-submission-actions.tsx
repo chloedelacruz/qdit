@@ -12,7 +12,7 @@ import {
   regradeSubmission,
   setEligibilityOverride,
 } from "@/lib/hackathon/staff-actions";
-import { formatManila, isoToManilaLocal } from "@/lib/hackathon/staff-view";
+import { formatManila, isoToManilaLocal, toPlainText } from "@/lib/hackathon/staff-view";
 
 /**
  * The per-entry controls of the admin submissions table (WP-4.7, QDIT-48):
@@ -41,14 +41,10 @@ export function StaffSubmissionActions({
   closesAt: string;
   released: boolean;
 }) {
+  const name = toPlainText(teamName, 80);
   return (
     <div className="flex items-center justify-end gap-1">
-      <OverrideDialog
-        submissionId={submissionId}
-        teamName={teamName}
-        override={override}
-        overrideReason={overrideReason}
-      />
+      {/* Gone after release: finalists are fixed and the RPC refuses (already_released). */}
       {released ? (
         <>
           <DisabledReason reason="Grades are released; finalists are fixed.">
@@ -64,11 +60,17 @@ export function StaffSubmissionActions({
         </>
       ) : (
         <>
-          <RegradeDialog submissionId={submissionId} teamName={teamName} />
+          <OverrideDialog
+            submissionId={submissionId}
+            teamName={name}
+            override={override}
+            overrideReason={overrideReason}
+          />
+          <RegradeDialog submissionId={submissionId} teamName={name} />
           <LatePassDialog
             hackathonId={hackathonId}
             projectId={projectId}
-            teamName={teamName}
+            teamName={name}
             latePassUntil={latePassUntil}
             closesAt={closesAt}
           />

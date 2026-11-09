@@ -12,6 +12,7 @@ import {
   removeHackathonStaff,
   type StaffActionState,
 } from "@/lib/hackathon/staff-actions";
+import { toPlainText } from "@/lib/hackathon/staff-view";
 import { ICON } from "@/lib/icons";
 
 export interface StaffMember {
@@ -109,7 +110,7 @@ function StaffRow({
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const name = member.username ?? member.user_id.slice(0, 8);
+  const name = toPlainText(member.username ?? member.user_id.slice(0, 8), 64);
 
   return (
     <li className="px-3 py-1.5 text-sm">
@@ -117,7 +118,7 @@ function StaffRow({
       <span className="min-w-0 flex-1 truncate">
         <span className="font-medium">@{name}</span>
         {member.display_name ? (
-          <span className="ml-2 text-muted-foreground">{member.display_name}</span>
+          <span className="ml-2 text-muted-foreground">{toPlainText(member.display_name, 120)}</span>
         ) : null}
         {isSelf ? <span className="ml-2 text-xs text-muted-foreground">(you)</span> : null}
       </span>

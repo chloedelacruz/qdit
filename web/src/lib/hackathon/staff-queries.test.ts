@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { humanMean, rankFinal } from "@/lib/hackathon/leaderboard";
+import { rankFinal } from "@/lib/hackathon/leaderboard";
 import {
   buildLeaderboard,
-  judgeScoresFromMean,
   loadAdminConsole,
   loadJudgeConsole,
   loadSubmissionView,
@@ -76,6 +75,7 @@ function boardRow(id: string, over: Partial<LeaderboardRow> = {}): LeaderboardRo
     pitch_order: null,
     judge_mean: null,
     judge_count: 0,
+    judge_scores: [],
     ...over,
   };
 }
@@ -115,25 +115,6 @@ describe("loadAdminConsole", () => {
   });
 });
 
-describe("judgeScoresFromMean", () => {
-  it.each([
-    [20, 2],
-    [20.33, 3],
-    [17.5, 2],
-    [25, 4],
-    [5, 1],
-    [12.67, 3],
-  ])("mean %s over %s judges round-trips through humanMean", (mean, count) => {
-    const scores = judgeScoresFromMean("s", mean, count);
-    expect(scores).toHaveLength(count);
-    expect(humanMean(scores)).toBe(mean);
-  });
-
-  it("is empty when nobody scored", () => {
-    expect(judgeScoresFromMean("s", null, 0)).toEqual([]);
-  });
-});
-
 describe("buildLeaderboard", () => {
   it("adds disagreement from versionGrade when two runs disagree and the third run failed", () => {
     const row = boardRow("a", {
@@ -168,10 +149,21 @@ describe("buildLeaderboard", () => {
     expect(buildLeaderboard([row], [status])[0].flags).toEqual(["disagreement"]);
   });
 
-  it("orders exactly as rankFinal does, finalists by the judges' mean", () => {
+  it("passes every judge's own scores to rankFinal: finalists by the judges' mean", () => {
+    const js = (judge_id: string, v: number) => ({
+      judge_id,
+      clarity: v,
+      structure: v,
+      accuracy: v,
+      connections: v,
+      pitch: v,
+    });
+    // a: 20 and 15 -> 17.5; b: 25, 20, 20 -> 21.67 (not the mean of rounded means).
+    const aScores = [js("j1", 4), js("j2", 3)];
+    const bScores = [js("j1", 5), js("j2", 4), js("j3", 4)];
     const rows = [
-      boardRow("a", { ai_total: 90, finalist: true, judge_mean: 18, judge_count: 2 }),
-      boardRow("b", { ai_total: 80, finalist: true, judge_mean: 22.5, judge_count: 2 }),
+      boardRow("a", { ai_total: 90, finalist: true, judge_mean: 17.5, judge_count: 2, judge_scores: aScores }),
+      boardRow("b", { ai_total: 80, finalist: true, judge_mean: 21.67, judge_count: 3, judge_scores: bScores }),
       boardRow("c", { ai_total: 70 }),
       boardRow("d", { ai_total: 95, eligible: false }),
     ];
@@ -193,10 +185,29 @@ describe("buildLeaderboard", () => {
         project_slug: r.project_slug,
         flags: [],
       })),
-      { a: judgeScoresFromMean("a", 18, 2), b: judgeScoresFromMean("b", 22.5, 2) },
+      { a: aScores, b: bScores },
     );
-    expect(ranked.map((r) => r.submission_id)).toEqual(direct.map((r) => r.submission_id));
-    expect(ranked.map((r) => r.human_mean)).toEqual([22.5, 18, null, null]);
+    expect(ranked.map((r) => [r.submission_id, r.human_mean, r.judge_count])).toEqual(
+      direct.map((r) => [r.submission_id, r.human_mean, r.judge_count]),
+    );
+    expect(ranked.map((r) => r.human_mean)).toEqual([21.67, 17.5, null, null]);
+  });
+
+  it("does not need judge_mean: the order comes from judge_scores", () => {
+    const rows = [
+      boardRow("a", { ai_total: 90, finalist: true, judge_mean: 25, judge_count: 1, judge_scores: [] }),
+      boardRow("b", {
+        ai_total: 80,
+        finalist: true,
+        judge_mean: null,
+        judge_count: 0,
+        judge_scores: [{ judge_id: "j1", clarity: 2, structure: 2, accuracy: 2, connections: 2, pitch: 2 }],
+      }),
+    ];
+    expect(buildLeaderboard(rows, []).map((r) => [r.submission_id, r.human_mean])).toEqual([
+      ["b", 10],
+      ["a", null],
+    ]);
   });
 });
 

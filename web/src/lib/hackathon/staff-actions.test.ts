@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { CONFLICT_COPY } from "@/lib/hackathon/staff-errors";
+import { CONFLICT_COPY, OVERRIDE_RELEASED_COPY } from "@/lib/hackathon/staff-errors";
 import { fakeDatabase } from "@/test/fake-supabase";
 
 /**
@@ -96,7 +96,7 @@ describe("releaseGrades", () => {
         release_hackathon_grades: [
           {
             data: null,
-            error: { code: "QD409", message: "grading_incomplete", details: "2 grading runs pending and 1 running." },
+            error: { code: "QD409", message: "grading_incomplete", details: "3 entries still grading" },
           },
           { data: 7, error: null },
         ],
@@ -105,7 +105,9 @@ describe("releaseGrades", () => {
 
     const first = await actions.releaseGrades({}, form({ hackathonId: H, confirmSlug: "manila-26" }));
     expect(first.needsAllowIncomplete).toBe(true);
-    expect(first.error).toContain("2 grading runs pending and 1 running.");
+    expect(first.error).toBe(
+      "Grading is not finished. 3 entries still grading. Release anyway only if you accept that those entries may miss the finals.",
+    );
     expect(first.ok).toBeUndefined();
 
     const second = await actions.releaseGrades(
@@ -195,6 +197,18 @@ describe("setEligibilityOverride", () => {
     const fake = db({ rpc: { set_eligibility_override: [{ data: null, error: null }] } });
     await actions.setEligibilityOverride({}, form({ submissionId: S, value: "clear", reason: "ignored" }));
     expect(fake.requests[0].args).toEqual({ p_submission_id: S, p_value: null, p_reason: null });
+  });
+
+  it("says eligibility is fixed when the RPC answers already_released", async () => {
+    db({
+      rpc: {
+        set_eligibility_override: [
+          { data: null, error: { code: "QD409", message: "already_released", details: "Grades are released." } },
+        ],
+      },
+    });
+    const result = await actions.setEligibilityOverride({}, form({ submissionId: S, value: "true", reason: "Late fix" }));
+    expect(result).toEqual({ error: OVERRIDE_RELEASED_COPY });
   });
 
   it("maps a 22023 reason hint", async () => {
