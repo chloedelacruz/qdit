@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/deliver-webhooks",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/grade-hackathon",
+      "schedule": "30 3 * * *"
     }
   ],
   "git": {
