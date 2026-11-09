@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(212);
+select plan(250);
 
 
 -- ----------------------------------------------------------------------------
@@ -47,7 +47,7 @@ select '00000000-0000-0000-0000-000000000000',
        '{"provider":"email","providers":["email"]}',
        jsonb_build_object('full_name', 'Hk ' || n, 'username', 'hk_u' || lpad(n::text, 2, '0')),
        now(), now()
-  from generate_series(1, 23) as n;
+  from generate_series(1, 26) as n;
 
 -- P1 (u01 owner; u02 admin, u03 member, u04 viewer, u05 member),
 -- P2 (u06; u07, u08, and u05 again), P3 (u10; u11, u12), P4 (u13; u14, u15),
@@ -74,12 +74,17 @@ values
   ('b7000000-0000-4000-8000-000000000004', 'a7000000-0000-4000-8000-000000000014', 'member'),
   ('b7000000-0000-4000-8000-000000000004', 'a7000000-0000-4000-8000-000000000015', 'member'),
   ('b7000000-0000-4000-8000-000000000005', 'a7000000-0000-4000-8000-000000000017', 'member'),
-  ('b7000000-0000-4000-8000-000000000005', 'a7000000-0000-4000-8000-000000000018', 'member');
+  ('b7000000-0000-4000-8000-000000000005', 'a7000000-0000-4000-8000-000000000018', 'member'),
+  -- The judge u21 is also in P5, for the staff/team separation (member_is_staff).
+  ('b7000000-0000-4000-8000-000000000005', 'a7000000-0000-4000-8000-000000000021', 'viewer');
 
 -- P1's board: a milestone, two tasks (one with an over-long description), and
 -- one row in every other table the snapshot copies.
-insert into public.milestones (id, project_id, title, status)
-values ('f7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'Escrow contract', 'submitted');
+-- The milestone's description is 5,000 emoji (4 bytes each): clipped by
+-- characters, not bytes.
+insert into public.milestones (id, project_id, title, description, status)
+values ('f7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'Escrow contract',
+        repeat(U&'\+01F600', 5000), 'submitted');
 
 insert into public.tasks (id, project_id, milestone_id, title, description, assignee_id, priority, due_date, status, created_at)
 values
@@ -194,7 +199,8 @@ create function pg_temp.hk_tables() returns text[]
 language sql as $$
   select array['hackathons', 'hackathon_staff', 'hackathon_late_passes', 'hackathon_doqtri_snapshots',
                'hackathon_submissions', 'hackathon_team_members', 'hackathon_submission_versions',
-               'hackathon_grading_jobs', 'hackathon_ai_runs', 'hackathon_finalists', 'hackathon_judge_scores'];
+               'hackathon_eligibility_overrides', 'hackathon_grading_jobs', 'hackathon_ai_runs',
+               'hackathon_finalists', 'hackathon_finalist_ranks', 'hackathon_judge_scores'];
 $$;
 
 -- As the current role: 'table:rows' for each hackathon table that answers
@@ -208,11 +214,7 @@ declare
 begin
   foreach t in array pg_temp.hk_tables() loop
     begin
-      if t = 'hackathon_finalists' then
-        execute 'select count(submission_id) from public.hackathon_finalists' into n;
-      else
-        execute format('select count(*) from public.%I', t) into n;
-      end if;
+      execute format('select count(*) from public.%I', t) into n;
       if n > 0 then out := out || (t || ':' || n); end if;
     exception when insufficient_privilege then
       out := out || (t || ':denied');
@@ -231,6 +233,12 @@ create function pg_temp.img(p_h int, p_p int, p_n int, p_ext text default 'png')
 language sql as $$
   select 'c7000000-0000-4000-8000-00000000000' || p_h || '/b7000000-0000-4000-8000-00000000000' || p_p
          || '/d7000000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0') || '.' || p_ext;
+$$;
+
+-- An entry's submission id, whoever is asking.
+create function pg_temp.sub(p_version text) returns uuid
+language sql security definer as $$
+  select submission_id from public.hackathon_submission_versions where id = current_setting(p_version)::uuid;
 $$;
 
 grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
@@ -255,9 +263,31 @@ select is_empty(
 
 select is_empty(
   $$ select tablename from pg_catalog.pg_policies
-      where schemaname = 'public' and tablename in ('hackathon_ai_runs', 'hackathon_grading_jobs')
+      where schemaname = 'public'
+        and tablename in ('hackathon_ai_runs', 'hackathon_grading_jobs', 'hackathon_finalists',
+                          'hackathon_finalist_ranks', 'hackathon_eligibility_overrides')
         and permissive = 'PERMISSIVE' $$,
-  'hackathon_ai_runs and hackathon_grading_jobs have no permissive policy at all (D-116)'
+  'the runs, the queue, finalists, their ranks and overrides have no permissive policy at all (D-116)'
+);
+
+select is_empty(
+  $$ select c.relname from pg_catalog.pg_attribute a
+       join pg_catalog.pg_class c on c.oid = a.attrelid
+      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+        and a.attname = 'ai_rank' and a.attnum > 0
+        and (has_table_privilege('authenticated', c.oid, 'select')
+             or has_column_privilege('authenticated', c.oid, a.attnum, 'select')) $$,
+  'no table authenticated can read has an ai_rank column'
+);
+
+select is_empty(
+  $$ select i.indexrelid::regclass from pg_catalog.pg_index i
+       join pg_catalog.pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+       join pg_catalog.pg_class c on c.oid = i.indrelid
+      where c.relnamespace = 'public'::regnamespace
+        and a.attname = 'ai_rank'
+        and has_any_column_privilege('authenticated', c.oid, 'select') $$,
+  'no index on a client-readable table leads with ai_rank'
 );
 
 select is_empty(
@@ -271,8 +301,18 @@ select is_empty(
   $$ select table_name, grantee from information_schema.role_table_grants
       where table_schema = 'public' and table_name like 'hackathon%'
         and (grantee = 'anon'
-             or (grantee = 'authenticated' and table_name in ('hackathon_ai_runs', 'hackathon_grading_jobs'))) $$,
-  'anon holds no grant on any hackathon table; authenticated none on the runs and the queue'
+             or (grantee = 'authenticated'
+                 and table_name in ('hackathon_ai_runs', 'hackathon_grading_jobs', 'hackathon_finalists',
+                                    'hackathon_finalist_ranks', 'hackathon_eligibility_overrides'))) $$,
+  'anon holds no grant on any hackathon table; authenticated none on the runs, queue, finalists, ranks and overrides'
+);
+
+select is_empty(
+  $$ select column_name from information_schema.column_privileges
+      where table_schema = 'public' and grantee = 'authenticated'
+        and ((table_name = 'hackathon_submission_versions' and column_name = 'eligibility')
+             or (table_name = 'hackathon_submissions' and column_name = 'updated_at')) $$,
+  'authenticated is granted neither versions.eligibility nor submissions.updated_at'
 );
 
 select is_empty(
@@ -286,16 +326,28 @@ select is_empty(
   'anon can execute none of the hackathon functions'
 );
 
+-- The sweep: every hackathon function, the assert_ helpers and the queue,
+-- minus the ones a signed-in user is meant to call.
 select is_empty(
-  $$ select p.proname from pg_catalog.pg_proc p
+  $$ select p.oid::regprocedure from pg_catalog.pg_proc p
       where p.pronamespace = 'public'::regnamespace
-        and p.proname in ('claim_grading_jobs', 'complete_grading_job', 'fail_grading_job', 'enqueue_third_run',
-                          'set_version_eligibility', 'record_doqtri_chain_check', 'prune_hackathon_doqtri_snapshots',
-                          'hackathon_current_ai', 'build_hackathon_qdit_snapshot', 'hackathon_window_state',
-                          'hackathon_grading_scheduler_health', 'request_hackathon_grading',
-                          'skip_grading_job', 'hackathon_version_progress')
+        and (p.proname like '%hackathon%'
+             or p.proname like 'assert\_%'
+             or p.proname in ('claim_grading_jobs', 'complete_grading_job', 'fail_grading_job', 'skip_grading_job',
+                              'enqueue_third_run', 'set_version_eligibility', 'record_doqtri_chain_check',
+                              'grant_late_pass', 'set_eligibility_override', 'set_pitch_order',
+                              'regrade_submission', 'upsert_judge_score'))
+        and p.proname not in (
+              -- called from policies
+              'is_hackathon_staff', 'hackathon_role_rank', 'hackathon_entry_eligible', 'hackathon_clip_text',
+              'hackathon_mindmap_path', 'hackathon_mindmap_upload_allowed', 'hackathon_mindmap_read_allowed',
+              -- the user RPCs, each checking session and role itself
+              'submit_hackathon_entry', 'push_doqtri_hackathon_snapshot', 'hackathon_grading_status',
+              'hackathon_leaderboard', 'release_hackathon_grades', 'grant_late_pass', 'set_eligibility_override',
+              'set_hackathon_staff', 'hackathon_staff_list', 'set_pitch_order', 'regrade_submission',
+              'hackathon_finals_for_judge', 'upsert_judge_score')
         and has_function_privilege('authenticated', p.oid, 'execute') $$,
-  'authenticated can execute none of the service-role and internal functions'
+  'authenticated can execute no hackathon, assert_ or queue function outside the allowlist'
 );
 
 select ok(
@@ -317,8 +369,9 @@ select is(
   array['hackathons:denied', 'hackathon_staff:denied', 'hackathon_late_passes:denied',
         'hackathon_doqtri_snapshots:denied', 'hackathon_submissions:denied',
         'hackathon_team_members:denied', 'hackathon_submission_versions:denied',
-        'hackathon_grading_jobs:denied', 'hackathon_ai_runs:denied',
-        'hackathon_finalists:denied', 'hackathon_judge_scores:denied'],
+        'hackathon_eligibility_overrides:denied', 'hackathon_grading_jobs:denied',
+        'hackathon_ai_runs:denied', 'hackathon_finalists:denied', 'hackathon_finalist_ranks:denied',
+        'hackathon_judge_scores:denied'],
   'anon: every hackathon table refuses the read'
 );
 
@@ -683,6 +736,14 @@ select results_eq(
   'snapshot: a 5,000-character description is clipped to 4,000 with the marker, and truncated is set'
 );
 
+select results_eq(
+  $$ select char_length(pg_temp.snap() -> 'milestones' -> 0 ->> 'description'),
+            right(pg_temp.snap() -> 'milestones' -> 0 ->> 'description', 12),
+            left(pg_temp.snap() -> 'milestones' -> 0 ->> 'description', 1) = U&'\+01F600' $$,
+  $$ values (4000, ' [truncated]'::text, true) $$,
+  'snapshot: 5,000 emoji are clipped to 4,000 characters, not bytes'
+);
+
 -- An edit after the submit does not reach the frozen copy.
 update public.tasks set title = 'Edited later' where id = 'f7100000-0000-4000-8000-000000000001';
 
@@ -703,7 +764,7 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000001');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   '42501', 'Hackathon snapshots are sent from doqtri, through its connection to qdit.',
   'push: a first-party session is refused'
 );
@@ -712,7 +773,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001', '22222222
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   '42501', 'Only doqtri can send hackathon snapshots.',
   'push: another OAuth client is refused'
 );
@@ -725,7 +786,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000002');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   '42501', 'This app''s access to qdit was revoked.',
   'push: a token issued before its user revoked doqtri is refused'
 );
@@ -734,7 +795,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000003');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   '42501', 'Your role in this project does not allow that.',
   'push: below admin is refused'
 );
@@ -743,7 +804,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('no-such-slug', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   'P0002', 'No such hackathon.',
   'push: an unknown slug is not found'
 );
@@ -751,7 +812,7 @@ select throws_ok(
 select ok(
   set_config('hk.push1', public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
     'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001',
-    '{"notes": []}', repeat('a', 64), 3)::text, true) is not null,
+    '{"notes": [{}, {}, {}]}', repeat('a', 64), 3)::text, true) is not null,
   'push: doqtri''s client, for a project admin, in the window'
 );
 
@@ -767,7 +828,7 @@ select results_eq(
 select is(
   public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
     'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001',
-    '{"notes": []}', repeat('a', 64), 3) - 'replay',
+    '{"notes": [{}, {}, {}]}', repeat('a', 64), 3) - 'replay',
   current_setting('hk.push1')::jsonb - 'replay',
   'push: the same snapshot_id with the same hash answers the first answer'
 );
@@ -775,16 +836,40 @@ select is(
 select is(
   public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
     'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001',
-    '{"notes": []}', repeat('a', 64), 3) ->> 'replay',
+    '{"notes": [{}, {}, {}]}', repeat('a', 64), 3) ->> 'replay',
   'true',
   'push: ... flagged as a replay'
 );
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('b', 64), 3) $$,
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001', '{"notes": [{}, {}, {}]}', repeat('b', 64), 3) $$,
   'QD409', 'snapshot_conflict',
   'push: the same snapshot_id with another hash is a conflict'
+);
+
+select throws_ok(
+  $$ select public.push_doqtri_hackathon_snapshot('hk-closed', 'b7000000-0000-4000-8000-000000000001',
+            'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001',
+            '{"notes": [{}, {}, {}]}', repeat('a', 64), 3) $$,
+  'QD409', 'snapshot_conflict',
+  'push: the same snapshot_id and hash for another hackathon is a conflict'
+);
+
+select throws_ok(
+  $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
+            'e7000000-0000-4000-8000-000000000006', 'e7100000-0000-4000-8000-000000000001',
+            '{"notes": [{}]}', repeat('a', 64), 0) $$,
+  '22023', 'note_count must be the number of notes in the payload.',
+  'push: note_count must match the payload'
+);
+
+select throws_ok(
+  $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
+            'e7000000-0000-4000-8000-000000000007', 'e7100000-0000-4000-8000-000000000001',
+            jsonb_build_object('notes', '[]'::jsonb, 'pad', repeat('x', 2097152)), repeat('a', 64), 0) $$,
+  'QD413', 'payload_too_large',
+  'push: a payload over 2 MiB is refused in the database too'
 );
 
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000006');
@@ -801,14 +886,14 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-closed', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000002', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000002', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   'QD409', 'hackathon_closed',
   'push: closed window'
 );
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-future', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000003', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000003', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('a', 64), 0) $$,
   'QD409', 'hackathon_not_open',
   'push: not open yet'
 );
@@ -828,6 +913,26 @@ select lives_ok(
   'late pass: granted by the hackathon''s admin'
 );
 
+select throws_ok(
+  $$ select public.release_hackathon_grades('c7000000-0000-4000-8000-000000000002') $$,
+  'QD409', 'late_pass_active',
+  'release: refused while a late pass is in force'
+);
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000001');
+select lives_ok(
+  format($$ insert into storage.objects (bucket_id, name, owner) values ('hackathon-mindmaps', %L, auth.uid()) $$,
+         pg_temp.img(2, 1, 58)),
+  'storage: the late pass lets the owner upload to the closed hackathon'
+);
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000006');
+select throws_ok(
+  format($$ insert into storage.objects (bucket_id, name, owner) values ('hackathon-mindmaps', %L, auth.uid()) $$,
+         pg_temp.img(2, 2, 59)),
+  '42501', null,
+  'storage: but only for the project holding it'
+);
+
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001');
 
 select is(
@@ -842,7 +947,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000006');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-closed', 'b7000000-0000-4000-8000-000000000002',
-            'e7000000-0000-4000-8000-000000000009', 'e7100000-0000-4000-8000-000000000002', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000009', 'e7100000-0000-4000-8000-000000000002', '{"notes": []}', repeat('a', 64), 0) $$,
   'QD409', 'hackathon_closed',
   'push: the late pass is P1''s, not P2''s'
 );
@@ -873,7 +978,7 @@ select is(
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-closed', 'b7000000-0000-4000-8000-000000000001',
-            'e7000000-0000-4000-8000-000000000004', 'e7100000-0000-4000-8000-000000000001', '{}', repeat('d', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000004', 'e7100000-0000-4000-8000-000000000001', '{"notes": []}', repeat('d', 64), 0) $$,
   'QD409', 'hackathon_closed',
   'push: a new snapshot after the pass ended is refused'
 );
@@ -882,24 +987,24 @@ select throws_ok(
 select pg_temp.as_postgres();
 insert into public.hackathon_doqtri_snapshots (snapshot_id, hackathon_id, project_id, workspace_id, client_id, payload, payload_sha256, note_count)
 select gen_random_uuid(), 'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000003',
-       gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{}', repeat('f', 64), 0
+       gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{"notes": []}', repeat('f', 64), 0
   from generate_series(1, 29);
 insert into public.hackathon_doqtri_snapshots (snapshot_id, hackathon_id, project_id, workspace_id, client_id, payload, payload_sha256, note_count)
 values ('e7000000-0000-4000-8000-000000000030', 'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000003',
-        gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{}', repeat('e', 64), 0);
+        gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{"notes": []}', repeat('e', 64), 0);
 
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000010');
 
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000003',
-            'e7000000-0000-4000-8000-000000000031', 'e7100000-0000-4000-8000-000000000003', '{}', repeat('a', 64), 0) $$,
+            'e7000000-0000-4000-8000-000000000031', 'e7100000-0000-4000-8000-000000000003', '{"notes": []}', repeat('a', 64), 0) $$,
   'QD409', 'snapshot_limit',
   'push: the 31st snapshot for one entry is refused'
 );
 
 select is(
   public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000003',
-    'e7000000-0000-4000-8000-000000000030', 'e7100000-0000-4000-8000-000000000003', '{}', repeat('e', 64), 0) ->> 'replay',
+    'e7000000-0000-4000-8000-000000000030', 'e7100000-0000-4000-8000-000000000003', '{"notes": []}', repeat('e', 64), 0) ->> 'replay',
   'true',
   'push: a replay of one of the 30 still answers'
 );
@@ -929,7 +1034,7 @@ select throws_ok(
 select pg_temp.as_postgres();
 insert into public.hackathon_doqtri_snapshots (snapshot_id, hackathon_id, project_id, workspace_id, client_id, payload, payload_sha256, note_count, received_at)
 values ('e7000000-0000-4000-8000-000000000040', 'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001',
-        gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{}', repeat('9', 64), 0, now() - interval '1 hour');
+        gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{"notes": []}', repeat('9', 64), 0, now() - interval '1 hour');
 
 -- One of version 1's jobs is mid-run when the team resubmits.
 select pg_temp.as_service();
@@ -990,7 +1095,7 @@ select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001');
 select is(
   public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
     'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-000000000001',
-    '{"notes": []}', repeat('a', 64), 3) ->> 'submission_state',
+    '{"notes": [{}, {}, {}]}', repeat('a', 64), 3) ->> 'submission_state',
   'current',
   'push: a replay after the resubmit says the current version froze it'
 );
@@ -1011,6 +1116,13 @@ select ok(
   'P4 submits'
 );
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000016');
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000005', 'Team Five',
+            array['a7000000-0000-4000-8000-000000000016', 'a7000000-0000-4000-8000-000000000017', 'a7000000-0000-4000-8000-000000000021']::uuid[],
+            array[%L]) $$, pg_temp.img(1, 5, 6)),
+  'QD409', 'member_is_staff',
+  'submit: a judge of this hackathon cannot be on a team'
+);
 select ok(
   set_config('hk.p5v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000005', 'Team Five',
     array['a7000000-0000-4000-8000-000000000016', 'a7000000-0000-4000-8000-000000000017', 'a7000000-0000-4000-8000-000000000018']::uuid[],
@@ -1053,7 +1165,8 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000009');
 
 select is(
   pg_temp.hk_visible(),
-  array['hackathons:4', 'hackathon_grading_jobs:denied', 'hackathon_ai_runs:denied'],
+  array['hackathons:4', 'hackathon_eligibility_overrides:denied', 'hackathon_grading_jobs:denied',
+        'hackathon_ai_runs:denied', 'hackathon_finalists:denied', 'hackathon_finalist_ranks:denied'],
   'a stranger reads the hackathons and nothing else'
 );
 
@@ -1084,6 +1197,12 @@ select throws_ok(
 );
 
 select throws_ok(
+  $$ select * from public.hackathon_finals_for_judge('c7000000-0000-4000-8000-000000000001') $$,
+  'QD409', 'grades_not_released',
+  'a judge sees no finalists before release'
+);
+
+select throws_ok(
   format($$ select public.upsert_judge_score((select submission_id from public.hackathon_submission_versions where id = %L), 3, 3, 3, 3, 3, null) $$,
          current_setting('hk.p1v2')),
   'QD409', 'grades_not_released',
@@ -1107,8 +1226,62 @@ select results_eq(
 );
 
 select ok(
-  pg_get_function_result('public.hackathon_grading_status(uuid)'::regprocedure) !~ 'total|score|flag|criteria|summary|runs',
-  'grading status has no score, total, flag, criteria, summary or runs column'
+  pg_get_function_result('public.hackathon_grading_status(uuid)'::regprocedure) !~ 'total|score|flag|criteria|summary|runs|rank',
+  'grading status has no score, total, flag, criteria, summary, runs or rank column'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 8b. Snapshot size: progressive clipping, then QD413
+-- ----------------------------------------------------------------------------
+
+-- H8 for this alone; P6 (u24, with u25 and u26) has 2,000 tasks of 4,000
+-- characters each: too big at 4,000 and at 1,000, fits at 300.
+select pg_temp.as_postgres();
+insert into public.hackathons (id, slug, name, opens_at, closes_at)
+values ('c7000000-0000-4000-8000-000000000008', 'hk-size', 'Size', now() - interval '1 hour', now() + interval '1 hour');
+insert into public.projects (id, owner_id, name, slug)
+values ('b7000000-0000-4000-8000-000000000006', 'a7000000-0000-4000-8000-000000000024', 'Hk six', 'hk-six');
+insert into public.project_members (project_id, user_id, role)
+values ('b7000000-0000-4000-8000-000000000006', 'a7000000-0000-4000-8000-000000000025', 'member'),
+       ('b7000000-0000-4000-8000-000000000006', 'a7000000-0000-4000-8000-000000000026', 'member');
+insert into public.tasks (project_id, title, description)
+select 'b7000000-0000-4000-8000-000000000006', 'Task ' || n, repeat('d', 4000) from generate_series(1, 2000) as n;
+insert into storage.objects (bucket_id, name, owner)
+values ('hackathon-mindmaps', pg_temp.img(8, 6, 60), 'a7000000-0000-4000-8000-000000000024');
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000024');
+select ok(
+  set_config('hk.p6v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000008', 'b7000000-0000-4000-8000-000000000006', 'Team Six',
+    array['a7000000-0000-4000-8000-000000000024', 'a7000000-0000-4000-8000-000000000025', 'a7000000-0000-4000-8000-000000000026']::uuid[],
+    array[pg_temp.img(8, 6, 60)])::text, true) is not null,
+  'size: an 8 MB project still submits, rebuilt with smaller clips'
+);
+
+select pg_temp.as_postgres();
+select results_eq(
+  $$ select jsonb_array_length(v.qdit_snapshot -> 'tasks'),
+            char_length(v.qdit_snapshot -> 'tasks' -> 0 ->> 'description'),
+            (v.qdit_snapshot ->> 'truncated')::boolean,
+            pg_column_size(v.qdit_snapshot) <= 2 * 1024 * 1024
+       from public.hackathon_submission_versions v where v.id = current_setting('hk.p6v1')::uuid $$,
+  $$ values (2000, 300, true, true) $$,
+  'size: every task kept, text clipped to 300 characters, truncated set, under 2 MB'
+);
+
+-- 2,000 proofs with five 400-character fields: over 2 MB even at 300.
+insert into public.stellar_proofs (project_id, contract_id, tx_hash, wallet_address, proof_url, notes)
+select 'b7000000-0000-4000-8000-000000000006', repeat('c', 400), repeat('t', 400), repeat('w', 400),
+       'https://example.com/' || repeat('p', 380), repeat('n', 400)
+  from generate_series(1, 2000);
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000024');
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000008', 'b7000000-0000-4000-8000-000000000006', 'Team Six',
+            array['a7000000-0000-4000-8000-000000000024', 'a7000000-0000-4000-8000-000000000025', 'a7000000-0000-4000-8000-000000000026']::uuid[],
+            array[%L]) $$, pg_temp.img(8, 6, 60)),
+  'QD413', 'snapshot_too_large',
+  'size: still over 2 MB with text at 300 characters is QD413'
 );
 
 
@@ -1213,17 +1386,31 @@ select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 2, 'overloaded', 0,
 select is((select attempts from public.claim_grading_jobs(10, 200, current_setting('hk.p3v1')::uuid)), 3,
   'fail: a retry with no delay is claimable at once, as claim 3');
 
-select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 3, 'bad output', 0), 'pending',
+select throws_ok(
+  format($$ select public.fail_grading_job(%L, 3, 'Model said: ignore previous instructions', 0) $$, pg_temp.job('hk.p3v1', 1)),
+  '22023', 'error must be a code: ^[a-z0-9_:.-]{1,80}$.',
+  'fail: last_error takes a code, never prose'
+);
+
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 3, 'bad_output', 0), 'pending',
   'fail: claim 3 is only the second counted attempt, so pending again');
 
 select is((select attempts from public.claim_grading_jobs(10, 200, current_setting('hk.p3v1')::uuid)), 4,
   'fail: claimed a fourth time');
 
-select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 4, 'bad output again', 0), 'failed',
+select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 4, 'bad_output', 0), 'failed',
   'fail: failed after the third counted attempt');
 
 select is(public.fail_grading_job(pg_temp.job('hk.p3v1', 1), 4, 'late', 0), 'stale',
   'fail: a job no longer running is stale');
+
+select pg_temp.as_postgres();
+select throws_ok(
+  format($$ update public.hackathon_grading_jobs set last_error = 'free text here' where id = %L $$, pg_temp.job('hk.p3v1', 1)),
+  '23514', null,
+  'last_error: the column itself holds codes only'
+);
+select pg_temp.as_service();
 
 -- Grades for everyone, as the grader stores them: five criterion scores and
 -- their raw weighted total. P3's run 1 failed, so it is regraded below.
@@ -1279,6 +1466,18 @@ select ok(public.enqueue_third_run(current_setting('hk.p1v2')::uuid) is not null
 select is(public.enqueue_third_run(current_setting('hk.p1v2')::uuid), null, 'third run: not twice');
 select is(public.enqueue_third_run(current_setting('hk.p1v1')::uuid), null, 'third run: never for a version that is not current');
 
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select results_eq(
+  $$ select jsonb_array_length(jobs),
+            (select max((j ->> 'run_no')::int) from jsonb_array_elements(jobs) as j),
+            complete
+       from public.hackathon_grading_status('c7000000-0000-4000-8000-000000000001')
+      where project_slug = 'hk-one' $$,
+  $$ values (2, 2, false) $$,
+  'grading status before release: runs 1 and 2 only (the third run is not shown), not complete'
+);
+select pg_temp.as_service();
+
 -- Eligibility from the gate: P2 and P5 fail it.
 select lives_ok(format($$ select public.set_version_eligibility(%L, '{"eligible": true, "rules": []}') $$, current_setting('hk.p1v2')), 'eligibility: P1 stored');
 select public.set_version_eligibility(current_setting('hk.p2v1')::uuid, '{"eligible": false, "rules": []}');
@@ -1324,7 +1523,7 @@ select results_eq(
 
 -- The late entry in H2: the grader skips both runs as ineligible.
 select is(
-  (select string_agg(public.skip_grading_job(c.job_id, c.attempts, 'ineligible: 2 notes')
+  (select string_agg(public.skip_grading_job(c.job_id, c.attempts, 'ineligible:notes')
                      || ':' || (c.current_version_id = c.version_id
                                 and c.eligibility_override is null
                                 and c.eligibility is null)::text, ',' order by c.run_no)
@@ -1333,13 +1532,18 @@ select is(
   'claim returns current_version_id, eligibility_override and eligibility; skip settles both running jobs'
 );
 select is(public.skip_grading_job(pg_temp.job('hk.p1h2', 1), 1, 'again'), 'stale', 'skip: once');
+select throws_ok(
+  format($$ select public.skip_grading_job(%L, 1, 'Not eligible: only 2 notes') $$, pg_temp.job('hk.p1h2', 1)),
+  '22023', 'reason must be a code: ^[a-z0-9_:.-]{1,80}$.',
+  'skip: the reason is a code too'
+);
 
 select pg_temp.as_postgres();
 select results_eq(
   format($$ select status, attempts, last_error, (select count(*)::int from public.hackathon_ai_runs r where r.version_id = j.version_id)
               from public.hackathon_grading_jobs j where version_id = %L order by run_no $$,
          current_setting('hk.p1h2')),
-  $$ values ('done'::text, 1, 'ineligible: 2 notes'::text, 0), ('done'::text, 1, 'ineligible: 2 notes'::text, 0) $$,
+  $$ values ('done'::text, 1, 'ineligible:notes'::text, 0), ('done'::text, 1, 'ineligible:notes'::text, 0) $$,
   'skip: done, reason kept, no AI run recorded'
 );
 
@@ -1382,6 +1586,18 @@ select results_eq(
 );
 select pg_temp.as_service();
 
+-- What P2's team sees of its entry, before the admin overrides it.
+create function pg_temp.p2_view() returns jsonb
+language sql as $$
+  select jsonb_agg(to_jsonb(x) order by x.id)
+    from (select id, hackathon_id, project_id, team_name, current_version_id, created_by, created_at
+            from public.hackathon_submissions) x;
+$$;
+grant execute on function pg_temp.p2_view() to authenticated;
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000006');
+select ok(set_config('hk.p2view', pg_temp.p2_view()::text, true) is not null, 'P2''s team reads its entry');
+
 -- Overrides: P2 (failed the gate) let in, P4 (passed it, top AI score) kept out.
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 
@@ -1411,19 +1627,22 @@ select throws_ok(
   'override: not by a judge'
 );
 
--- Teams see "Received" only (D-116): no eligibility or override columns.
+-- Teams see "Received" only (D-116): no eligibility, no override, and no
+-- trace of the override on their own row.
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000006');
 
+select is(pg_temp.p2_view()::text, current_setting('hk.p2view'),
+  'the override leaves P2''s team view of its entry exactly as it was');
 select throws_ok('select eligibility from public.hackathon_submission_versions', '42501', null,
   'a team member cannot read a version''s eligibility');
-select throws_ok('select eligibility_override from public.hackathon_submissions', '42501', null,
-  'a team member cannot read the eligibility override');
-select throws_ok('select override_reason from public.hackathon_submissions', '42501', null,
-  'a team member cannot read the override reason');
-select throws_ok('select overridden_by from public.hackathon_submissions', '42501', null,
-  'a team member cannot read who overrode');
+select throws_ok('select * from public.hackathon_eligibility_overrides', '42501', null,
+  'a team member cannot read the overrides');
+select throws_ok('select updated_at from public.hackathon_submissions', '42501', null,
+  'a team member cannot read updated_at');
+select throws_ok('select xmin from public.hackathon_submissions', '42501', null,
+  'a team member cannot read the row''s xmin');
 select throws_ok('select * from public.hackathon_submission_versions', '42501', null,
-  'nor through select *');
+  'nor anything through select *');
 select results_eq(
   $$ select s.team_name, v.version_no from public.hackathon_submissions s
        join public.hackathon_submission_versions v on v.id = s.current_version_id $$,
@@ -1432,8 +1651,8 @@ select results_eq(
 );
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000021');
-select throws_ok('select eligibility_override, override_reason from public.hackathon_submissions', '42501', null,
-  'a judge cannot read the override columns either');
+select throws_ok('select * from public.hackathon_eligibility_overrides', '42501', null,
+  'a judge cannot read the overrides either');
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 select results_eq(
@@ -1511,12 +1730,12 @@ select is(public.release_hackathon_grades('c7000000-0000-4000-8000-000000000001'
 select pg_temp.as_postgres();
 
 select results_eq(
-  $$ select p.slug, f.ai_rank
-       from public.hackathon_finalists f
-       join public.hackathon_submissions s on s.id = f.submission_id
+  $$ select p.slug, r.ai_rank
+       from public.hackathon_finalist_ranks r
+       join public.hackathon_submissions s on s.id = r.submission_id
        join public.projects p on p.id = s.project_id
-      where f.hackathon_id = 'c7000000-0000-4000-8000-000000000001'
-      order by f.ai_rank $$,
+      where r.hackathon_id = 'c7000000-0000-4000-8000-000000000001'
+      order by r.ai_rank $$,
   $$ values ('hk-two'::text, 1), ('hk-one'::text, 2) $$,
   'finalists: P2 (override in, 90) then P1 (per-criterion median 80, tied with P3 and earlier); P5 ineligible, P4 overridden out'
 );
@@ -1524,6 +1743,22 @@ select results_eq(
 select ok((select released_at is not null and released_by = 'a7000000-0000-4000-8000-000000000022'
              from public.hackathons where id = 'c7000000-0000-4000-8000-000000000001'),
   'release: released_at and released_by are set');
+
+select is(
+  (select array_agg(submission_id) from public.hackathon_finalists
+    where hackathon_id = 'c7000000-0000-4000-8000-000000000001'),
+  (select array_agg(x order by x) from unnest(array[pg_temp.sub('hk.p1v2'), pg_temp.sub('hk.p2v1')]) as x),
+  'finalists are stored in submission-id order, not rank order'
+);
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select results_eq(
+  $$ select jsonb_array_length(jobs), complete
+       from public.hackathon_grading_status('c7000000-0000-4000-8000-000000000001')
+      where project_slug = 'hk-one' $$,
+  $$ values (3, true) $$,
+  'grading status after release: every live run, complete'
+);
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 
@@ -1578,25 +1813,92 @@ select throws_ok(
   'leaderboard: still not for a judge after release'
 );
 
-select is((select count(*) from public.hackathon_finalists where hackathon_id = 'c7000000-0000-4000-8000-000000000001'), 2::bigint,
-  'a judge reads the finalists...');
+select throws_ok('select submission_id from public.hackathon_finalists', '42501', null,
+  'a judge cannot read the finalists table...');
+select throws_ok('select ai_rank from public.hackathon_finalist_ranks', '42501', null,
+  '... nor the ranks');
 
-select throws_ok('select ai_rank from public.hackathon_finalists', '42501', null,
-  '... but not their AI rank');
+select is(
+  (select array_agg(submission_id) from public.hackathon_finals_for_judge('c7000000-0000-4000-8000-000000000001')),
+  (select array_agg(x order by x) from unnest(array[pg_temp.sub('hk.p1v2'), pg_temp.sub('hk.p2v1')]) as x),
+  'judge finals: by submission id while no pitch order is set, never by rank'
+);
+
+-- Another hackathon's content stays closed to this judge.
+select results_eq(
+  format($$ select (select count(*) from public.hackathon_submissions where hackathon_id = 'c7000000-0000-4000-8000-000000000002'),
+                   (select count(*) from public.hackathon_submission_versions where id = %L),
+                   (select count(*) from public.hackathon_doqtri_snapshots where hackathon_id = 'c7000000-0000-4000-8000-000000000002'),
+                   (select count(*) from storage.objects where bucket_id = 'hackathon-mindmaps'
+                       and name like 'c7000000-0000-4000-8000-000000000002/%%') $$,
+         current_setting('hk.p1h2')),
+  $$ values (0::bigint, 0::bigint, 0::bigint, 0::bigint) $$,
+  'cross-hackathon: an H1 judge reads no H2 entry, version, snapshot or mindmap'
+);
+select throws_ok(
+  $$ select * from public.hackathon_finals_for_judge('c7000000-0000-4000-8000-000000000002') $$,
+  '42501', null,
+  'cross-hackathon: nor H2''s finalists'
+);
+select throws_ok(
+  format($$ select public.upsert_judge_score(%L, 3, 3, 3, 3, 3, null) $$, pg_temp.sub('hk.p1h2')),
+  '42501', null,
+  'cross-hackathon: nor score an H2 entry'
+);
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000004');
-select is((select count(submission_id) from public.hackathon_finalists), 0::bigint,
+select throws_ok('select submission_id from public.hackathon_finalists', '42501', null,
   'a team member reads no finalist row');
+
+-- H2: one job mid-run, then an incomplete release, which stops the queue.
+select pg_temp.as_service();
+select ok(
+  (select set_config('hk.h2job', c.job_id::text, true) is not null and c.attempts = 1
+     from public.claim_grading_jobs(1, 200, current_setting('hk.p1h2')::uuid) as c),
+  'H2: a worker holds the last pending job'
+);
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select throws_ok(
+  $$ select public.release_hackathon_grades('c7000000-0000-4000-8000-000000000002') $$,
+  'QD409', 'grading_incomplete',
+  'release: refused with a run in progress'
+);
+select is(public.release_hackathon_grades('c7000000-0000-4000-8000-000000000002', true), 0,
+  'release: p_allow_incomplete releases anyway (no entry has a counted run here)');
+
+select pg_temp.as_postgres();
+select results_eq(
+  format($$ select status, count(*)::int from public.hackathon_grading_jobs where version_id = %L group by status order by status $$,
+         current_setting('hk.p1h2')),
+  $$ values ('failed'::text, 1), ('superseded'::text, 3) $$,
+  'release: the running job is superseded; the failed one keeps its state'
+);
+
+select pg_temp.as_service();
+select is(public.complete_grading_job(current_setting('hk.h2job')::uuid, 1, 'test-model', '{}', 50, '{}', 'x', 'end_turn', '{}', false),
+  'stale', 'after release: completing the old lease records nothing');
+select is((select count(*) from public.claim_grading_jobs(10, 200, current_setting('hk.p1h2')::uuid)), 0::bigint,
+  'after release: nothing of the hackathon is claimed');
+select is(public.enqueue_third_run(current_setting('hk.p1h2')::uuid), null,
+  'after release: no third run');
+
+-- An operator re-adds a late pass after release: storage stays closed.
+select pg_temp.as_postgres();
+update public.hackathon_late_passes set until = now() + interval '1 hour'
+ where hackathon_id = 'c7000000-0000-4000-8000-000000000002';
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000001');
+select throws_ok(
+  format($$ insert into storage.objects (bucket_id, name, owner) values ('hackathon-mindmaps', %L, auth.uid()) $$,
+         pg_temp.img(2, 1, 61)),
+  '42501', null,
+  'storage: nothing is uploaded after release, late pass or not'
+);
 
 
 -- ----------------------------------------------------------------------------
 -- 11. Judging and pitch order
 -- ----------------------------------------------------------------------------
-
-create function pg_temp.sub(p_version text) returns uuid
-language sql security definer as $$
-  select submission_id from public.hackathon_submission_versions where id = current_setting(p_version)::uuid;
-$$;
 
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000021');
 
@@ -1683,6 +1985,14 @@ select results_eq(
   'pitch order: as given'
 );
 
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000021');
+select results_eq(
+  $$ select project_slug, pitch_order from public.hackathon_finals_for_judge('c7000000-0000-4000-8000-000000000001') $$,
+  $$ values ('hk-one'::text, 1), ('hk-two'::text, 2) $$,
+  'judge finals: in pitch order once it is set'
+);
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+
 select throws_ok(
   $$ select public.grant_late_pass('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000003', now() + interval '1 hour') $$,
   'QD409', 'already_released',
@@ -1713,6 +2023,12 @@ select throws_ok(
   $$ select public.set_hackathon_staff('c7000000-0000-4000-8000-000000000001', 'hk_u22', null) $$,
   'QD409', 'last_admin',
   'staff: nor remove themself'
+);
+
+select throws_ok(
+  $$ select public.set_hackathon_staff('c7000000-0000-4000-8000-000000000001', 'hk_u11', 'judge') $$,
+  'QD409', 'staff_on_team',
+  'staff: not someone on a team in this hackathon'
 );
 
 select throws_ok(
@@ -1755,11 +2071,13 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 select ok(cardinality(pg_temp.hk_visible()) >= 9, 'a first-party session of an admin sees rows in the readable tables');
 
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000022');
-select is(pg_temp.hk_visible(), array['hackathon_grading_jobs:denied', 'hackathon_ai_runs:denied'],
+select is(pg_temp.hk_visible(), array['hackathon_eligibility_overrides:denied', 'hackathon_grading_jobs:denied',
+                                     'hackathon_ai_runs:denied', 'hackathon_finalists:denied', 'hackathon_finalist_ranks:denied'],
   'the same admin''s OAuth token reads no row of any hackathon table');
 
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000001');
-select is(pg_temp.hk_visible(), array['hackathon_grading_jobs:denied', 'hackathon_ai_runs:denied'],
+select is(pg_temp.hk_visible(), array['hackathon_eligibility_overrides:denied', 'hackathon_grading_jobs:denied',
+                                     'hackathon_ai_runs:denied', 'hackathon_finalists:denied', 'hackathon_finalist_ranks:denied'],
   'a team owner''s OAuth token reads nothing, not even the snapshot it sent');
 
 select throws_ok(
@@ -1789,17 +2107,39 @@ select throws_ok(
   'a doqtri snapshot''s payload cannot change'
 );
 
+-- H4: unreleased, closed 100 days ago (kept until 180). H9: released, closed
+-- 91 days ago (pruned). H10: released, 89 days (kept). H11: released, closed
+-- 100 days ago but a late pass ran until 89 days ago (kept). H12:
+-- unreleased, closed 181 days ago (pruned).
+insert into public.hackathons (id, slug, name, opens_at, closes_at, released_at)
+values
+  ('c7000000-0000-4000-8000-000000000009', 'hk-r91',  'R91',  now() - interval '92 days',  now() - interval '91 days',  now() - interval '90 days'),
+  ('c7000000-0000-4000-8000-000000000010', 'hk-r89',  'R89',  now() - interval '90 days',  now() - interval '89 days',  now() - interval '88 days'),
+  ('c7000000-0000-4000-8000-000000000011', 'hk-rlp',  'RLP',  now() - interval '101 days', now() - interval '100 days', now() - interval '88 days'),
+  ('c7000000-0000-4000-8000-000000000012', 'hk-u181', 'U181', now() - interval '182 days', now() - interval '181 days', null);
+insert into public.hackathon_late_passes (hackathon_id, project_id, until)
+values ('c7000000-0000-4000-8000-000000000011', 'b7000000-0000-4000-8000-000000000001', now() - interval '89 days');
 insert into public.hackathon_doqtri_snapshots (id, snapshot_id, hackathon_id, project_id, workspace_id, client_id, payload, payload_sha256, note_count)
-values ('f7500000-0000-4000-8000-000000000001', gen_random_uuid(), 'c7000000-0000-4000-8000-000000000004',
-        'b7000000-0000-4000-8000-000000000001', gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{}', repeat('1', 64), 0);
+select ('f7500000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid, gen_random_uuid(),
+       ('c7000000-0000-4000-8000-0000000000' || lpad(h::text, 2, '0'))::uuid,
+       'b7000000-0000-4000-8000-000000000001', gen_random_uuid(), '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d', '{}', repeat('1', 64), 0
+  from (values (1, 4), (2, 9), (3, 10), (4, 11), (5, 12)) as x (n, h);
 insert into public.hackathon_submissions (id, hackathon_id, project_id, team_name)
-values ('f7300000-0000-4000-8000-000000000002', 'c7000000-0000-4000-8000-000000000004', 'b7000000-0000-4000-8000-000000000001', 'Old');
+values ('f7300000-0000-4000-8000-000000000002', 'c7000000-0000-4000-8000-000000000009', 'b7000000-0000-4000-8000-000000000001', 'Old');
 insert into public.hackathon_submission_versions (id, submission_id, version_no, team_name, member_ids, qdit_snapshot, image_paths, doqtri_snapshot_id)
 values ('f7400000-0000-4000-8000-000000000099', 'f7300000-0000-4000-8000-000000000002', 1, 'Old',
-        array['a7000000-0000-4000-8000-000000000001']::uuid[], '{}', array['x'], 'f7500000-0000-4000-8000-000000000001');
+        array['a7000000-0000-4000-8000-000000000001']::uuid[], '{}', array['x'], 'f7500000-0000-4000-8000-000000000002');
 
 select pg_temp.as_service();
-select is(public.prune_hackathon_doqtri_snapshots(), 1, 'retention: snapshots of a hackathon closed over 90 days ago are deleted');
+select is(public.prune_hackathon_doqtri_snapshots(), 2, 'retention: two snapshots are past their keep date');
+
+select pg_temp.as_postgres();
+select results_eq(
+  $$ select h.slug from public.hackathon_doqtri_snapshots d join public.hackathons h on h.id = d.hackathon_id
+      where d.id::text like 'f7500000-%' order by h.slug $$,
+  $$ values ('hk-old'::text), ('hk-r89'::text), ('hk-rlp'::text) $$,
+  'retention: released 91 days and unreleased 181 days go; released 89 days, a recent late pass and unreleased 100 days stay'
+);
 
 select pg_temp.as_postgres();
 select results_eq(
