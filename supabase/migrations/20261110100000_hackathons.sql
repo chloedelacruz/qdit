@@ -122,7 +122,8 @@
 --            member_is_staff        a team member is staff here
 --   QD413  snapshot_too_large: the qdit snapshot is over 2 MB even with
 --          text clipped to 300 characters; payload_too_large: a doqtri
---          payload over 2 MiB (2,097,152 bytes as JSON text).
+--          payload over 3 MiB (3,145,728 bytes) in jsonb's text form, a
+--          backstop for the route's exact 2 MiB on the raw body (D-118).
 --   last_error on a job holds a code only: ^[a-z0-9_:.-]{1,80}$ (22023,
 --   hint error / reason, for anything else).
 --
@@ -2027,9 +2028,14 @@ begin
     raise exception 'payload must be a JSON object with a notes array and a workspace.'
       using errcode = '22023', hint = 'payload';
   end if;
-  if octet_length(p_payload::text) > 2097152 then
+  -- Defence in depth only (D-118). The route enforces the contract's exact
+  -- 2 MiB on the raw request bytes; here only jsonb's text form can be
+  -- measured, and it adds a space after every `:` and `,`, so a compact body
+  -- just under 2 MiB reads as more than 2 MiB. 3 MiB leaves room for that
+  -- and still bounds what one row can hold.
+  if octet_length(p_payload::text) > 3145728 then
     raise exception 'payload_too_large'
-      using errcode = 'QD413', detail = 'A hackathon snapshot is at most 2 MiB.';
+      using errcode = 'QD413', detail = 'A hackathon snapshot is at most 2 MiB as sent.';
   end if;
   if p_note_count <> jsonb_array_length(p_payload -> 'notes') then
     raise exception 'note_count must be the number of notes in the payload.'
@@ -2128,7 +2134,7 @@ end;
 $$;
 
 comment on function public.push_doqtri_hackathon_snapshot(text, uuid, uuid, uuid, jsonb, text, integer) is
-  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> arguments (22023; QD413 payload_too_large over 2 MiB; note_count = notes) -> replay (same hash and hackathon: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
+  'SECURITY DEFINER, doqtri''s OAuth client only (D-117, D-61), project admin+. POST /api/v1/projects/{id}/hackathon-snapshots: stores the snapshot once per (project, snapshot_id). Order: client and revoke (42501) -> project role (P0002/42501) -> arguments (22023; QD413 payload_too_large over 3 MiB of jsonb text, a backstop for the route''s 2 MiB; note_count = notes) -> replay (same hash and hackathon: replay=true) or QD409 snapshot_conflict -> P0002 unknown slug -> QD409 snapshot_limit (30) -> QD409 hackathon_not_open/hackathon_closed (late pass honoured). Returns {id, note_count, received_at, submission_state: none|submitted_older|current, replay}.';
 
 
 -- ----------------------------------------------------------------------------
