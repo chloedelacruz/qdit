@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(204);
+select plan(212);
 
 
 -- ----------------------------------------------------------------------------
@@ -1409,6 +1409,39 @@ select throws_ok(
          current_setting('hk.p4v1')),
   '42501', null,
   'override: not by a judge'
+);
+
+-- Teams see "Received" only (D-116): no eligibility or override columns.
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000006');
+
+select throws_ok('select eligibility from public.hackathon_submission_versions', '42501', null,
+  'a team member cannot read a version''s eligibility');
+select throws_ok('select eligibility_override from public.hackathon_submissions', '42501', null,
+  'a team member cannot read the eligibility override');
+select throws_ok('select override_reason from public.hackathon_submissions', '42501', null,
+  'a team member cannot read the override reason');
+select throws_ok('select overridden_by from public.hackathon_submissions', '42501', null,
+  'a team member cannot read who overrode');
+select throws_ok('select * from public.hackathon_submission_versions', '42501', null,
+  'nor through select *');
+select results_eq(
+  $$ select s.team_name, v.version_no from public.hackathon_submissions s
+       join public.hackathon_submission_versions v on v.id = s.current_version_id $$,
+  $$ values ('Team Two'::text, 1) $$,
+  'the team still reads its entry and version by naming the columns'
+);
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000021');
+select throws_ok('select eligibility_override, override_reason from public.hackathon_submissions', '42501', null,
+  'a judge cannot read the override columns either');
+
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+select results_eq(
+  $$ select eligibility -> 'eligible', eligibility_override, override_reason
+       from public.hackathon_grading_status('c7000000-0000-4000-8000-000000000001')
+      where project_slug = 'hk-two' $$,
+  $$ values ('false'::jsonb, true, 'Gate miscounted the notes'::text) $$,
+  'the admin gets eligibility and the override through hackathon_grading_status'
 );
 
 

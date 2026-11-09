@@ -1021,7 +1021,10 @@ export type Database = {
       /**
        * One entry per project per hackathon (D-115). Read by the project's
        * members and the hackathon's staff; written by `submit_hackathon_entry`
-       * and `set_eligibility_override`.
+       * and `set_eligibility_override`. The three override columns are not
+       * granted to clients (teams never see eligibility, D-116): select the
+       * other columns by name, since `select('*')` is refused. Admins read
+       * them through `hackathon_grading_status`.
        */
       hackathon_submissions: {
         Row: {
@@ -1035,7 +1038,7 @@ export type Database = {
           created_by: string | null
           created_at: string
           updated_at: string
-          /** An admin's call; wins over the computed eligibility when set. */
+          /** Not granted to clients. An admin's call; wins over the computed eligibility. */
           eligibility_override: boolean | null
           override_reason: string | null
           overridden_by: string | null
@@ -1089,7 +1092,10 @@ export type Database = {
 
       /**
        * Insert-only versions of an entry. Only `eligibility` changes, through
-       * `set_version_eligibility` (service_role).
+       * `set_version_eligibility` (service_role). `eligibility` is not granted
+       * to clients (D-116): select the other columns by name, since
+       * `select('*')` is refused. Admins read it through
+       * `hackathon_grading_status`.
        */
       hackathon_submission_versions: {
         Row: {
@@ -1106,7 +1112,7 @@ export type Database = {
           image_paths: string[]
           submitted_by: string | null
           submitted_at: string
-          /** `{eligible: boolean, rules: [...]}`; null until the grader runs. */
+          /** Not granted to clients. `{eligible: boolean, rules: [...]}`; null until the grader runs. */
           eligibility: Json | null
         }
         Insert: Record<string, never>
