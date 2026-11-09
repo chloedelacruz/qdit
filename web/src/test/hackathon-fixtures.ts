@@ -240,6 +240,11 @@ export interface FakeVersion {
   current: boolean;
 }
 
+/** The database's check on last_error: 22023 for anything but a code. */
+function assertCode(text: string): void {
+  if (!/^[a-z0-9_:.-]{1,80}$/.test(text)) throw new Error(`22023: not an error code: ${text}`);
+}
+
 export class FakeStore implements GradingStore {
   jobs: FakeJob[] = [];
   versions = new Map<string, FakeVersion>();
@@ -368,6 +373,7 @@ export class FakeStore implements GradingStore {
   }
 
   async skipJob(jobId: string, attempt: number, reason: string): Promise<"done" | "stale"> {
+    assertCode(reason);
     const j = this.held(jobId, attempt);
     if (!j) return "stale";
     j.status = "done";
@@ -377,6 +383,7 @@ export class FakeStore implements GradingStore {
   }
 
   async failJob(jobId: string, attempt: number, failure: JobFailure): Promise<"pending" | "failed" | "stale"> {
+    assertCode(failure.error);
     this.failures.push({ jobId, attempt, ...failure });
     const j = this.held(jobId, attempt);
     if (!j) return "stale";

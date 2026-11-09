@@ -12,8 +12,9 @@ import {
   type GraderClient,
 } from "@/lib/hackathon/grader";
 import {
-  GradingStoreError,
+    GradingStoreError,
   supabaseGradingStore,
+  toErrorCode,
   type ClaimedJob,
   type CompletedRun,
   type GradingStore,
@@ -132,21 +133,23 @@ export class GradingAbortError extends Error {
   }
 }
 
-/** A short, content-free description of a failure, stored in last_error. */
+/**
+ * The failure as a code for last_error (the queue accepts only
+ * ^[a-z0-9_:.-]{1,80}$): never a message, never content.
+ */
 export function describeError(error: unknown): string {
-  if (error instanceof GradingAbortError) return error.message;
-  if (error instanceof GraderRefusalError) return `refusal${error.category ? ` (${error.category})` : ""}`;
-  if (error instanceof GraderTruncatedError) return `output cut off (${error.stopReason})`;
-  if (error instanceof GraderError) return `unexpected stop (${error.stopReason ?? "none"})`;
-  if (error instanceof InvalidAiRunError) return `invalid model output: ${error.issues.join("; ")}`;
-  if (error instanceof Anthropic.APIUserAbortError) return "model call aborted";
-  if (error instanceof Anthropic.APIConnectionTimeoutError) return "model call timed out";
-  if (error instanceof Anthropic.APIConnectionError) return "model call could not connect";
-  if (isOverload(error)) return `model API overloaded (${error.status ?? error.type})`;
-  if (error instanceof Anthropic.APIError) return `model API error ${error.status ?? "unknown"}`;
-  if (error instanceof GradingStoreError) return error.message;
-  if (error instanceof Error) return error.name;
-  return "unknown error";
+  if (error instanceof GradingAbortError) return `aborted:${error.abortCause}`;
+  if (error instanceof GraderRefusalError) return error.category ? toErrorCode(`refusal:${error.category}`) : "refusal";
+  if (error instanceof GraderTruncatedError) {
+    return error.stopReason === "max_tokens" ? "truncated:max_tokens" : "truncated:context";
+  }
+  if (error instanceof GraderError) return toErrorCode(`stop:${error.stopReason ?? "none"}`);
+  if (error instanceof InvalidAiRunError) return "invalid_output";
+  if (error instanceof Anthropic.APIUserAbortError) return "aborted";
+  if (error instanceof Anthropic.APIConnectionError) return "network";
+  if (error instanceof Anthropic.APIError) return error.status != null ? `provider:${error.status}` : "provider";
+  if (error instanceof GradingStoreError) return error.code ? toErrorCode(`store:${error.code}`) : "store";
+  return "internal";
 }
 
 /** How a failed attempt goes back to the queue. `random` in [0, 1). */
@@ -307,11 +310,15 @@ export function completedRun(
   };
 }
 
-function ineligibleReason(eligibility: EligibilityResult, override: boolean | null): string {
-  if (override === false) return "not graded: ineligible by admin override";
-  const failed = eligibility.rules.filter((r) => !r.passed).map((r) => r.id);
-  return `not graded: ineligible (${failed.join(", ") || "no rule passed"})`;
+/** The skip code: `ineligible:override`, else `ineligible:<first failing rule id>`. */
+export function ineligibleReason(eligibility: EligibilityResult, override: boolean | null): string {
+  if (override === false) return "ineligible:override";
+  const first = eligibility.rules.find((r) => !r.passed);
+  return first ? toErrorCode(`ineligible:${first.id}`) : "ineligible";
 }
+
+/** The skip code for a job whose version a resubmit replaced. */
+export const NOT_CURRENT_REASON = "not_current";
 
 /** Outcomes after which a version's grade can have changed. */
 const SETTLED: ReadonlySet<JobOutcome> = new Set(["graded", "ineligible", "failed"]);
@@ -406,7 +413,7 @@ class Sweep {
 
   private async grade(job: ClaimedJob): Promise<JobOutcome> {
     if (job.currentVersionId !== job.versionId) {
-      await this.store.skipJob(job.jobId, job.attempts, "not graded: no longer the current version");
+      await this.store.skipJob(job.jobId, job.attempts, NOT_CURRENT_REASON);
       return "superseded";
     }
 
@@ -469,6 +476,11 @@ class Sweep {
     return result === "done" ? "graded" : "superseded";
   }
 
+  /**
+   * "stale" from any settle call (superseded, leased again, or its hackathon
+   * released) is the quiet "superseded" outcome: nothing to record, nothing
+   * to warn about.
+   */
   private async fail(job: ClaimedJob, error: unknown): Promise<JobOutcome> {
     try {
       const plan = planFailure(error, job.attempts, this.random(), this.now());
