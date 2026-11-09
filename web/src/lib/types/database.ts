@@ -902,6 +902,7 @@ export type Database = {
           closes_at: string
           team_min: number
           team_max: number
+          /** 1–10. */
           finalist_count: number
           released_at: string | null
           released_by: string | null
@@ -1617,7 +1618,10 @@ export type Database = {
             last_error: string | null
             updated_at: string
           }[]
-          /** No live job pending or running. */
+          /**
+           * None of the jobs shown is pending or running: before release
+           * only the first two count, so a third run leaves no trace.
+           */
           complete: boolean
           eligibility: Json | null
           eligibility_override: boolean | null
@@ -1673,13 +1677,25 @@ export type Database = {
           pitch_order: number | null
           judge_mean: number | null
           judge_count: number
+          /** Every judge's scores as given (empty for a non-finalist), by judge_id. */
+          judge_scores: {
+            judge_id: string
+            clarity: number
+            structure: number
+            accuracy: number
+            connections: number
+            pitch: number
+          }[]
         }[]
       }
       /**
        * Hackathon admin (first-party). Irreversible. QD409
        * `already_released` | `hackathon_not_closed` | `late_pass_active` |
-       * `grading_incomplete` (DETAIL has the counts). Supersedes the
-       * hackathon's pending and running jobs. Returns the finalist count.
+       * `grading_incomplete` (DETAIL `N entries still grading.`, counting
+       * only entries whose first two live runs are unsettled: a pending third
+       * run never holds release up, and the entry keeps its two-run mean).
+       * Supersedes the hackathon's pending and running jobs. Returns the
+       * finalist count.
        */
       release_hackathon_grades: {
         Args: { p_hackathon_id: string; p_allow_incomplete?: boolean }
@@ -1691,9 +1707,10 @@ export type Database = {
         Returns: undefined
       }
       /**
-       * Hackathon admin. Reason (1–500) required unless `p_value` is null.
-       * `true` on a version the grader skipped (all live jobs done, no AI
-       * run), before release, queues two fresh runs.
+       * Hackathon admin, before release (QD409 `already_released` after).
+       * Reason (1–500) required unless `p_value` is null. `true` on a
+       * version the grader skipped (all live jobs done, no AI run) queues
+       * two fresh runs.
        */
       set_eligibility_override: {
         Args: { p_submission_id: string; p_value: boolean | null; p_reason: string | null }
