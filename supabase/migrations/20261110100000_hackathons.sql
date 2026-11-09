@@ -54,6 +54,17 @@
 --                                  pitch_order (ai_rank is reached through
 --                                  hackathon_leaderboard() by admins)
 --   hackathon_judge_scores         a judge their own rows, after release
+--
+-- Eligibility is not shown to teams (participants only ever see "Received",
+-- D-116): hackathon_submission_versions.eligibility and
+-- hackathon_submissions.eligibility_override, override_reason and
+-- overridden_by are left out of the column grants to authenticated, for
+-- everyone, staff included. Admins read them through
+-- hackathon_grading_status() and hackathon_leaderboard(); the grader writes
+-- them through the service-role RPCs. Column grants rather than a side
+-- table, so RLS, the frozen-row trigger and every RPC stay as they are; the
+-- cost is that a client must name its columns (`select *` on those two
+-- tables is refused), as on hackathon_finalists.
 --   hackathon_grading_jobs,
 --   hackathon_ai_runs              nobody (no policy, no grant)
 --
@@ -1102,9 +1113,14 @@ grant select on table public.hackathons                    to authenticated;
 grant select on table public.hackathon_staff               to authenticated;
 grant select on table public.hackathon_late_passes         to authenticated;
 grant select on table public.hackathon_doqtri_snapshots    to authenticated;
-grant select on table public.hackathon_submissions         to authenticated;
 grant select on table public.hackathon_team_members        to authenticated;
-grant select on table public.hackathon_submission_versions to authenticated;
+-- Everything but eligibility and the override (header: not shown to teams).
+grant select (id, hackathon_id, project_id, team_name, current_version_id,
+              created_by, created_at, updated_at)
+  on table public.hackathon_submissions to authenticated;
+grant select (id, submission_id, version_no, team_name, member_ids, qdit_snapshot,
+              doqtri_snapshot_id, image_paths, submitted_by, submitted_at)
+  on table public.hackathon_submission_versions to authenticated;
 grant select on table public.hackathon_judge_scores        to authenticated;
 -- ai_rank is grade-derived (D-116): admins read it through the leaderboard.
 grant select (hackathon_id, submission_id, pitch_order) on table public.hackathon_finalists to authenticated;
