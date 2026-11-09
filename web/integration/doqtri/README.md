@@ -22,6 +22,7 @@ The six connections in the masterplan's architecture section, one spec each:
 | `04-revocation` | Revocation (WP-2.10; D-59, D-75, D-76) | Revoking doqtri in qdit's Settings refuses the live token at once: on `/api/v1` (`401`, `invalid_token`), on the `link_project_doc` RPC (`42501`) and on a guarded table write. doqtri asks for a reconnect, and qdit's doc card says "Connection to doqtri lost". Reconnecting works again. |
 | `05-proof-chain` | Proof chain (WP-3.2, WP-3.3; D-77, D-78, D-83, D-94, D-95) | For an unanchored milestone: four steps in order, none past the plan Done. The anonymous RPC's `docSource` is exactly `docId`, `docVersion`, `nodeLabel` and `projectId`. For a milestone walked by hand (below): both public pages Done on all four steps, the same approval tx, the `artifact_ref` grammar as plain text, and "Open in doqtri" landing on `/d/<doc>`. "Current proof hash" has no tx link. |
 | `06-doc-card` | Doc card and Planned in doqtri (WP-2.6, WP-3.2) | qdit's project page shows the linked note, live. The public page's "Planned in doqtri" links doqtri by doc id, shows no doc title, and reads the real registry (`unsigned`, not `unreachable`). doqtri's milestone card reads the milestone back from qdit. |
+| `07-hackathon` | Hackathon snapshot push (WP-4.7; D-117, D-118) | Send to qdit hackathon in doqtri stores a snapshot in qdit with doqtri's note count. Submitting the entry in qdit shows that count in the dialog and on the entry card, and the frozen version points at that snapshot. Needs doqtri's `NEXT_PUBLIC_QDIT_HACKATHON=1` and qdit's hackathon migration; skipped otherwise. |
 
 ### What stays manual
 
@@ -127,6 +128,9 @@ doqtri spends the code (`clientToken` in `world.ts`).
   `afterAll`. Deleting the project removes its doc links, milestones, links
   and outbox events in qdit. doqtri's `qdit_milestone_states` rows for it are
   removed by project id.
+- **Hackathon.** `07-hackathon` also makes a `dqit-hackathon-…` hackathon and
+  two extra qdit members (`dqit_h_…`, example.invalid addresses), and removes
+  them, the mindmap image under the hackathon's Storage prefix first.
 - **Sweep.** `global-teardown.ts` sweeps anything a crashed run left behind,
   using the same prefixes.
 - **Not cleaned.** doqtri's `qdit_webhook_events` ids are not deleted. doqtri

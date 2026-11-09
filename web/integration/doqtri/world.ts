@@ -5,6 +5,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 
+import { storagePaths } from "../../e2e/hackathon-fixture";
 import { callbackOf, env, issuerOf } from "./env";
 import { NAME_PREFIX, SLUG_PREFIX, serviceRest, tag } from "./rest";
 
@@ -280,4 +281,44 @@ export async function openPlanDocCard(page: Page, docTitle: string) {
   await expect(trigger).toBeVisible({ timeout: 20_000 });
   await trigger.click();
   return page.locator('[data-slot="doqtri-doc-card"]');
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hackathon (07-hackathon.spec.ts)                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Hackathons and qdit member accounts that 07-hackathon.spec.ts makes. */
+export const HACKATHON_SLUG_PREFIX = `${SLUG_PREFIX}hackathon-`;
+export const MEMBER_USERNAME_PREFIX = "dqit_h_";
+
+export function qditAuthHeaders() {
+  const key = env().qditSecretKey;
+  return { apikey: key, Authorization: `Bearer ${key}` };
+}
+
+/** Deletes a hackathon's mindmap objects, then the hackathon (cascades to its snapshots and entries). */
+export async function removeHackathon(id: string): Promise<void> {
+  const svc = {
+    url: env().qditSupabaseUrl.replace(/\/+$/, ""),
+    headers: { ...qditAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
+  };
+  const paths = await storagePaths(svc, id);
+  if (paths.length > 0) {
+    await fetch(`${svc.url}/storage/v1/object/hackathon-mindmaps`, {
+      method: "DELETE",
+      headers: { ...qditAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ prefixes: paths }),
+    });
+  }
+  await serviceRest("qdit", `hackathons?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+}
+
+/** Deletes qdit accounts by id. */
+export async function removeQditAccounts(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    await fetch(`${env().qditSupabaseUrl.replace(/\/+$/, "")}/auth/v1/admin/users/${id}`, {
+      method: "DELETE",
+      headers: qditAuthHeaders(),
+    });
+  }
 }

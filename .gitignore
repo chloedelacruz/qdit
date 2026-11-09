@@ -43,10 +43,12 @@ yarn-error.log*
 # Pitch deck — the shared copy lives in Google Slides, linked from the README.
 # These are local exports, regenerated rather than tracked.
 # docs/integration/ is the exception: the doqtri x qdit contract is shared
-# with the doqtri repo and must be tracked. `docs/*` (not `docs/`) so the
-# negation can reach inside the directory.
+# with the doqtri repo and must be tracked. So is docs/runbooks/, the
+# operator runbooks. `docs/*` (not `docs/`) so the negation can reach inside
+# the directory.
 docs/*
 !docs/integration/
+!docs/runbooks/
 docs/qdit-pitch-deck.pptx
 docs/qdit-pitch-deck.pdf
 
@@ -64,6 +66,11 @@ _level5
 # Demo wallets — generated Testnet keypairs, secret keys included. Worthless by
 # construction, and still not something to commit.
 web/scripts/demo/.wallets.json
+
+# The hackathon dry run's state (generated passwords for example.invalid
+# accounts) and its CSV export. hackathon-seed.mjs --clean deletes both.
+web/scripts/demo/.hackathon-seed.json
+web/scripts/demo/.hackathon-dryrun.csv
 
 # The demo-video pipeline, in full: the Remotion project that composites the
 # walkthrough, and the Playwright harness that records it. Kept out of the

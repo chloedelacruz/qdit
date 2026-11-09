@@ -305,6 +305,19 @@ describe("APP_ACCESS matches the guard migration", () => {
       api_requests: "log of its requests",
       deployments: "deployments",
       doc_link_connections: "which connections keep a plan linked",
+      hackathon_ai_runs: "grades",
+      hackathon_doqtri_snapshots: "read back a hackathon snapshot it sent",
+      hackathon_eligibility_overrides: "eligibility overrides",
+      hackathon_finalist_ranks: "finalist ranks",
+      hackathon_finalists: "finalists",
+      hackathon_grading_jobs: "grading queue",
+      hackathon_judge_scores: "judges' scores",
+      hackathon_late_passes: "late passes",
+      hackathon_staff: "their staff",
+      hackathon_submission_versions: "entry versions",
+      hackathon_submissions: "entries",
+      hackathon_team_members: "teams",
+      hackathons: "qdit's hackathons",
       integration_events: "webhook settings and queue",
       integration_settings: "integration settings",
       integration_webhooks: "webhook settings",
@@ -331,6 +344,17 @@ describe("APP_ACCESS matches the guard migration", () => {
     expect(can).toMatch(/link/);
     expect(can).toMatch(/rename a milestone that is linked/);
     expect(can).toContain("the title only");
+  });
+
+  it("promises the hackathon snapshot only alongside the migration that grants it", () => {
+    // 20261110100000_hackathons.sql opens push_doqtri_hackathon_snapshot() to
+    // doqtri's client (D-117), and nothing else of the hackathon tables.
+    const can = APP_ACCESS.can.join(" ");
+    expect(files).toContain("20261110100000_hackathons.sql");
+    expect(can).toContain(
+      "Send a snapshot of its documents to a hackathon entry for projects you administer",
+    );
+    expect(guards).toMatch(/create or replace function public\.push_doqtri_hackathon_snapshot\(/);
   });
 
   it("still tells the user an app cannot decide or delete", () => {

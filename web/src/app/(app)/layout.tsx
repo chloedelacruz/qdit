@@ -1,6 +1,8 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { REQUEST_PATH_HEADER, signInRedirect } from "@/lib/auth/request-path";
 import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
 import {
   countUnreadNotifications,
@@ -27,7 +29,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The gate for every authenticated route. RLS is the real enforcement — this
   // just avoids rendering an app shell full of empty lists to a signed-out
   // visitor, which reads as "broken" rather than "sign in".
-  if (!user) redirect("/login");
+  //
+  // `next` brings them back to the page they asked for (a shared hackathon
+  // link, say). The proxy supplies the path; `signInRedirect` drops anything
+  // that is not a same-origin relative path.
+  if (!user) redirect(signInRedirect((await headers()).get(REQUEST_PATH_HEADER)));
 
   /**
    * Every account has an email and a password. This is where that stops being

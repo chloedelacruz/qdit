@@ -117,3 +117,47 @@ export const MILESTONE_KEYS = [
   "updated_at",
   "url",
 ];
+
+// ---------------------------------------------------------------------------
+// POST /projects/{id}/hackathon-snapshots (contract section 8, v1.2.0)
+// ---------------------------------------------------------------------------
+
+export const SNAPSHOT_DOC = DOC;
+export const SNAPSHOT_DOC_2 = "d3e2f1a0-9b8c-4d7e-8f6a-5b4c3d2e1f0a";
+export const SNAPSHOT_ID = "4e7d2c1b-9a8f-4b6e-8d5c-3f2a1e0d9c8b";
+export const WORKSPACE = "6b5a4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d";
+export const STORED_SNAPSHOT = "8f7e6d5c-4b3a-4c2d-9e1f-0a9b8c7d6e5f";
+
+/** One note of the contract's example. */
+export function snapshotNote(overrides: Record<string, unknown> = {}) {
+  return {
+    doc_id: DOC,
+    title: "Payroll v1 plan",
+    markdown: "# Payroll v1 plan\n\n## Escrow contract\n",
+    mindmap: { nodes: [{ id: "root" }], anything: { goes: true } },
+    created_at: "2026-11-20T09:12:00.000Z",
+    updated_at: "2026-11-20T14:58:31+02:00",
+    version: 3,
+    source: "editor",
+    ...overrides,
+  };
+}
+
+/** The contract's example body. */
+export function snapshotBody(overrides: Record<string, unknown> = {}) {
+  return {
+    hackathon_slug: "stellar-build-2026",
+    snapshot_id: SNAPSHOT_ID,
+    workspace_id: WORKSPACE,
+    generated_at: "2026-11-20T15:04:05.000Z",
+    notes: [snapshotNote()],
+    global_mindmap: {
+      nodes: [
+        { id: `doc:${DOC}`, label: "Payroll v1 plan", kind: "document", depth: 0, doc_ids: [DOC] },
+        { id: "concept:escrow contract", label: "Escrow contract", kind: "concept", depth: 1, doc_ids: [DOC] },
+      ],
+      links: [{ source: `doc:${DOC}`, target: "concept:escrow contract" }],
+    },
+    ...overrides,
+  };
+}

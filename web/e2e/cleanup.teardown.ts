@@ -1,5 +1,8 @@
 import { test as teardown } from "@playwright/test";
 
+import { hackathonsAvailable, sweepE2eHackathons } from "./hackathon-fixture";
+import { service } from "./service";
+
 /**
  * Deletes the rows the write-path specs create.
  *
@@ -171,5 +174,28 @@ teardown("remove OAuth clients created by the consent specs", async () => {
 
   if (mine.length > 0) {
     console.log(`[teardown] removed ${mine.length} e2e OAuth client(s).`);
+  }
+});
+
+/**
+ * Deletes what `hackathon.spec.ts` builds (WP-4.7, QDIT-49): every `e2e-`
+ * hackathon, the mindmap images under its prefix in the private
+ * `hackathon-mindmaps` bucket, the `e2e project hackathon-` projects and the
+ * `e2eh_` accounts. The spec sweeps in its own afterAll; this
+ * catches a run that crashed first. The sweep fails if anything is left.
+ */
+teardown("remove hackathons, mindmap images and accounts created by the hackathon spec", async () => {
+  const svc = service();
+  if (!svc) {
+    console.warn("[teardown] SUPABASE_SECRET_KEY not set — leaving e2e hackathons in place.");
+    return;
+  }
+  if (!(await hackathonsAvailable(svc))) return;
+
+  const removed = await sweepE2eHackathons(svc);
+  if (removed.hackathons + removed.accounts > 0) {
+    console.log(
+      `[teardown] removed ${removed.hackathons} e2e hackathon(s), ${removed.objects} mindmap object(s) and ${removed.accounts} account(s).`,
+    );
   }
 });

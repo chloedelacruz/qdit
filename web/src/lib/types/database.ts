@@ -885,6 +885,428 @@ export type Database = {
           },
         ]
       }
+
+      /**
+       * A hackathon (20261110100000_hackathons.sql, D-115). Created and edited
+       * by operator SQL; every signed-in first-party user reads it.
+       * `released_at` is set once by `release_hackathon_grades` (D-116).
+       */
+      hackathons: {
+        Row: {
+          id: string
+          /** `^[a-z0-9-]{1,64}$`. */
+          slug: string
+          name: string
+          description: string | null
+          opens_at: string
+          closes_at: string
+          team_min: number
+          team_max: number
+          /** 1–10. */
+          finalist_count: number
+          released_at: string | null
+          released_by: string | null
+          created_at: string
+        }
+        /** `authenticated` holds no write grant on any hackathon table. */
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      /**
+       * Hackathon admins and judges. Staff read their hackathon's rows, a user
+       * their own; written only by `set_hackathon_staff` (and operator SQL for
+       * the first admin).
+       */
+      hackathon_staff: {
+        Row: {
+          hackathon_id: string
+          user_id: string
+          role: Database['public']['Enums']['hackathon_role']
+          added_by: string | null
+          created_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_staff_hackathon_id_fkey'
+            columns: ['hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathons'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * Per-project extension past `closes_at` (`grant_late_pass`). Read by
+       * the hackathon's admins and the project's members.
+       */
+      hackathon_late_passes: {
+        Row: {
+          hackathon_id: string
+          project_id: string
+          /** While now() <= until, closes_at does not apply to the project. */
+          until: string
+          granted_by: string | null
+          created_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_late_passes_hackathon_id_fkey'
+            columns: ['hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathons'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'hackathon_late_passes_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * Insert-only doqtri workspace snapshots (D-117), written by
+       * `push_doqtri_hackathon_snapshot`. Read by the project's members and
+       * the hackathon's staff, never by an OAuth app. Pruned 90 days after
+       * the hackathon closes.
+       */
+      hackathon_doqtri_snapshots: {
+        Row: {
+          /** qdit's id: the contract's response `id`. */
+          id: string
+          /** doqtri's idempotency key, unique per project. */
+          snapshot_id: string
+          hackathon_id: string
+          project_id: string
+          workspace_id: string
+          pushed_by: string | null
+          client_id: string
+          /** The request body (DoqtriSnapshotV1, lib/hackathon/types.ts). */
+          payload: Json
+          /** SHA-256 of the raw body bytes, lowercase hex. */
+          payload_sha256: string
+          note_count: number
+          received_at: string
+          /** Written later by `record_doqtri_chain_check`; null until then. */
+          chain_check: Json | null
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_doqtri_snapshots_hackathon_id_fkey'
+            columns: ['hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathons'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'hackathon_doqtri_snapshots_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * One entry per project per hackathon (D-115). Read by the project's
+       * members and the hackathon's staff; written by `submit_hackathon_entry`.
+       * `updated_at` is not granted to clients (D-116): select the other
+       * columns by name, since `select('*')` is refused. An admin's
+       * eligibility override is in `hackathon_eligibility_overrides`.
+       */
+      hackathon_submissions: {
+        Row: {
+          id: string
+          hackathon_id: string
+          project_id: string
+          /** Trimmed, 1–80 characters. */
+          team_name: string
+          /** Null only inside the submitting transaction. */
+          current_version_id: string | null
+          created_by: string | null
+          created_at: string
+          /** Not granted to clients. */
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_submissions_hackathon_id_fkey'
+            columns: ['hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathons'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'hackathon_submissions_project_id_fkey'
+            columns: ['project_id']
+            isOneToOne: false
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'hackathon_submissions_current_version_fkey'
+            columns: ['current_version_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submission_versions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /** The current team of each entry; one team per person per hackathon. */
+      hackathon_team_members: {
+        Row: {
+          hackathon_id: string
+          submission_id: string
+          user_id: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_team_members_submission_fkey'
+            columns: ['submission_id', 'hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submissions'
+            referencedColumns: ['id', 'hackathon_id']
+          },
+        ]
+      }
+
+      /**
+       * Insert-only versions of an entry. Only `eligibility` changes, through
+       * `set_version_eligibility` (service_role). `eligibility` is not granted
+       * to clients (D-116): select the other columns by name, since
+       * `select('*')` is refused. Admins read it through
+       * `hackathon_grading_status`.
+       */
+      hackathon_submission_versions: {
+        Row: {
+          id: string
+          submission_id: string
+          version_no: number
+          team_name: string
+          member_ids: string[]
+          /** QditSnapshotV1 (lib/hackathon/types.ts), frozen at submit. */
+          qdit_snapshot: Json
+          /** The newest doqtri push at submit; null if none or pruned. */
+          doqtri_snapshot_id: string | null
+          /** 1–3 `<hackathon>/<project>/<uuid>.<ext>` in hackathon-mindmaps. */
+          image_paths: string[]
+          submitted_by: string | null
+          submitted_at: string
+          /** Not granted to clients. `{eligible: boolean, rules: [...]}`; null until the grader runs. */
+          eligibility: Json | null
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_submission_versions_submission_id_fkey'
+            columns: ['submission_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submissions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'hackathon_submission_versions_doqtri_snapshot_id_fkey'
+            columns: ['doqtri_snapshot_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_doqtri_snapshots'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * The AI grading queue (D-119). No client role can read it; the grader
+       * uses the service-role RPCs.
+       */
+      hackathon_grading_jobs: {
+        Row: {
+          id: string
+          version_id: string
+          /** 1–9: runs 1 and 2, then the third run and regrades. */
+          run_no: number
+          status: 'pending' | 'running' | 'done' | 'failed' | 'superseded'
+          /** Claims so far; only grows, and is the lease's fencing token. */
+          attempts: number
+          /** Claims that did not count (overload, budget abort); the limit is attempts - free_attempts <= 3. */
+          free_attempts: number
+          lease_until: string | null
+          next_attempt_at: string
+          /** A code (`^[a-z0-9_:.-]{1,80}$`), never prose. */
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_grading_jobs_version_id_fkey'
+            columns: ['version_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submission_versions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * Sealed AI review results (D-116). No client role can read them;
+       * admins reach them only through `hackathon_leaderboard` after release.
+       */
+      hackathon_ai_runs: {
+        Row: {
+          id: string
+          version_id: string
+          run_no: number
+          model: string
+          criteria: Json
+          /** 0–100, two decimals. */
+          total: number
+          flags: string[]
+          summary: string | null
+          stop_reason: string | null
+          usage: Json | null
+          truncated: boolean
+          created_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_ai_runs_version_id_fkey'
+            columns: ['version_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submission_versions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      /**
+       * Written by `release_hackathon_grades`. No client grant: judges list
+       * finalists through `hackathon_finals_for_judge`, admins through
+       * `hackathon_leaderboard`.
+       */
+      hackathon_finalists: {
+        Row: {
+          hackathon_id: string
+          submission_id: string
+          pitch_order: number | null
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_finalists_submission_fkey'
+            columns: ['submission_id', 'hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submissions'
+            referencedColumns: ['id', 'hackathon_id']
+          },
+        ]
+      }
+
+      /**
+       * Sealed (D-116): each finalist's AI rank. No client grant; admins read
+       * it through `hackathon_leaderboard`.
+       */
+      hackathon_finalist_ranks: {
+        Row: {
+          hackathon_id: string
+          submission_id: string
+          ai_rank: number
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_finalist_ranks_finalist_fkey'
+            columns: ['hackathon_id', 'submission_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_finalists'
+            referencedColumns: ['hackathon_id', 'submission_id']
+          },
+        ]
+      }
+
+      /**
+       * An admin's eligibility call on an entry (D-116). Staff-only, no
+       * client grant: written by `set_eligibility_override`, read through
+       * `hackathon_grading_status` and `hackathon_leaderboard`.
+       */
+      hackathon_eligibility_overrides: {
+        Row: {
+          submission_id: string
+          hackathon_id: string
+          /** Wins over the computed eligibility. */
+          value: boolean
+          reason: string
+          overridden_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_eligibility_overrides_submission_fkey'
+            columns: ['submission_id', 'hackathon_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_submissions'
+            referencedColumns: ['id', 'hackathon_id']
+          },
+        ]
+      }
+
+      /**
+       * A judge's 5 × 1–5 scores for one finalist (D-119). A judge reads their
+       * own rows after release; written only by `upsert_judge_score`.
+       */
+      hackathon_judge_scores: {
+        Row: {
+          id: string
+          hackathon_id: string
+          submission_id: string
+          judge_id: string
+          clarity: number
+          structure: number
+          accuracy: number
+          connections: number
+          pitch: number
+          note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [
+          {
+            foreignKeyName: 'hackathon_judge_scores_finalist_fkey'
+            columns: ['hackathon_id', 'submission_id']
+            isOneToOne: false
+            referencedRelation: 'hackathon_finalists'
+            referencedColumns: ['hackathon_id', 'submission_id']
+          },
+        ]
+      }
     }
 
     Views: Record<string, never>
@@ -1015,6 +1437,14 @@ export type Database = {
         Returns: string
       }
       /**
+       * Whether p_client_id is integration_settings.doqtri_oauth_client_id
+       * (D-61); false while it is unset. Callable by any signed-in caller.
+       */
+      is_doqtri_oauth_client: {
+        Args: { p_client_id: string }
+        Returns: boolean
+      }
+      /**
        * Whether the caller's own OAuth token was issued at or before that
        * user's latest revoke of its client (D-59). Reads sub, client_id and
        * iat from the request JWT; called once per /api/v1 request.
@@ -1100,6 +1530,382 @@ export type Database = {
           missing_secrets: string[]
         }
       }
+      /**
+       * Whether the caller is staff of `p_hackathon_id` with at least
+       * `p_min_role` (judge < admin). Used by the hackathon read policies.
+       */
+      is_hackathon_staff: {
+        Args: { p_hackathon_id: string; p_min_role?: string }
+        Returns: boolean
+      }
+      /**
+       * Submit or resubmit a project's hackathon entry (first-party, project
+       * admin+). Returns the new version id. Raises 42501 (OAuth token, role
+       * below admin), P0002 (`No such hackathon.` / `No such project.`),
+       * 22023 with hint `team_name` | `member_ids` | `image_paths`, QD409
+       * `hackathon_not_open` | `hackathon_closed` | `member_on_other_team` |
+       * `member_is_staff`, QD413 `snapshot_too_large` (still over 2 MB with
+       * text clipped to 300 characters). Messages: 20261110100000_hackathons.sql.
+       */
+      submit_hackathon_entry: {
+        Args: {
+          p_hackathon_id: string
+          p_project_id: string
+          p_team_name: string
+          p_member_ids: string[]
+          p_image_paths: string[]
+        }
+        Returns: string
+      }
+      /**
+       * POST /api/v1/projects/{id}/hackathon-snapshots (doqtri's OAuth client
+       * only, project admin+). 42501 for a first-party session, another
+       * client, a revoked token or a role below admin; P0002 for an unknown
+       * project or slug; QD409 `snapshot_conflict` (also for the same key
+       * to another hackathon) | `snapshot_limit` | `hackathon_not_open` |
+       * `hackathon_closed`; QD413 `payload_too_large` over 3 MiB of jsonb text (a backstop: the route enforces 2 MiB on the raw body); 22023 for
+       * bad arguments, `note_count` must equal the payload's notes.
+       * A replay (same project, snapshot_id and hash) returns the first
+       * answer with `replay: true`.
+       */
+      push_doqtri_hackathon_snapshot: {
+        Args: {
+          p_hackathon_slug: string
+          p_project_id: string
+          p_snapshot_id: string
+          p_workspace_id: string
+          p_payload: Json
+          p_payload_sha256: string
+          p_note_count: number
+        }
+        Returns: {
+          id: string
+          note_count: number
+          received_at: string
+          submission_state: 'none' | 'submitted_older' | 'current'
+          replay: boolean
+        }
+      }
+      /** service_role only. Stores the per-note registry check on a snapshot. */
+      record_doqtri_chain_check: {
+        Args: { p_snapshot_id: string; p_chain_check: Json }
+        Returns: undefined
+      }
+      /**
+       * Hackathon admin (first-party). Job states and eligibility per entry;
+       * never scores, totals or flags (D-116).
+       */
+      hackathon_grading_status: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          submission_id: string
+          project_id: string
+          project_slug: string
+          team_name: string
+          version_id: string | null
+          version_no: number | null
+          submitted_at: string | null
+          /**
+           * Live jobs. Before release only the first two, numbered 1 and 2;
+           * after release all of them, with their real run_no.
+           */
+          jobs: {
+            run_no: number
+            status: 'pending' | 'running' | 'done' | 'failed'
+            attempts: number
+            free_attempts: number
+            next_attempt_at: string
+            last_error: string | null
+            updated_at: string
+          }[]
+          /**
+           * None of the jobs shown is pending or running: before release
+           * only the first two count, so a third run leaves no trace.
+           */
+          complete: boolean
+          eligibility: Json | null
+          eligibility_override: boolean | null
+          override_reason: string | null
+          late_pass_until: string | null
+        }[]
+      }
+      /**
+       * Hackathon admin (first-party), after release only: QD409
+       * `grades_not_released` before. `runs` are the counted runs (job done)
+       * of the current version; `ai_criteria`/`ai_total` combine them exactly
+       * as rubric.ts combineRuns.
+       */
+      hackathon_leaderboard: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          submission_id: string
+          project_id: string
+          project_slug: string
+          team_name: string
+          version_id: string | null
+          version_no: number | null
+          submitted_at: string | null
+          eligibility: Json | null
+          eligibility_override: boolean | null
+          override_reason: string | null
+          eligible: boolean
+          run_count: number | null
+          runs: {
+            run_no: number
+            model: string
+            total: number
+            criteria: Json
+            flags: string[]
+            summary: string | null
+            truncated: boolean
+            created_at: string
+          }[] | null
+          /** Mean of the counted runs' stored totals, for display. */
+          ai_mean: number | null
+          /** Per criterion 0–10 as rubric.ts combineRuns: one run, mean of two, median of three. */
+          ai_criteria: {
+            clarity: number
+            structure: number
+            accuracy: number
+            connections: number
+            execution: number
+          } | null
+          /** Σ ai_criteria/10 × 20, 2 decimals. What release ranks by. */
+          ai_total: number | null
+          finalist: boolean
+          ai_rank: number | null
+          pitch_order: number | null
+          judge_mean: number | null
+          judge_count: number
+          /** Every judge's scores as given (empty for a non-finalist), by judge_id. */
+          judge_scores: {
+            judge_id: string
+            clarity: number
+            structure: number
+            accuracy: number
+            connections: number
+            pitch: number
+          }[]
+        }[]
+      }
+      /**
+       * Hackathon admin (first-party). Irreversible. QD409
+       * `already_released` | `hackathon_not_closed` | `late_pass_active` |
+       * `grading_incomplete` (DETAIL `N entries still grading.`, counting
+       * only entries whose first two live runs are unsettled: a pending third
+       * run never holds release up, and the entry keeps its two-run mean).
+       * Supersedes the hackathon's pending and running jobs. Returns the
+       * finalist count.
+       */
+      release_hackathon_grades: {
+        Args: { p_hackathon_id: string; p_allow_incomplete?: boolean }
+        Returns: number
+      }
+      /** Hackathon admin, before release. A past `p_until` ends the pass. */
+      grant_late_pass: {
+        Args: { p_hackathon_id: string; p_project_id: string; p_until: string }
+        Returns: undefined
+      }
+      /**
+       * Hackathon admin, before release (QD409 `already_released` after).
+       * Reason (1–500) required unless `p_value` is null. `true` on a
+       * version the grader skipped (all live jobs done, no AI run) queues
+       * two fresh runs.
+       */
+      set_eligibility_override: {
+        Args: { p_submission_id: string; p_value: boolean | null; p_reason: string | null }
+        Returns: undefined
+      }
+      /**
+       * Hackathon admin. Adds, changes or (role null) removes a staff member
+       * by username; QD409 `last_admin` | `staff_on_team`, P0002 for an
+       * unknown username.
+       * Returns their user id.
+       */
+      set_hackathon_staff: {
+        Args: {
+          p_hackathon_id: string
+          p_username: string
+          p_role: Database['public']['Enums']['hackathon_role'] | null
+        }
+        Returns: string
+      }
+      /**
+       * Judge+ (first-party), after release (QD409 `grades_not_released`).
+       * Finalists by pitch order, then submission id; never by AI rank.
+       */
+      hackathon_finals_for_judge: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          submission_id: string
+          team_name: string
+          project_slug: string
+          pitch_order: number | null
+        }[]
+      }
+      /** Hackathon admin. The staff with username and display name. */
+      hackathon_staff_list: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          user_id: string
+          username: string | null
+          display_name: string | null
+          role: Database['public']['Enums']['hackathon_role']
+          created_at: string
+        }[]
+      }
+      /** Hackathon admin, after release. A permutation of the finalists. */
+      set_pitch_order: {
+        Args: { p_hackathon_id: string; p_submission_ids: string[] }
+        Returns: undefined
+      }
+      /**
+       * Hackathon admin, before release. Supersedes the current version's
+       * jobs and queues two runs with the next run numbers; QD409
+       * `regrade_limit` past run 9. Returns the first new run_no.
+       */
+      regrade_submission: {
+        Args: { p_submission_id: string }
+        Returns: number
+      }
+      /**
+       * Judge+ (first-party), after release, finalists only. QD409
+       * `grades_not_released` | `not_finalist`; 22023 hint `scores` | `note`.
+       */
+      upsert_judge_score: {
+        Args: {
+          p_submission_id: string
+          p_clarity: number
+          p_structure: number
+          p_accuracy: number
+          p_connections: number
+          p_pitch: number
+          p_note: string | null
+        }
+        Returns: undefined
+      }
+      /**
+       * Grader (service_role only). Leases up to `p_limit` due jobs, never
+       * more than 20 running in total, with the frozen version they grade.
+       */
+      claim_grading_jobs: {
+        Args: { p_limit?: number; p_lease_seconds?: number; p_version_id?: string | null }
+        Returns: {
+          job_id: string
+          version_id: string
+          run_no: number
+          /**
+           * Including the attempt this claim is for. Pass it back as
+           * `p_attempt` to complete, fail or skip: any other value is stale.
+           */
+          attempts: number
+          lease_until: string
+          submission_id: string
+          hackathon_id: string
+          project_id: string
+          team_name: string
+          member_ids: string[]
+          image_paths: string[]
+          submitted_at: string
+          qdit_snapshot: Json
+          /** The frozen doqtri payload, or null. */
+          doqtri_snapshot: Json | null
+          opens_at: string
+          closes_at: string
+          team_min: number
+          team_max: number
+          /** The entry's current version; a claim for another is stale work. */
+          current_version_id: string | null
+          eligibility_override: boolean | null
+          /** The version's stored eligibility result, or null. */
+          eligibility: Json | null
+        }[]
+      }
+      /**
+       * Grader. Records the run and marks the job done; `stale` unless it is
+       * still running under claim `p_attempt`.
+       */
+      complete_grading_job: {
+        Args: {
+          p_job_id: string
+          p_attempt: number
+          p_model: string
+          p_criteria: Json
+          p_total: number
+          p_flags: string[]
+          p_summary: string | null
+          p_stop_reason: string | null
+          p_usage: Json | null
+          p_truncated: boolean
+        }
+        Returns: 'done' | 'stale'
+      }
+      /**
+       * Grader. Back to pending while counted attempts < 3, else failed;
+       * `p_permanent` (refusal, invalid output) fails it at once;
+       * `p_count_attempt: false` (overload, budget abort) requeues it without
+       * counting the attempt. `stale` unless running under claim `p_attempt`.
+       */
+      fail_grading_job: {
+        Args: {
+          p_job_id: string
+          p_attempt: number
+          p_error: string
+          p_retry_after_seconds?: number
+          p_permanent?: boolean
+          p_count_attempt?: boolean
+        }
+        Returns: 'pending' | 'failed' | 'stale'
+      }
+      /**
+       * Grader. Done with no AI run (an ineligible entry); reason in
+       * last_error. `stale` unless running under claim `p_attempt`.
+       */
+      skip_grading_job: {
+        Args: { p_job_id: string; p_attempt: number; p_reason: string }
+        Returns: 'done' | 'stale'
+      }
+      /**
+       * Grader. A version's live (not superseded) jobs and the runs of its
+       * done jobs; P0002 for an unknown version.
+       */
+      hackathon_version_progress: {
+        Args: { p_version_id: string }
+        Returns: {
+          version_id: string
+          jobs: {
+            id: string
+            run_no: number
+            status: 'pending' | 'running' | 'done' | 'failed'
+          }[]
+          runs: {
+            run_no: number
+            criteria: Json
+            total: number
+            flags: string[]
+            model: string
+          }[]
+        }
+      }
+      /** Grader. The tie-break run; null when not needed or not current. */
+      enqueue_third_run: {
+        Args: { p_version_id: string }
+        Returns: string | null
+      }
+      /** Grader. `p_eligibility` must carry a boolean `eligible`. */
+      set_version_eligibility: {
+        Args: { p_version_id: string; p_eligibility: Json }
+        Returns: undefined
+      }
+      /** Whether the pg_cron grading job can run (service_role only). */
+      hackathon_grading_scheduler_health: {
+        Args: Record<string, never>
+        Returns: {
+          status: 'configured' | 'missing' | 'unavailable'
+          job: boolean
+          missing_secrets: string[]
+        }
+      }
     }
 
     Enums: {
@@ -1122,6 +1928,8 @@ export type Database = {
         | 'milestone_submitted'
         | 'milestone_approved'
         | 'milestone_rejected'
+      /** Hackathon staff (D-115): admin > judge. */
+      hackathon_role: 'admin' | 'judge'
     }
 
     CompositeTypes: Record<string, never>

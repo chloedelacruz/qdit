@@ -362,6 +362,32 @@ export async function readRegistry(
   }
 }
 
+/** One `get_document` read; `document` is null for DocumentNotFound. */
+export type DocumentRead = { ok: true; document: RegistryDocument | null } | { ok: false; reason: ReadFailure };
+
+/**
+ * `get_document(doc_id)` alone, uncached: the hackathon snapshot's chain
+ * check (WP-4.7, contract section 8) compares each note's markdown hash with
+ * the registry's `content_hash` as it is now. Never throws.
+ */
+export async function readRegistryDocument(config: RegistryConfig, docId: string): Promise<DocumentRead> {
+  const server = new rpc.Server(config.rpcUrl, { timeout: READ_TIMEOUT_MS });
+  try {
+    const value = await simulate(
+      server,
+      config,
+      "get_document",
+      [nativeToScVal(docId, { type: "string" })],
+      DOCUMENT_NOT_FOUND,
+    );
+    return { ok: true, document: value ? decodeDocument(value) : null };
+  } catch (error) {
+    const reason = error instanceof RegistryReadError ? error.reason : "decode";
+    console.error(`doqtri registry: could not read document ${docId} on ${config.network}:`, error);
+    return { ok: false, reason };
+  }
+}
+
 /** Where a project's `milestone_proof` lives: its own network and contract. */
 export type MilestoneTarget = {
   network: StellarNetwork;

@@ -174,6 +174,20 @@ describe("POST /api/v1/projects/{id}/docs", () => {
     expect(db.requests).toEqual([]);
   });
 
+  it.each(["__proto__", "constructor", "toString"])(
+    "rejects an extra %s key as an unknown field, not as a property of Object.prototype",
+    async (key) => {
+      const db = signedIn();
+      const raw = `{${JSON.stringify(BODY).slice(1, -1)},"${key}":{"polluted":true}}`;
+
+      const response = await post(undefined, PROJECT, { raw });
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.details.fields).toEqual({ [key]: "unknown field" });
+      expect(db.requests).toEqual([]);
+    },
+  );
+
   it("names doqtri's origin when it refuses a doc_url off it (D-45)", async () => {
     const db = signedIn();
 

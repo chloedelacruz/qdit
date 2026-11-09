@@ -6,7 +6,8 @@ import { ApiError, invalidRequest } from "./errors";
  * Request bodies and path ids for `/api/v1` — contract sections 4 and 6.
  *
  *   - JSON only (`Content-Type: application/json`, any parameters), at most
- *     64 KiB, and an object at the top;
+ *     64 KiB (2 MiB on `POST /projects/{id}/hackathon-snapshots`, D-118), and
+ *     an object at the top;
  *   - every field is named, and an unknown one is `400 invalid_request`
  *     rather than ignored, so a typo in a client never reads as success;
  *   - every problem found is reported at once in `details.fields`, field name
@@ -38,8 +39,24 @@ export const MAX_TITLE_LENGTH = 300;
 
 export type JsonObject = Record<string, unknown>;
 
-/** The request's JSON object body, or `400 invalid_request`. */
-export async function readJsonObject(request: Request): Promise<JsonObject> {
+/** A JSON object body and the exact bytes it was parsed from. */
+export type JsonBody = {
+  body: JsonObject;
+  /** The raw request body, as received, for hashing (D-118). */
+  bytes: Uint8Array;
+};
+
+/**
+ * The request's JSON object body, or `400 invalid_request`. `maxBytes` is
+ * 64 KiB except where the contract names a larger limit for one endpoint
+ * (section 4: `POST /projects/{id}/hackathon-snapshots`, 2 MiB, D-118).
+ */
+export async function readJsonObject(request: Request, maxBytes = MAX_BODY_BYTES): Promise<JsonObject> {
+  return (await readJsonBody(request, maxBytes)).body;
+}
+
+/** As `readJsonObject()`, and also returns the raw bytes the object came from. */
+export async function readJsonBody(request: Request, maxBytes = MAX_BODY_BYTES): Promise<JsonBody> {
   const type = request.headers.get("content-type") ?? "";
   if (type.split(";")[0].trim().toLowerCase() !== "application/json") {
     throw invalidRequest("The body must be JSON (Content-Type: application/json).", {
@@ -48,11 +65,14 @@ export async function readJsonObject(request: Request): Promise<JsonObject> {
   }
 
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw tooLarge();
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge(maxBytes);
 
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > MAX_BODY_BYTES) throw tooLarge();
+  const bytes = await readLimited(request, maxBytes);
 
+  // Duplicate keys: JSON.parse keeps the last one, and so does the object
+  // this returns. A caller hashing `bytes` (the hackathon snapshot's
+  // idempotency key, D-118) hashes what was sent, duplicates and all, while
+  // what is stored is the parsed object, as the contract says.
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -63,11 +83,51 @@ export async function readJsonObject(request: Request): Promise<JsonObject> {
   if (!isObject(parsed)) {
     throw invalidRequest("The body must be a JSON object.", { body: "must be a JSON object" });
   }
-  return parsed;
+  return { body: parsed, bytes };
 }
 
-function tooLarge(): ApiError {
-  return invalidRequest("The body is larger than 64 KiB.", { body: "must be at most 64 KiB" });
+/**
+ * The body's bytes, at most `maxBytes` of them. Read from the stream with a
+ * running count, and the stream cancelled as soon as the count passes the
+ * limit, so a body without a (truthful) `Content-Length` costs no more than
+ * the limit to refuse.
+ */
+async function readLimited(request: Request, maxBytes: number): Promise<Uint8Array> {
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge(maxBytes);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/** `64 KiB`, `2 MiB`: how the contract names a size limit. */
+function sizeLabel(bytes: number): string {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+  if (bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+  return `${bytes} bytes`;
+}
+
+function tooLarge(maxBytes: number): ApiError {
+  const label = sizeLabel(maxBytes);
+  return invalidRequest(`The body is larger than ${label}.`, { body: `must be at most ${label}` });
 }
 
 export function isObject(value: unknown): value is JsonObject {
@@ -85,7 +145,12 @@ export function pathId(value: string | undefined, notFound: string): string {
  * fields the way a client wrote them (`link.node_id`).
  */
 export class FieldErrors {
-  readonly fields: Record<string, string> = {};
+  /**
+   * Null prototype: a client's key is a field name like any other, so
+   * `constructor`, `toString` or `__proto__` must be recorded, not read off
+   * `Object.prototype` and skipped.
+   */
+  readonly fields: Record<string, string> = Object.create(null);
 
   add(field: string, problem: string): void {
     this.fields[field] ??= problem;
@@ -94,7 +159,7 @@ export class FieldErrors {
   /** Every key of `body` not in `allowed` is an unknown field. */
   rejectUnknown(body: JsonObject, allowed: readonly string[], prefix = "", hints: Record<string, string> = {}): void {
     for (const key of Object.keys(body)) {
-      if (!allowed.includes(key)) this.add(prefix + key, hints[key] ?? "unknown field");
+      if (!allowed.includes(key)) this.add(prefix + key, Object.hasOwn(hints, key) ? hints[key] : "unknown field");
     }
   }
 
