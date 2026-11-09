@@ -1,0 +1,218 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  checkImageFile,
+  isMindmapPathFor,
+  MAX_IMAGE_BYTES,
+  mindmapPath,
+  readSubmitForm,
+  submitEntrySchema,
+  TEAM_NAME_MAX,
+  uploadErrorMessage,
+} from "./schemas";
+
+const HACKATHON = "3f0c2a8e-1b4d-4c6e-9a7f-2d5b8e1c0a93";
+const PROJECT = "7a9e4c21-5d3b-4f8a-b6c0-1e2d3f4a5b6c";
+const OTHER_PROJECT = "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e";
+const PEOPLE = [
+  "11111111-1111-4111-8111-111111111111",
+  "22222222-2222-4222-8222-222222222222",
+  "33333333-3333-4333-8333-333333333333",
+  "44444444-4444-4444-8444-444444444444",
+  "55555555-5555-4555-8555-555555555555",
+];
+
+const image = (n: number, project = PROJECT) =>
+  mindmapPath(HACKATHON, project, `aaaaaaaa-aaaa-4aaa-8aaa-${String(n).padStart(12, "0")}`, "png");
+
+const schema = submitEntrySchema({ teamMin: 3, teamMax: 4 });
+
+function entry(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    hackathonId: HACKATHON,
+    projectId: PROJECT,
+    teamName: "Night Owls",
+    memberIds: PEOPLE.slice(0, 3),
+    images: [image(1), "", ""],
+    ...overrides,
+  };
+}
+
+function errorsOf(input: unknown): Record<string, string> {
+  const result = schema.safeParse(input);
+  if (result.success) return {};
+  return Object.fromEntries(result.error.issues.map((i) => [String(i.path[0]), i.message]));
+}
+
+describe("submitEntrySchema: team size", () => {
+  it.each([3, 4])("accepts %i members for a 3–4 team", (n) => {
+    expect(schema.safeParse(entry({ memberIds: PEOPLE.slice(0, n) })).success).toBe(true);
+  });
+
+  it.each([0, 2, 5])("refuses %i members for a 3–4 team", (n) => {
+    expect(errorsOf(entry({ memberIds: PEOPLE.slice(0, n) })).memberIds).toBe(
+      "Choose 3 to 4 team members.",
+    );
+  });
+
+  it("uses the hackathon's own bounds", () => {
+    const pairs = submitEntrySchema({ teamMin: 2, teamMax: 2 });
+    expect(pairs.safeParse(entry({ memberIds: PEOPLE.slice(0, 2) })).success).toBe(true);
+    const three = pairs.safeParse(entry({ memberIds: PEOPLE.slice(0, 3) }));
+    expect(three.success).toBe(false);
+    expect(three.error?.issues[0].message).toBe("Choose 2 team members.");
+  });
+
+  it("refuses the same person twice", () => {
+    expect(errorsOf(entry({ memberIds: [PEOPLE[0], PEOPLE[0], PEOPLE[1]] })).memberIds).toBe(
+      "Each person can be on the team once.",
+    );
+  });
+
+  it("refuses an id that is not a uuid", () => {
+    expect(errorsOf(entry({ memberIds: ["ada", PEOPLE[1], PEOPLE[2]] })).memberIds).toBeTruthy();
+  });
+});
+
+describe("submitEntrySchema: team name", () => {
+  it("trims the name", () => {
+    const result = schema.parse(entry({ teamName: "  Night Owls  " }));
+    expect(result.teamName).toBe("Night Owls");
+  });
+
+  it.each(["", "   "])("refuses an empty name (%j)", (teamName) => {
+    expect(errorsOf(entry({ teamName })).teamName).toBe("Enter a team name.");
+  });
+
+  it("accepts 80 characters and refuses 81", () => {
+    expect(schema.safeParse(entry({ teamName: "x".repeat(TEAM_NAME_MAX) })).success).toBe(true);
+    expect(errorsOf(entry({ teamName: "x".repeat(TEAM_NAME_MAX + 1) })).teamName).toBe(
+      "Keep the team name to 80 characters.",
+    );
+  });
+});
+
+describe("submitEntrySchema: images", () => {
+  it("needs the global mindmap in the first slot", () => {
+    expect(errorsOf(entry({ images: ["", image(2), ""] })).images).toBe(
+      "Attach the global mindmap image.",
+    );
+    expect(errorsOf(entry({ images: [] })).images).toBe("Attach the global mindmap image.");
+  });
+
+  it("takes one to three images, global map first, empty slots dropped", () => {
+    expect(schema.parse(entry({ images: [image(1), "", ""] })).imagePaths).toEqual([image(1)]);
+    expect(schema.parse(entry({ images: [image(1), "", image(3)] })).imagePaths).toEqual([
+      image(1),
+      image(3),
+    ]);
+    expect(schema.parse(entry({ images: [image(1), image(2), image(3)] })).imagePaths).toEqual([
+      image(1),
+      image(2),
+      image(3),
+    ]);
+  });
+
+  it("refuses a fourth image", () => {
+    expect(errorsOf(entry({ images: [image(1), image(2), image(3), image(4)] })).images).toBe(
+      "Attach at most three images.",
+    );
+  });
+
+  it("refuses the same image twice", () => {
+    expect(errorsOf(entry({ images: [image(1), image(1), ""] })).images).toBe(
+      "Attach each image once.",
+    );
+  });
+
+  it("refuses something that is not an upload path", () => {
+    expect(errorsOf(entry({ images: ["https://example.com/map.png", "", ""] })).images).toBeTruthy();
+  });
+
+  it("refuses an image uploaded under another project", () => {
+    expect(errorsOf(entry({ images: [image(1, OTHER_PROJECT), "", ""] })).images).toBe(
+      "An image was uploaded for another project. Remove it and attach it again.",
+    );
+  });
+
+  it("reports every field at once", () => {
+    const errors = errorsOf(entry({ teamName: "", memberIds: [], images: [] }));
+    expect(Object.keys(errors).sort()).toEqual(["images", "memberIds", "teamName"]);
+  });
+});
+
+describe("readSubmitForm", () => {
+  it("reads the dialog's fields in slot order", () => {
+    const form = new FormData();
+    form.set("hackathonId", HACKATHON);
+    form.set("projectId", PROJECT);
+    form.set("teamName", "Night Owls");
+    for (const id of PEOPLE.slice(0, 3)) form.append("memberIds", id);
+    form.set("image_global", image(1));
+    form.set("image_note_2", image(3));
+
+    expect(readSubmitForm(form)).toEqual({
+      hackathonId: HACKATHON,
+      projectId: PROJECT,
+      teamName: "Night Owls",
+      memberIds: PEOPLE.slice(0, 3),
+      images: [image(1), "", image(3)],
+    });
+  });
+});
+
+describe("checkImageFile (before upload)", () => {
+  it.each([
+    ["image/png", "png"],
+    ["image/jpeg", "jpg"],
+    ["image/webp", "webp"],
+  ])("accepts %s as .%s", (type, ext) => {
+    expect(checkImageFile({ type, size: 1024 })).toEqual({ ok: true, ext });
+  });
+
+  it.each(["image/gif", "image/svg+xml", "application/pdf", ""])("refuses %j", (type) => {
+    expect(checkImageFile({ type, size: 1024 })).toEqual({
+      ok: false,
+      error: "Use a PNG, JPEG or WebP image.",
+    });
+  });
+
+  it("accepts exactly 5 MB and refuses one byte more", () => {
+    expect(checkImageFile({ type: "image/png", size: MAX_IMAGE_BYTES }).ok).toBe(true);
+    expect(checkImageFile({ type: "image/png", size: MAX_IMAGE_BYTES + 1 })).toEqual({
+      ok: false,
+      error: "The image is over 5 MB. Export a smaller one.",
+    });
+  });
+
+  it("refuses an empty file", () => {
+    expect(checkImageFile({ type: "image/png", size: 0 }).ok).toBe(false);
+  });
+});
+
+describe("mindmapPath", () => {
+  it("builds the bucket's <hackathon>/<project>/<uuid>.<ext> path", () => {
+    const path = mindmapPath(HACKATHON, PROJECT, "AAAAAAAA-AAAA-4AAA-8AAA-000000000001", "png");
+    expect(path).toBe(`${HACKATHON}/${PROJECT}/aaaaaaaa-aaaa-4aaa-8aaa-000000000001.png`);
+    expect(isMindmapPathFor(path, HACKATHON, PROJECT)).toBe(true);
+    expect(isMindmapPathFor(path, HACKATHON, OTHER_PROJECT)).toBe(false);
+  });
+
+  it("refuses extensions the bucket does not take", () => {
+    expect(isMindmapPathFor(`${HACKATHON}/${PROJECT}/aaaaaaaa-aaaa-4aaa-8aaa-000000000001.gif`, HACKATHON, PROJECT)).toBe(false);
+  });
+});
+
+describe("uploadErrorMessage", () => {
+  it("explains a refusal by the bucket policy", () => {
+    expect(uploadErrorMessage("new row violates row-level security policy")).toMatch(/owner or an admin/);
+  });
+
+  it("explains the size limit", () => {
+    expect(uploadErrorMessage("The object exceeded the maximum allowed size")).toMatch(/over 5 MB/);
+  });
+
+  it("falls back to a retry", () => {
+    expect(uploadErrorMessage("socket hang up")).toBe("The upload did not finish. Try again.");
+  });
+});
