@@ -84,7 +84,7 @@ export const APP_ACCESS = {
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, or its record of which apps you disconnected",
     "See your teammates' profiles or who else is in your projects",
-    "See or change qdit's hackathons, their staff, entries, teams, entry versions, late passes, grading queue, grades, finalists or judges' scores, or read back a hackathon snapshot it sent",
+    "See or change qdit's hackathons, their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
   ],
 } as const;
 
@@ -119,6 +119,8 @@ export const APP_READ_SCOPE = {
     // every client role, not only to apps (D-116).
     "hackathon_ai_runs",
     "hackathon_doqtri_snapshots",
+    "hackathon_eligibility_overrides",
+    "hackathon_finalist_ranks",
     "hackathon_finalists",
     "hackathon_grading_jobs",
     "hackathon_judge_scores",
