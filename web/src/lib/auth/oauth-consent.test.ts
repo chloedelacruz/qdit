@@ -307,6 +307,8 @@ describe("APP_ACCESS matches the guard migration", () => {
       doc_link_connections: "which connections keep a plan linked",
       hackathon_ai_runs: "grades",
       hackathon_doqtri_snapshots: "read back a hackathon snapshot it sent",
+      hackathon_eligibility_overrides: "eligibility overrides",
+      hackathon_finalist_ranks: "finalist ranks",
       hackathon_finalists: "finalists",
       hackathon_grading_jobs: "grading queue",
       hackathon_judge_scores: "judges' scores",
