@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(251);
+select plan(257);
 
 
 -- ----------------------------------------------------------------------------
@@ -348,6 +348,13 @@ select is_empty(
               'hackathon_finals_for_judge', 'upsert_judge_score')
         and has_function_privilege('authenticated', p.oid, 'execute') $$,
   'authenticated can execute no hackathon, assert_ or queue function outside the allowlist'
+);
+
+select throws_ok(
+  $$ insert into public.hackathons (slug, name, opens_at, closes_at, finalist_count)
+     values ('hk-eleven', 'Eleven', now(), now() + interval '1 hour', 11) $$,
+  '23514', null,
+  'finalist_count is at most 10'
 );
 
 select ok(
@@ -1489,8 +1496,8 @@ select results_eq(
             complete
        from public.hackathon_grading_status('c7000000-0000-4000-8000-000000000001')
       where project_slug = 'hk-one' $$,
-  $$ values (2, 2, false) $$,
-  'grading status before release: runs 1 and 2 only (the third run is not shown), not complete'
+  $$ values (2, 2, true) $$,
+  'grading status before release: runs 1 and 2 only, and complete from those two (the pending third run leaves no trace)'
 );
 select pg_temp.as_service();
 
@@ -1717,12 +1724,32 @@ select throws_ok(
   'submit: refused after closes_at'
 );
 
+-- P5's runs disagree too: its third run stays pending through release.
+select pg_temp.as_service();
+select ok(set_config('hk.p5third', public.enqueue_third_run(current_setting('hk.p5v1')::uuid)::text, true) is not null,
+  'third run: queued for P5, and left pending');
+
+-- What release answers, as `message: detail`.
+create function pg_temp.release_answer(p_hackathon uuid) returns text
+language plpgsql as $$
+declare
+  v_detail text;
+begin
+  perform public.release_hackathon_grades(p_hackathon);
+  return 'released';
+exception when sqlstate 'QD409' then
+  get stacked diagnostics v_detail = pg_exception_detail;
+  return sqlerrm || ': ' || v_detail;
+end;
+$$;
+grant execute on function pg_temp.release_answer(uuid) to authenticated;
+
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 
-select throws_ok(
-  $$ select public.release_hackathon_grades('c7000000-0000-4000-8000-000000000001') $$,
-  'QD409', 'grading_incomplete',
-  'release: refused while runs are pending (P1''s third, P3''s regrade)'
+select is(
+  pg_temp.release_answer('c7000000-0000-4000-8000-000000000001'),
+  'grading_incomplete: 1 entries still grading.',
+  'release: refused while P3''s regrade runs; P1''s and P5''s pending third runs are not counted, nor shown'
 );
 
 select pg_temp.as_service();
@@ -1741,7 +1768,21 @@ select results_eq(
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
 
 select is(public.release_hackathon_grades('c7000000-0000-4000-8000-000000000001'), 2,
-  'release: after the close with grading complete, two finalists');
+  'release: proceeds with only a third run pending (P5''s), two finalists');
+
+select pg_temp.as_postgres();
+select is(
+  (select status from public.hackathon_grading_jobs where id = current_setting('hk.p5third')::uuid),
+  'superseded',
+  'release: the pending third run is superseded, so P5 keeps its two-run mean'
+);
+select pg_temp.as_session('a7000000-0000-4000-8000-000000000022');
+
+select throws_ok(
+  format($$ select public.set_eligibility_override(%L, true, 'Too late') $$, pg_temp.sub('hk.p5v1')),
+  'QD409', 'already_released',
+  'override: not after release'
+);
 
 select pg_temp.as_postgres();
 
@@ -1980,6 +2021,24 @@ select results_eq(
       where project_slug = 'hk-two' $$,
   $$ values (15.50::numeric, 2) $$,
   'leaderboard: judges'' mean /25 (21 and 10) and count'
+);
+
+select results_eq(
+  $$ select jsonb_array_length(judge_scores),
+            judge_scores -> 0 ->> 'judge_id', (judge_scores -> 0 ->> 'clarity')::int, (judge_scores -> 0 ->> 'pitch')::int,
+            judge_scores -> 1 ->> 'judge_id', (judge_scores -> 1 ->> 'clarity')::int,
+            pg_temp.keys(judge_scores -> 0)
+       from public.hackathon_leaderboard('c7000000-0000-4000-8000-000000000001')
+      where project_slug = 'hk-two' $$,
+  $$ values (2, 'a7000000-0000-4000-8000-000000000021'::text, 5, 4, 'a7000000-0000-4000-8000-000000000022'::text, 2,
+             array['accuracy', 'clarity', 'connections', 'judge_id', 'pitch', 'structure']) $$,
+  'leaderboard: every judge''s scores, by judge, for exact ranking'
+);
+
+select is(
+  (select judge_scores from public.hackathon_leaderboard('c7000000-0000-4000-8000-000000000001') where project_slug = 'hk-five'),
+  '[]'::jsonb,
+  'leaderboard: no judge scores for a non-finalist'
 );
 
 select throws_ok(
