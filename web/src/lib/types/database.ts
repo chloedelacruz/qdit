@@ -1554,7 +1554,7 @@ export type Database = {
        * client, a revoked token or a role below admin; P0002 for an unknown
        * project or slug; QD409 `snapshot_conflict` (also for the same key
        * to another hackathon) | `snapshot_limit` | `hackathon_not_open` |
-       * `hackathon_closed`; QD413 `payload_too_large` over 2 MiB; 22023 for
+       * `hackathon_closed`; QD413 `payload_too_large` over 3 MiB of jsonb text (a backstop: the route enforces 2 MiB on the raw body); 22023 for
        * bad arguments, `note_count` must equal the payload's notes.
        * A replay (same project, snapshot_id and hash) returns the first
        * answer with `replay: true`.

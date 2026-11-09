@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(250);
+select plan(251);
 
 
 -- ----------------------------------------------------------------------------
@@ -864,12 +864,28 @@ select throws_ok(
   'push: note_count must match the payload'
 );
 
+-- The database backstop is 3 MiB of jsonb text (the route holds the exact
+-- 2 MiB of raw bytes). A compact body under 2 MiB whose jsonb text form is
+-- over 2 MiB (99,000 short strings: 21 bytes each compact, 22 with jsonb's
+-- added space) gets past it: the unknown slug answers, not the size.
+select throws_ok(
+  $$ select public.push_doqtri_hackathon_snapshot('no-such-slug', 'b7000000-0000-4000-8000-000000000001',
+            'e7000000-0000-4000-8000-000000000007', 'e7100000-0000-4000-8000-000000000001',
+            x.p, repeat('a', 64), 0)
+       from (select jsonb_build_object('notes', '[]'::jsonb, 'pad', jsonb_agg(repeat('n', 18))) as p
+               from generate_series(1, 99000)) x
+      where octet_length(x.p::text) > 2097152
+        and octet_length(replace(x.p::text, ', ', ',')) < 2097152 $$,
+  'P0002', 'No such hackathon.',
+  'push: a payload whose jsonb text is just over 2 MiB passes the database cap'
+);
+
 select throws_ok(
   $$ select public.push_doqtri_hackathon_snapshot('hk-main', 'b7000000-0000-4000-8000-000000000001',
             'e7000000-0000-4000-8000-000000000007', 'e7100000-0000-4000-8000-000000000001',
-            jsonb_build_object('notes', '[]'::jsonb, 'pad', repeat('x', 2097152)), repeat('a', 64), 0) $$,
+            jsonb_build_object('notes', '[]'::jsonb, 'pad', repeat('x', 3145728)), repeat('a', 64), 0) $$,
   'QD413', 'payload_too_large',
-  'push: a payload over 2 MiB is refused in the database too'
+  'push: a payload over 3 MiB of jsonb text is refused by the database backstop'
 );
 
 select pg_temp.as_oauth_client('a7000000-0000-4000-8000-000000000006');
