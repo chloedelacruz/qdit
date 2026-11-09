@@ -39,7 +39,8 @@ export type SnapshotConflict = keyof typeof SNAPSHOT_CONFLICTS;
  *                               changed since the route's own check)
  *   QD409 <reason>      -> 409 with details.reason, for the four reasons;
  *                          any other token -> 500
- *   QD413               -> 400 body (not raised by this function today; the
+ *   QD413               -> 400 body (`payload_too_large`: the payload over
+ *                               2 MiB as the database measures it; the
  *                               contract never answers 413 itself)
  *   22023 snapshot_id   -> 400 on that field; 22023 payload -> 400 body;
  *                          any other 22023 is the route's bug -> 500
