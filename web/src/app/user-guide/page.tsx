@@ -627,6 +627,57 @@ const SECTIONS: Section[] = [
       <>Wait for the receipt. qdit shows the transaction hash and the ledger number.</>,
     ],
   },
+  {
+    id: "hackathon",
+    icon: "send",
+    title: "14. Submit to a hackathon",
+    lead: (
+      <>
+        Your team sends one submission. It holds your qdit project, your doqtri
+        notes, and your mindmap images.
+      </>
+    ),
+    warn: (
+      <>
+        Only the project&apos;s owner or an admin can submit. The hackathon page
+        shows when submissions close.
+      </>
+    ),
+    steps: [
+      <>Create one qdit project for your team. Section 5 shows how.</>,
+      <>
+        Open the project&apos;s <strong>Members</strong> page. Add each teammate
+        with <strong>Add member</strong>. Every team member must be a member of
+        the project.
+      </>,
+      <>
+        In doqtri, open the global mindmap. Click{" "}
+        <strong>Send to qdit hackathon</strong>.
+      </>,
+      <>
+        Save an image of your global mindmap. You can add up to two note maps
+        too. Use PNG, JPEG, or WebP, up to 5 MB each.
+      </>,
+      <>Open the hackathon page from the link you were given.</>,
+      <>
+        Click <strong>Add submission to hackathon</strong>.
+      </>,
+      <>Choose your team project. Type the team name. Tick each team member.</>,
+      <>Attach the global mindmap image. Attach note maps if you have them.</>,
+      <>
+        Click <strong>Submit</strong>. Your entry shows{" "}
+        <strong>Received</strong> under My entry.
+      </>,
+    ],
+    note: (
+      <>
+        You can submit again until the deadline. Click{" "}
+        <strong>Update submission</strong>. The last submission counts. If you
+        send from doqtri again, submit again in qdit to include it. A person
+        can be on one team only.
+      </>
+    ),
+  },
 ];
 
 /** The legend's entry in "On this page"; its body is `IconLegend`. */
