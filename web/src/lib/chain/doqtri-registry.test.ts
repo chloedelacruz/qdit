@@ -20,6 +20,7 @@ import {
   plannedVerdict,
   readMilestone,
   readRegistry,
+  readRegistryDocument,
   registryConfig,
   verifiedOnChain,
   type DocSourceCheck,
@@ -242,6 +243,33 @@ describe("readRegistry", () => {
     rpcReplies({ get_document: { retval: XDR.nodeQdit }, get_node: { retval: XDR.nodeQdit } });
 
     await expect(readRegistry(CONFIG, DOC_ID, "h4")).resolves.toEqual({ ok: false, reason: "decode" });
+  });
+});
+
+describe("readRegistryDocument (WP-4.7 chain check)", () => {
+  it("simulates get_document(doc_id) alone and decodes the content hash as lowercase hex", async () => {
+    const { calls } = rpcReplies({ get_document: { retval: XDR.document }, get_node: "throw" });
+
+    const read = await readRegistryDocument(CONFIG, DOC_ID);
+
+    expect(read).toEqual({ ok: true, document: expect.objectContaining({ version: 3, contentHash: "03".repeat(32) }) });
+    expect(calls.map((c) => [c.method, c.args])).toEqual([["get_document", [XDR.docIdArg]]]);
+  });
+
+  it("reads DocumentNotFound (#2) as no document", async () => {
+    rpcReplies({ get_document: { error: notFound(2) }, get_node: "throw" });
+    await expect(readRegistryDocument(CONFIG, DOC_ID)).resolves.toEqual({ ok: true, document: null });
+  });
+
+  it("fails, never throws, on any other error", async () => {
+    rpcReplies({ get_document: { error: notFound(3) }, get_node: "throw" });
+    await expect(readRegistryDocument(CONFIG, DOC_ID)).resolves.toEqual({ ok: false, reason: "rpc" });
+
+    rpcReplies({ get_document: "throw", get_node: "throw" });
+    await expect(readRegistryDocument(CONFIG, DOC_ID)).resolves.toEqual({ ok: false, reason: "rpc" });
+
+    rpcReplies({ get_document: { retval: XDR.nodeQdit }, get_node: "throw" });
+    await expect(readRegistryDocument(CONFIG, DOC_ID)).resolves.toEqual({ ok: false, reason: "decode" });
   });
 });
 
