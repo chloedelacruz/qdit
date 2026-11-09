@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { clampScore, combineRuns, runTotal, WEIGHTS } from "@/lib/hackathon/rubric";
+import {
+  clampScore,
+  combineRuns,
+  InvalidAiRunError,
+  MAX_EVIDENCE_CHARS,
+  parseAiRun,
+  runTotal,
+  WEIGHTS,
+} from "@/lib/hackathon/rubric";
 import { CRITERION_KEYS, type AiFlag, type AiRunOutput, type CriterionKey } from "@/lib/hackathon/types";
 
 function run(
@@ -29,12 +37,16 @@ describe("clampScore", () => {
     [-3, 0],
     [11, 10],
     [100, 10],
-    [Number.NaN, 0],
-    [Number.POSITIVE_INFINITY, 0],
-    [Number.NEGATIVE_INFINITY, 0],
   ])("%s → %s", (input, expected) => {
     expect(clampScore(input)).toBe(expected);
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "throws on %s rather than inventing a score",
+    (input) => {
+      expect(() => clampScore(input)).toThrow(RangeError);
+    },
+  );
 });
 
 describe("runTotal", () => {
@@ -43,7 +55,7 @@ describe("runTotal", () => {
     ["all ten", 10, 100],
     ["all five", 5, 50],
     ["mixed", { clarity: 10, structure: 7, accuracy: 3, connections: 0, execution: 9 }, 58],
-    ["clamped before weighting", { clarity: 15, structure: -2, accuracy: Number.NaN, connections: 5, execution: 5 }, 40],
+    ["clamped before weighting", { clarity: 15, structure: -2, accuracy: 0, connections: 5, execution: 5 }, 40],
     ["rounded before weighting", { clarity: 6.6, structure: 5, accuracy: 5, connections: 5, execution: 5 }, 54],
   ])("%s", (_name, scores, expected) => {
     expect(runTotal(run(scores))).toBe(expected);
@@ -51,8 +63,22 @@ describe("runTotal", () => {
 });
 
 describe("combineRuns", () => {
-  it("throws on no runs", () => {
+  it("throws on no runs and on more than three", () => {
     expect(() => combineRuns([])).toThrow(RangeError);
+    expect(() => combineRuns([run(5), run(5), run(5), run(5)])).toThrow(RangeError);
+  });
+
+  it("throws on a run missing a criterion instead of scoring it 0", () => {
+    const broken = run(5);
+    delete (broken.criteria as Partial<AiRunOutput["criteria"]>).accuracy;
+    expect(() => combineRuns([broken, run(5)])).toThrow(InvalidAiRunError);
+    expect(() => runTotal(broken)).toThrow(InvalidAiRunError);
+  });
+
+  it("keeps the stored total equal to the stored criteria for two runs", () => {
+    const result = combineRuns([run({ clarity: 3 }), run({ clarity: 4 })]);
+    expect(result.perCriterion.clarity).toBe(3.5);
+    expect(result.total).toBe(47);
   });
 
   it("asks for a second run after one", () => {
@@ -110,8 +136,11 @@ describe("combineRuns", () => {
       connections: 5,
       execution: 5,
     });
-    // Run totals 52, 52, 64 → median 52, not the 54 the median criteria sum to.
-    expect(result.total).toBe(52);
+    // The total is the total of the stored medians (54), not the median run total (52).
+    expect(result.total).toBe(54);
+    expect(result.total).toBe(runTotal({ ...run(0), criteria: Object.fromEntries(
+      Object.entries(result.perCriterion).map(([k, score]) => [k, { score, evidence: "" }]),
+    ) as AiRunOutput["criteria"] }));
     expect(result.flags).toEqual(["placeholder", "off_topic", "disagreement"]);
     expect(result.spread.criteria.clarity).toBe(6);
   });
@@ -127,5 +156,75 @@ describe("combineRuns", () => {
   it("drops flags it does not know", () => {
     const rogue = { ...run(5), flags: ["manipulation", "ignore_previous"] as unknown as AiFlag[] };
     expect(combineRuns([rogue, run(5)]).flags).toEqual(["manipulation"]);
+  });
+});
+
+describe("parseAiRun", () => {
+  function raw(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { ...JSON.parse(JSON.stringify(run(7, ["placeholder"]))), ...overrides };
+  }
+
+  it("accepts a well-formed run", () => {
+    expect(parseAiRun(raw())).toEqual(run(7, ["placeholder"]));
+  });
+
+  it("keeps out-of-range finite scores for clampScore to handle", () => {
+    const r = raw();
+    (r.criteria as Record<string, { score: number }>).clarity.score = 14.2;
+    expect(parseAiRun(r).criteria.clarity.score).toBe(14.2);
+  });
+
+  it("cuts evidence to 2000 characters", () => {
+    const r = raw();
+    (r.criteria as Record<string, { evidence: string }>).structure.evidence = "x".repeat(5000);
+    expect(parseAiRun(r).criteria.structure.evidence).toHaveLength(MAX_EVIDENCE_CHARS);
+  });
+
+  it("drops unknown flags and duplicates", () => {
+    const parsed = parseAiRun(raw({ flags: ["off_topic", "ignore_previous", "off_topic", 3] }));
+    expect(parsed.flags).toEqual(["off_topic"]);
+  });
+
+  function withCriterion(key: string, value: unknown) {
+    const r = raw();
+    const criteria = r.criteria as Record<string, unknown>;
+    if (value === undefined) delete criteria[key];
+    else criteria[key] = value;
+    return r;
+  }
+
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["an array", []],
+    ["a string", "{}"],
+    ["no criteria", raw({ criteria: undefined })],
+    ["criteria as an array", raw({ criteria: [] })],
+    ["a missing criterion", withCriterion("execution", undefined)],
+    ["a criterion that is not an object", withCriterion("execution", 7)],
+    ["a numeric string score", withCriterion("clarity", { score: "7", evidence: "e" })],
+    ["a NaN score", withCriterion("clarity", { score: Number.NaN, evidence: "e" })],
+    ["an infinite score", withCriterion("clarity", { score: Number.POSITIVE_INFINITY, evidence: "e" })],
+    ["a missing score", withCriterion("clarity", { evidence: "e" })],
+    ["non-string evidence", withCriterion("clarity", { score: 7, evidence: 7 })],
+    ["a non-string summary", raw({ summary: 3 })],
+    ["a missing summary", raw({ summary: undefined })],
+    ["flags that are not an array", raw({ flags: "manipulation" })],
+  ])("throws InvalidAiRunError on %s", (_name, input) => {
+    expect(() => parseAiRun(input)).toThrow(InvalidAiRunError);
+  });
+
+  it("lists every problem it found", () => {
+    const r = raw({ summary: 3 });
+    (r.criteria as Record<string, unknown>).clarity = { score: "7", evidence: "e" };
+    try {
+      parseAiRun(r);
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(InvalidAiRunError);
+      expect((e as InvalidAiRunError).issues).toEqual([
+        "criteria.clarity.score is not a finite number",
+        "summary is not a string",
+      ]);
+    }
   });
 });

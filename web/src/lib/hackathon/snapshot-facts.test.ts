@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { snapshotFacts } from "@/lib/hackathon/snapshot-facts";
+import { calendarDay, snapshotFacts } from "@/lib/hackathon/snapshot-facts";
 import type {
   DoqtriSnapshotNote,
   DoqtriSnapshotV1,
@@ -43,7 +43,8 @@ function note(id: string, overrides: Partial<DoqtriSnapshotNote> = {}): DoqtriSn
 
 const snapshot: QditSnapshotV1 = {
   schema_version: 1,
-  captured_at: "2026-11-21T16:00:00.000Z",
+  // 11:00 on 2026-11-21 in Manila.
+  captured_at: "2026-11-21T03:00:00.000Z",
   truncated: false,
   project: {
     id: "p1",
@@ -70,7 +71,8 @@ const snapshot: QditSnapshotV1 = {
     task("t1", { assignee_id: "u1", due_date: "2026-11-20", status: "in_progress", priority: "high" }),
     task("t2", { assignee_id: "u1", due_date: "2026-11-20", status: "done" }),
     task("t3", { assignee_id: "u2", due_date: "2026-11-21" }),
-    task("t4", { assignee_id: "ghost" }),
+    // Fully specified, but the assignee is not a project member.
+    task("t4", { assignee_id: "ghost", due_date: "2026-11-25" }),
     task("t5"),
   ],
   milestone_reviews: [
@@ -97,6 +99,10 @@ const doqtri: DoqtriSnapshotV1 = {
     note("n3", { source: "template" }),
     note("n4", { created_at: "2026-11-19T00:00:00.000Z" }),
     note("n5", { source: null }),
+    // A duplicate doc_id: the first occurrence wins, so this is not a second n2.
+    note("n2", { source: "template" }),
+    // No offset: unreadable, so never "during the event".
+    note("n6", { created_at: "2026-11-20T12:00:00" }),
   ],
   global_mindmap: {
     nodes: [
@@ -147,14 +153,37 @@ describe("snapshotFacts", () => {
 
   it("counts doqtri notes and the global mindmap", () => {
     expect(facts.doqtri).toEqual({
-      notes: 5,
+      notes: 6,
       notes_created_during_event: 4,
       qualifying_notes: 3,
-      notes_by_source: { editor: 3, template: 1, import: 0, unknown: 1 },
+      notes_by_source: { editor: 4, template: 1, import: 0, unknown: 1 },
       global_mindmap_nodes: 2,
       global_mindmap_links: 0,
       largest_connected_qualifying_notes: 2,
     });
+  });
+
+  it("throws on an unreadable window when there are notes to place in it", () => {
+    expect(() =>
+      snapshotFacts(snapshot, doqtri, { ...WINDOW, opens_at: "2026-11-20 09:00" }),
+    ).toThrow(RangeError);
+  });
+
+  it("decides overdue by the calendar day in Manila, not UTC", () => {
+    // 01:00 on 2026-11-21 in Manila, still 2026-11-20 in UTC.
+    const lateNight = {
+      ...snapshot,
+      captured_at: "2026-11-20T17:00:00.000Z",
+      tasks: [task("due-20th", { due_date: "2026-11-20", status: "in_progress" })],
+    };
+    expect(snapshotFacts(lateNight, null, WINDOW).tasks.overdue).toBe(1);
+
+    const evening = { ...lateNight, captured_at: "2026-11-20T15:59:59.000Z" };
+    expect(snapshotFacts(evening, null, WINDOW).tasks.overdue).toBe(0);
+  });
+
+  it("reports overdue as null when captured_at is unreadable", () => {
+    expect(snapshotFacts({ ...snapshot, captured_at: "yesterday" }, null, WINDOW).tasks.overdue).toBeNull();
   });
 
   it("is null for doqtri when no snapshot arrived", () => {
@@ -163,5 +192,18 @@ describe("snapshotFacts", () => {
 
   it("round-trips through JSON unchanged", () => {
     expect(JSON.parse(JSON.stringify(facts))).toEqual(facts);
+  });
+});
+
+describe("calendarDay", () => {
+  it.each<[string, string, string | null]>([
+    ["2026-11-20T15:59:59Z", "Asia/Manila", "2026-11-20"],
+    ["2026-11-20T16:00:00Z", "Asia/Manila", "2026-11-21"],
+    ["2026-11-20T16:00:00Z", "UTC", "2026-11-20"],
+    ["2026-11-21T00:30:00+08:00", "Asia/Manila", "2026-11-21"],
+    ["2026-11-21T00:30:00", "Asia/Manila", null],
+    ["not a date", "Asia/Manila", null],
+  ])("%s in %s → %s", (iso, zone, expected) => {
+    expect(calendarDay(iso, zone)).toBe(expected);
   });
 });

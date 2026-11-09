@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   csvField,
+  FINALIST_COUNT,
   humanMean,
   pickFinalists,
   rankFinal,
@@ -85,8 +86,23 @@ describe("humanMean", () => {
     ["one judge, all 5s", [judge("j1", 5)], 25],
     ["two judges", [judge("j1", 4), judge("j2", 3)], 17.5],
     ["three judges, rounded", [judge("j1", 4), judge("j2", 4), judge("j3", 4, 5)], 20.33],
+    ["a judge who rescored counts once, last score wins", [judge("j1", 1), judge("j2", 3), judge("j1", 5)], 20],
   ])("%s", (_name, scores, expected) => {
     expect(humanMean(scores)).toBe(expected);
+  });
+
+  it.each<[string, Partial<JudgeScore>]>([
+    ["0", { clarity: 0 }],
+    ["6", { structure: 6 }],
+    ["3.5", { accuracy: 3.5 }],
+    ["NaN", { connections: Number.NaN }],
+    ["a numeric string", { pitch: "4" as unknown as number }],
+  ])("throws a RangeError on a score of %s", (_name, override) => {
+    expect(() => humanMean([judge("j1", 4), { ...judge("j2", 4), ...override }])).toThrow(RangeError);
+  });
+
+  it("only validates the score that survives deduplication", () => {
+    expect(humanMean([{ ...judge("j1", 4), pitch: 9 }, judge("j1", 4)])).toBe(20);
   });
 });
 
@@ -149,6 +165,24 @@ describe("rankFinal", () => {
     ]);
   });
 
+  it("counts a judge once in judge_count", () => {
+    const rows = rankFinal([entry("a", 50, { finalist: true })], { a: [judge("j1", 2), judge("j1", 3)] });
+    expect(rows[0].judge_count).toBe(1);
+    expect(rows[0].human_mean).toBe(15);
+  });
+
+  it("throws when more than FINALIST_COUNT entries are flagged finalist", () => {
+    const entries = Array.from({ length: FINALIST_COUNT + 1 }, (_, i) =>
+      entry(`f${i}`, 50, { finalist: true }),
+    );
+    expect(() => rankFinal(entries, {})).toThrow(RangeError);
+    expect(() => rankFinal(entries.slice(0, FINALIST_COUNT), {})).not.toThrow();
+  });
+
+  it("throws when a finalist has no AI total", () => {
+    expect(() => rankFinal([entry("f", null, { finalist: true })], {})).toThrow(RangeError);
+  });
+
   it("does not rank an ineligible finalist", () => {
     const rows = rankFinal([entry("revoked", 90, { finalist: true, eligible: false }), entry("ok", 10)], {
       revoked: [judge("j1", 5)],
@@ -173,6 +207,12 @@ describe("csvField", () => {
     ["@SUM(A1)", "'@SUM(A1)"],
     ["\tlead", "'\tlead"],
     ["=1,2", "\"'=1,2\""],
+    [" =1+1", "' =1+1"],
+    ["\u00a0 +SUM(A1)", "'\u00a0 +SUM(A1)"],
+    ["  -2", "'  -2"],
+    ["\n@x", "\"'\n@x\""],
+    ["   ", "   "],
+    ["a = b", "a = b"],
     ["a=b", "a=b"],
     ["", ""],
   ])("%j → %j", (input, expected) => {

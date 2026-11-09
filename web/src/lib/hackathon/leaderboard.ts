@@ -64,21 +64,58 @@ export function pickFinalists<T extends FinalistCandidate>(
     .slice(0, Math.max(0, n));
 }
 
-/** A judge's /25 for one finalist. */
+export const MIN_JUDGE_SCORE = 1;
+export const MAX_JUDGE_SCORE = 5;
+
+/** A judge's /25 for one finalist. Throws a RangeError unless every criterion is an integer 1–5. */
 export function judgeSum(score: JudgeScore): number {
-  return JUDGE_CRITERIA.reduce((sum, key) => sum + score[key], 0);
+  return JUDGE_CRITERIA.reduce((sum, key) => {
+    const v = score[key];
+    if (!Number.isInteger(v) || v < MIN_JUDGE_SCORE || v > MAX_JUDGE_SCORE) {
+      throw new RangeError(
+        `Judge ${score.judge_id} ${key} must be an integer ${MIN_JUDGE_SCORE}–${MAX_JUDGE_SCORE}, got ${String(v)}`,
+      );
+    }
+    return sum + v;
+  }, 0);
 }
 
-/** Mean of the judges' /25 sums, 2 decimals; null when nobody has scored. */
+/** One score per judge; a later score from the same judge replaces the earlier one. */
+export function dedupeJudgeScores(scores: readonly JudgeScore[]): JudgeScore[] {
+  const byJudge = new Map<string, JudgeScore>();
+  for (const s of scores) {
+    byJudge.delete(s.judge_id);
+    byJudge.set(s.judge_id, s);
+  }
+  return [...byJudge.values()];
+}
+
+/**
+ * Mean of the judges' /25 sums (one per judge, last wins), 2 decimals; null
+ * when nobody has scored. Throws a RangeError on an invalid score.
+ */
 export function humanMean(scores: readonly JudgeScore[] | undefined): number | null {
   if (!scores || scores.length === 0) return null;
-  return round2(scores.reduce((sum, s) => sum + judgeSum(s), 0) / scores.length);
+  const unique = dedupeJudgeScores(scores);
+  return round2(unique.reduce((sum, s) => sum + judgeSum(s), 0) / unique.length);
 }
 
+/**
+ * The final order. Throws a RangeError when more than `FINALIST_COUNT`
+ * entries are flagged finalist, when a finalist has no AI total, or when a
+ * judge score is invalid.
+ */
 export function rankFinal(
   entries: readonly RankEntry[],
   judgeScores: JudgeScoresBySubmission,
 ): RankedRow[] {
+  const flagged = entries.filter((e) => e.finalist);
+  if (flagged.length > FINALIST_COUNT) {
+    throw new RangeError(`${flagged.length} entries are flagged finalist; at most ${FINALIST_COUNT}`);
+  }
+  const ungraded = flagged.find((e) => e.ai_total == null);
+  if (ungraded) throw new RangeError(`Finalist ${ungraded.submission_id} has no AI total`);
+
   const rows = entries.map((e) => {
     const scores = Object.hasOwn(judgeScores, e.submission_id)
       ? judgeScores[e.submission_id]
@@ -86,7 +123,7 @@ export function rankFinal(
     return {
       ...e,
       human_mean: humanMean(scores),
-      judge_count: scores?.length ?? 0,
+      judge_count: scores ? dedupeJudgeScores(scores).length : 0,
       final_rank: null as number | null,
     };
   });
@@ -130,8 +167,11 @@ export const CSV_HEADER = [
   "flags",
 ] as const;
 
-/** First characters a spreadsheet would read as the start of a formula. */
-const FORMULA_START = /^[=+\-@\t\r]/;
+/**
+ * Cells a spreadsheet would read as a formula: a leading tab or CR, or
+ * = + - @ after any leading whitespace (spreadsheets trim it before parsing).
+ */
+const FORMULA_START = /^(?:[\t\r]|\s*[=+\-@])/;
 
 /**
  * One RFC 4180 field. A value a spreadsheet would evaluate as a formula gets a

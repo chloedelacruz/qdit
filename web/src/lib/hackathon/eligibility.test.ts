@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   checkEligibility,
   largestConnectedNotes,
+  parseInstant,
   qualifyingNotes,
+  TRUNCATED_SUFFIX,
 } from "@/lib/hackathon/eligibility";
 import {
   ELIGIBILITY_RULE_IDS,
@@ -200,6 +202,13 @@ describe("checkEligibility", () => {
       reason: "4 of 5 cards have owner, priority and due date",
     },
     {
+      name: "a card assigned to someone outside the project does not count",
+      rule: "cards",
+      input: { snapshot: snapshot({ tasks: [...tasks(4), task(9, { assignee_id: "stranger" })] }) },
+      passed: false,
+      reason: "4 of 5 cards have owner, priority and due date",
+    },
+    {
       name: "a card without a due date does not count",
       rule: "cards",
       input: { snapshot: snapshot({ tasks: [...tasks(4), task(9, { due_date: null })] }) },
@@ -219,6 +228,15 @@ describe("checkEligibility", () => {
       input: { snapshot: snapshot({ tasks: tasks(5, { status: "todo" }) }) },
       passed: false,
       reason: "5 cards updated since the event opened, 0 out of todo",
+    },
+    {
+      name: "an updated_at without an offset fails closed",
+      rule: "board_current",
+      input: {
+        snapshot: snapshot({ tasks: tasks(5, { updated_at: "2026-11-20T12:00:00" }) }),
+      },
+      passed: false,
+      reason: "0 cards updated since the event opened, 5 out of todo",
     },
     {
       name: "a card updated exactly at opens_at counts",
@@ -273,6 +291,38 @@ describe("checkEligibility", () => {
         ]),
       },
       passed: false,
+    },
+    {
+      name: "a created_at without an offset fails closed",
+      rule: "notes_during_event",
+      input: {
+        doqtri: doqtri([
+          ...FIVE.slice(0, 4).map((id) => note(id)),
+          note("local", { created_at: "2026-11-20T12:00:00.000" }),
+        ]),
+      },
+      passed: false,
+    },
+    {
+      name: "a created_at with a +08:00 offset is compared as an instant",
+      rule: "notes_during_event",
+      input: {
+        doqtri: doqtri([
+          ...FIVE.slice(0, 4).map((id) => note(id)),
+          // 09:00 UTC, exactly opens_at.
+          note("manila", { created_at: "2026-11-20T17:00:00+08:00" }),
+        ]),
+      },
+      passed: true,
+    },
+    {
+      name: "a duplicated doc_id counts once",
+      rule: "notes_during_event",
+      input: {
+        doqtri: doqtri([...FIVE.slice(0, 4).map((id) => note(id)), note("n1")]),
+      },
+      passed: false,
+      reason: "4 of 5 notes written during the event",
     },
     {
       name: "a template note is excluded",
@@ -372,6 +422,61 @@ describe("checkEligibility", () => {
     expect(r.passed).toBe(passed);
     if (reason) expect(r.reason).toBe(reason);
     if (!passed) expect(result.eligible).toBe(false);
+  });
+});
+
+describe("checkEligibility with a truncated snapshot", () => {
+  it("marks failed qdit rules, and only those", () => {
+    const result = checkEligibility(
+      input({
+        teamMemberIds: ["u1", "u2"],
+        snapshot: snapshot({ truncated: true, tasks: tasks(4) }),
+        doqtri: null,
+      }),
+    );
+    expect(rule(result, "cards").reason).toBe(
+      `4 of 5 cards have owner, priority and due date${TRUNCATED_SUFFIX}`,
+    );
+    // Passed qdit rule: unchanged.
+    expect(rule(result, "board_current").reason).not.toContain(TRUNCATED_SUFFIX);
+    expect(rule(result, "members_joined").reason).not.toContain(TRUNCATED_SUFFIX);
+    // From the form, not the snapshot.
+    expect(rule(result, "team_size").reason).not.toContain(TRUNCATED_SUFFIX);
+    // doqtri rule.
+    expect(rule(result, "notes_during_event").reason).toBe("No doqtri snapshot received");
+  });
+
+  it("leaves reasons alone when the snapshot is complete", () => {
+    const result = checkEligibility(input({ snapshot: snapshot({ tasks: tasks(4) }) }));
+    expect(rule(result, "cards").reason).toBe("4 of 5 cards have owner, priority and due date");
+  });
+});
+
+describe("checkEligibility with an unreadable window", () => {
+  it.each([
+    ["opens_at without an offset", { opens_at: "2026-11-20T09:00:00" }],
+    ["closes_at that is not a date", { closes_at: "Friday" }],
+  ])("throws on %s", (_name, override) => {
+    expect(() => checkEligibility(input({ window: { ...WINDOW, ...override } }))).toThrow(RangeError);
+  });
+});
+
+describe("parseInstant", () => {
+  it.each<[unknown, number | null]>([
+    ["2026-11-20T09:00:00Z", Date.UTC(2026, 10, 20, 9)],
+    ["2026-11-20T09:00:00.123456+00:00", Date.UTC(2026, 10, 20, 9, 0, 0, 123)],
+    ["2026-11-20T17:00+08:00", Date.UTC(2026, 10, 20, 9)],
+    ["2026-11-20T09:00:00-05:30", Date.UTC(2026, 10, 20, 14, 30)],
+    ["2026-11-20T09:00:00", null],
+    ["2026-11-20", null],
+    ["2026-11-20 09:00:00Z", null],
+    ["2026-11-20T09:00:00+0800", null],
+    ["2026-13-45T09:00:00Z", null],
+    ["", null],
+    [null, null],
+    [1763629200000, null],
+  ])("%j → %s", (value, expected) => {
+    expect(parseInstant(value)).toBe(expected);
   });
 });
 

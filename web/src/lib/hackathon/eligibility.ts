@@ -7,6 +7,7 @@ import type {
   EligibilityRuleResult,
   HackathonWindow,
   QditSnapshotTask,
+  QditSnapshotV1,
 } from "@/lib/hackathon/types";
 
 /**
@@ -14,7 +15,8 @@ import type {
  *
  * A submission that fails any rule is not scored. Every rule is always
  * evaluated and reported, so an admin reviewing an override sees all the
- * reasons at once rather than only the first.
+ * reasons at once rather than only the first. Anything that cannot be read
+ * fails closed: it never counts towards passing a rule.
  */
 
 /** Q-12: at least this many cards, each with owner, priority and due date. */
@@ -24,33 +26,95 @@ export const MIN_EVENT_NOTES = 5;
 /** The largest connected group of event notes in the global mindmap. */
 export const MIN_CONNECTED_NOTES = 5;
 
+/** Appended to the reason of a failed rule read from a truncated qdit snapshot. */
+export const TRUNCATED_SUFFIX = " (snapshot was truncated)";
+
 /** Notes from these sources were not written during the event. */
 const EXCLUDED_NOTE_SOURCES: ReadonlySet<string> = new Set(["template", "import"]);
 
-function toMs(iso: string): number {
-  return Date.parse(iso);
+/**
+ * ISO 8601 date-time with an explicit offset: `Z` or `±hh:mm`. A timestamp
+ * without one would be read in the server's local zone, so it is refused.
+ */
+const ISO_INSTANT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Epoch ms for an ISO instant with an explicit offset, or null. */
+export function parseInstant(value: unknown): number | null {
+  if (typeof value !== "string" || !ISO_INSTANT.test(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
 }
 
-/** Owner, priority and due date all set. */
-export function isFullySpecifiedTask(task: QditSnapshotTask): boolean {
-  return task.assignee_id != null && task.priority != null && task.due_date != null;
+/** The event window as epoch ms. Throws a RangeError when either end is unreadable. */
+export function parseWindow(window: Pick<HackathonWindow, "opens_at" | "closes_at">): {
+  opens: number;
+  closes: number;
+} {
+  const opens = parseInstant(window.opens_at);
+  const closes = parseInstant(window.closes_at);
+  if (opens == null) throw new RangeError(`Invalid hackathon opens_at: ${String(window.opens_at)}`);
+  if (closes == null) {
+    throw new RangeError(`Invalid hackathon closes_at: ${String(window.closes_at)}`);
+  }
+  return { opens, closes };
+}
+
+/** Notes with duplicate `doc_id`s collapsed to the first occurrence. */
+export function uniqueNotes(notes: readonly DoqtriSnapshotNote[]): DoqtriSnapshotNote[] {
+  const seen = new Set<string>();
+  return notes.filter((n) => {
+    if (seen.has(n.doc_id)) return false;
+    seen.add(n.doc_id);
+    return true;
+  });
+}
+
+/** The project's member ids. */
+export function memberIds(snapshot: QditSnapshotV1): Set<string> {
+  return new Set(snapshot.members.map((m) => m.user_id));
 }
 
 /**
- * Notes that count as event work: created inside `[opens_at, closes_at]`
- * (both inclusive) and not from a template or an import. An unparseable
- * timestamp never qualifies.
+ * Owner, priority and due date all set, and the owner is a project member.
+ * An assignee who has left the project does not make a card count.
+ */
+export function isFullySpecifiedTask(
+  task: QditSnapshotTask,
+  members: ReadonlySet<string>,
+): boolean {
+  return (
+    task.assignee_id != null &&
+    members.has(task.assignee_id) &&
+    task.priority != null &&
+    task.due_date != null
+  );
+}
+
+/** Created inside `[opens_at, closes_at]`, both inclusive. */
+export function createdDuringEvent(
+  note: DoqtriSnapshotNote,
+  window: { opens: number; closes: number },
+): boolean {
+  const created = parseInstant(note.created_at);
+  return created != null && created >= window.opens && created <= window.closes;
+}
+
+/**
+ * Notes that count as event work: unique by `doc_id`, created inside the
+ * window, and not from a template or an import.
+ *
+ * `source: null` counts on purpose: doqtri does not send "editor" today, so a
+ * note without a recorded source is an ordinary note written in the editor.
  */
 export function qualifyingNotes(
   doqtri: DoqtriSnapshotV1,
   window: Pick<HackathonWindow, "opens_at" | "closes_at">,
 ): DoqtriSnapshotNote[] {
-  const opens = toMs(window.opens_at);
-  const closes = toMs(window.closes_at);
-  return doqtri.notes.filter((note) => {
+  const parsed = parseWindow(window);
+  return uniqueNotes(doqtri.notes).filter((note) => {
     if (note.source != null && EXCLUDED_NOTE_SOURCES.has(note.source)) return false;
-    const created = toMs(note.created_at);
-    return Number.isFinite(created) && created >= opens && created <= closes;
+    return createdDuringEvent(note, parsed);
   });
 }
 
@@ -87,15 +151,15 @@ class UnionFind {
  * Union-find over notes and map nodes together: a note joins every node whose
  * `doc_ids` name it, and a link joins its two nodes. Two notes are therefore
  * connected when they share a node, when a link joins nodes that hold them, or
- * transitively through any path in the map. Only `docIds` are counted; other
- * notes and nodes may sit on the path. Returned in `docIds` order.
+ * transitively through any path in the map. Only `docIds` are counted (once
+ * each); other notes and nodes may sit on the path. Returned in `docIds` order.
  */
 export function largestConnectedNotes(
   graph: DoqtriGlobalMindmap,
   docIds: readonly string[],
 ): string[] {
-  const wanted = new Set(docIds);
-  if (wanted.size === 0) return [];
+  const wanted = [...new Set(docIds)];
+  if (wanted.length === 0) return [];
 
   const uf = new UnionFind();
   const node = (id: string) => `n:${id}`;
@@ -117,20 +181,28 @@ export function largestConnectedNotes(
 
   let best: string[] = [];
   for (const group of groups.values()) if (group.length > best.length) best = group;
-  const order = new Map(docIds.map((id, i) => [id, i] as const));
-  return [...best].sort((a, b) => order.get(a)! - order.get(b)!);
+  return best;
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** Throws a RangeError when the window's timestamps are unreadable. */
 export function checkEligibility(input: EligibilityInput): EligibilityResult {
   const { window, snapshot, doqtri, hasGlobalMindmapImage } = input;
+  const parsedWindow = parseWindow(window);
   const team = [...new Set(input.teamMemberIds)];
+  const members = memberIds(snapshot);
   const rules: EligibilityRuleResult[] = [];
 
-  // 1. team_size
+  /** A rule read from the qdit snapshot: a failure may be the truncation's fault. */
+  function qditRule(rule: EligibilityRuleResult): EligibilityRuleResult {
+    if (!rule.passed && snapshot.truncated) rule.reason += TRUNCATED_SUFFIX;
+    return rule;
+  }
+
+  // 1. team_size: from the submission form, not the snapshot, so truncation cannot explain it.
   {
     const { team_min: min, team_max: max } = window;
     const passed = team.length >= min && team.length <= max;
@@ -146,42 +218,49 @@ export function checkEligibility(input: EligibilityInput): EligibilityResult {
 
   // 2. members_joined
   {
-    const joined = new Set(snapshot.members.map((m) => m.user_id));
-    const count = team.filter((id) => joined.has(id)).length;
+    const count = team.filter((id) => members.has(id)).length;
     const passed = count === team.length;
-    rules.push({
-      id: "members_joined",
-      passed,
-      reason: passed
-        ? `All ${plural(team.length, "team member")} joined the project`
-        : `${count} of ${plural(team.length, "team member")} joined the project`,
-    });
+    rules.push(
+      qditRule({
+        id: "members_joined",
+        passed,
+        reason: passed
+          ? `All ${plural(team.length, "team member")} joined the project`
+          : `${count} of ${plural(team.length, "team member")} joined the project`,
+      }),
+    );
   }
 
   // 3. cards
   {
-    const count = snapshot.tasks.filter(isFullySpecifiedTask).length;
+    const count = snapshot.tasks.filter((t) => isFullySpecifiedTask(t, members)).length;
     const passed = count >= MIN_SPECIFIED_CARDS;
-    rules.push({
-      id: "cards",
-      passed,
-      reason: passed
-        ? `${plural(count, "card")} have owner, priority and due date (needs ${MIN_SPECIFIED_CARDS})`
-        : `${count} of ${MIN_SPECIFIED_CARDS} cards have owner, priority and due date`,
-    });
+    rules.push(
+      qditRule({
+        id: "cards",
+        passed,
+        reason: passed
+          ? `${plural(count, "card")} have owner, priority and due date (needs ${MIN_SPECIFIED_CARDS})`
+          : `${count} of ${MIN_SPECIFIED_CARDS} cards have owner, priority and due date`,
+      }),
+    );
   }
 
   // 4. board_current
   {
-    const opens = toMs(window.opens_at);
-    const updated = snapshot.tasks.filter((t) => toMs(t.updated_at) >= opens).length;
+    const updated = snapshot.tasks.filter((t) => {
+      const at = parseInstant(t.updated_at);
+      return at != null && at >= parsedWindow.opens;
+    }).length;
     const moved = snapshot.tasks.filter((t) => t.status !== "todo").length;
     const passed = updated >= 1 && moved >= 1;
-    rules.push({
-      id: "board_current",
-      passed,
-      reason: `${plural(updated, "card")} updated since the event opened, ${moved} out of todo`,
-    });
+    rules.push(
+      qditRule({
+        id: "board_current",
+        passed,
+        reason: `${plural(updated, "card")} updated since the event opened, ${moved} out of todo`,
+      }),
+    );
   }
 
   // 5. notes_during_event, 6. notes_connected

@@ -227,7 +227,11 @@ export interface DoqtriSnapshotV1 {
 /* Event                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/** The event's own zone: calendar-day questions ("is this card overdue?") are asked here. */
+export const HACKATHON_TIMEZONE = "Asia/Manila";
+
 export interface HackathonWindow {
+  /** ISO 8601 with `Z` or `±hh:mm`; anything else makes the rules throw. */
   opens_at: string;
   closes_at: string;
   team_min: number;

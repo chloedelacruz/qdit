@@ -1,8 +1,14 @@
 import {
+  createdDuringEvent,
   isFullySpecifiedTask,
   largestConnectedNotes,
+  memberIds,
+  parseInstant,
+  parseWindow,
   qualifyingNotes,
+  uniqueNotes,
 } from "@/lib/hackathon/eligibility";
+import { HACKATHON_TIMEZONE } from "@/lib/hackathon/types";
 import type {
   AnchorAction,
   DoqtriNoteSource,
@@ -41,10 +47,13 @@ export interface SnapshotFacts {
     /** Most tasks first, then by username. */
     by_assignee: AssigneeTaskCount[];
     unassigned: number;
-    /** Owner, priority and due date all set. */
+    /** Owner (a project member), priority and due date all set. */
     fully_specified: number;
-    /** Not done and due before the snapshot's UTC date. */
-    overdue: number;
+    /**
+     * Not done and due before the snapshot's calendar day in
+     * `HACKATHON_TIMEZONE`. Null when `captured_at` is unreadable.
+     */
+    overdue: number | null;
   };
   milestones: {
     total: number;
@@ -63,6 +72,7 @@ export interface SnapshotFacts {
   doc_links: number;
   /** Null when no doqtri snapshot was received. */
   doqtri: {
+    /** Unique by `doc_id`; every count below is over these. */
     notes: number;
     /** Created inside the event window, any source. */
     notes_created_during_event: number;
@@ -83,11 +93,22 @@ function countBy<K extends string>(keys: readonly K[], values: readonly K[]): Re
   return out;
 }
 
-function utcDate(iso: string): string | null {
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
+/** `YYYY-MM-DD` of an instant in `timeZone`, or null when the instant is unreadable. */
+export function calendarDay(iso: string, timeZone: string = HACKATHON_TIMEZONE): string | null {
+  const ms = parseInstant(iso);
+  if (ms == null) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(ms));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+/** Throws a RangeError when a doqtri snapshot is given and the window is unreadable. */
 export function snapshotFacts(
   snapshot: QditSnapshotV1,
   doqtri: DoqtriSnapshotV1 | null,
@@ -95,6 +116,7 @@ export function snapshotFacts(
 ): SnapshotFacts {
   const { tasks, milestones } = snapshot;
 
+  const members = memberIds(snapshot);
   const usernames = new Map(snapshot.members.map((m) => [m.user_id, m.username] as const));
   const perAssignee = new Map<string, number>();
   let unassigned = 0;
@@ -115,29 +137,26 @@ export function snapshotFacts(
       return a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0;
     });
 
-  const today = utcDate(snapshot.captured_at);
+  const today = calendarDay(snapshot.captured_at);
   const overdue =
     today == null
-      ? 0
+      ? null
       : tasks.filter((t) => t.status !== "done" && t.due_date != null && t.due_date < today)
           .length;
 
   let doqtriFacts: SnapshotFacts["doqtri"] = null;
   if (doqtri != null) {
-    const opens = Date.parse(window.opens_at);
-    const closes = Date.parse(window.closes_at);
-    const duringEvent = doqtri.notes.filter((n) => {
-      const c = Date.parse(n.created_at);
-      return Number.isFinite(c) && c >= opens && c <= closes;
-    }).length;
+    const parsedWindow = parseWindow(window);
+    const notes = uniqueNotes(doqtri.notes);
+    const duringEvent = notes.filter((n) => createdDuringEvent(n, parsedWindow)).length;
     const qualifying = qualifyingNotes(doqtri, window);
     doqtriFacts = {
-      notes: doqtri.notes.length,
+      notes: notes.length,
       notes_created_during_event: duringEvent,
       qualifying_notes: qualifying.length,
       notes_by_source: countBy(
         ["editor", "template", "import", "unknown"] as const,
-        doqtri.notes.map((n) => n.source ?? "unknown"),
+        notes.map((n) => n.source ?? "unknown"),
       ),
       global_mindmap_nodes: doqtri.global_mindmap.nodes.length,
       global_mindmap_links: doqtri.global_mindmap.links.length,
@@ -161,7 +180,7 @@ export function snapshotFacts(
       ),
       by_assignee,
       unassigned,
-      fully_specified: tasks.filter(isFullySpecifiedTask).length,
+      fully_specified: tasks.filter((t) => isFullySpecifiedTask(t, members)).length,
       overdue,
     },
     milestones: {
