@@ -9,8 +9,10 @@ import type { ActionState } from "@/lib/actions";
  *          first-party session)
  *   P0002  no such hackathon, or no such project for this caller
  *   QD409  MESSAGE is the reason: hackathon_not_open | hackathon_closed |
- *          member_on_other_team, DETAIL a sentence
- *   QD413  snapshot_too_large
+ *          member_on_other_team | member_is_staff, DETAIL a sentence
+ *          naming the people for the last two
+ *   QD413  snapshot_too_large (payload_too_large is the doqtri push's, not
+ *          this RPC's, and falls through to the generic retry message)
  *   22023  HINT names the field: team_name | member_ids | image_paths
  *
  * Field errors use the dialog's keys (`teamName`, `memberIds`, `images`).
@@ -30,26 +32,46 @@ const HINT_FIELD: Record<string, string> = {
   image_paths: "images",
 };
 
-/** The usernames in "Already on another team in this hackathon: ada, lin.", or []. */
-export function namesOnOtherTeam(details: string | null | undefined): string[] {
-  const match = /^Already on another team in this hackathon: (.+?)\.?$/.exec(details ?? "");
-  if (!match) return [];
-  return match[1]
+/** The usernames after the colon in an RPC detail ("...: ada, lin."), or []. */
+function namesAfter(prefix: string, details: string | null | undefined): string[] {
+  const text = details ?? "";
+  if (!text.startsWith(prefix)) return [];
+  return text
+    .slice(prefix.length)
+    .replace(/\.$/, "")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+/** The usernames in "Already on another team in this hackathon: ada, lin.", or []. */
+export function namesOnOtherTeam(details: string | null | undefined): string[] {
+  return namesAfter("Already on another team in this hackathon:", details);
+}
+
+/** The usernames in "Staff of this hackathon cannot be on a team: ada.", or []. */
+export function namesOfStaff(details: string | null | undefined): string[] {
+  return namesAfter("Staff of this hackathon cannot be on a team:", details);
+}
+
+/** "ada", "ada and lin", "ada, lin and sam". */
+function listOf(names: string[]): string {
+  return names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+function staffMessage(names: string[]): string {
+  if (names.length === 0) return "A team member is hackathon staff and can't be on a team.";
+  return `${listOf(names)} ${names.length === 1 ? "is" : "are"} hackathon staff and can't be on a team.`;
 }
 
 function otherTeamMessage(names: string[]): string {
   if (names.length === 0) {
     return "A team member just joined another team in this hackathon. Check the team and submit again.";
   }
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   const verb = names.length === 1 ? "is" : "are";
-  return `${list} ${verb} already on another team in this hackathon. A person can be on one team only.`;
+  return `${listOf(names)} ${verb} already on another team in this hackathon. A person can be on one team only.`;
 }
 
 function fieldMessage(field: string, message: string): string {
@@ -84,9 +106,12 @@ export function submitErrorState(error: PostgrestLikeError): ActionState {
     if (message === "member_on_other_team") {
       return { fieldErrors: { memberIds: otherTeamMessage(namesOnOtherTeam(error.details)) } };
     }
+    if (message === "member_is_staff") {
+      return { fieldErrors: { memberIds: staffMessage(namesOfStaff(error.details)) } };
+    }
   }
 
-  if (code === "QD413") {
+  if (code === "QD413" && message === "snapshot_too_large") {
     return {
       error:
         "This project is too large to submit (over 2 MB). Shorten long task and milestone descriptions, then submit again.",

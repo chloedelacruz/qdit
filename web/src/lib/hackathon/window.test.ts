@@ -21,19 +21,21 @@ describe("windowState", () => {
     expect(windowState(EVENT, at("2026-11-20T05:59:59.999Z"))).toBe("not_open");
   });
 
-  it("is open from opens_at to closes_at inclusive", () => {
+  it("is open from opens_at up to, not including, closes_at", () => {
     expect(windowState(EVENT, at(EVENT.opensAt))).toBe("open");
-    expect(windowState(EVENT, at(EVENT.closesAt))).toBe("open");
+    expect(windowState(EVENT, at(EVENT.closesAt) - 1)).toBe("open");
   });
 
-  it("is closed after closes_at", () => {
+  it("is closed at closes_at exactly (the end is exclusive)", () => {
+    expect(windowState(EVENT, at(EVENT.closesAt))).toBe("closed");
     expect(windowState(EVENT, at("2026-11-20T06:05:00.001Z"))).toBe("closed");
   });
 
-  it("is late while a late pass is in force, and closed after it", () => {
+  it("is late while a late pass is in force, and closed at its until exactly", () => {
     const until = "2026-11-20T06:10:00.000Z";
-    expect(windowState(EVENT, at("2026-11-20T06:07:00.000Z"), until)).toBe("late");
-    expect(windowState(EVENT, at("2026-11-20T06:10:00.001Z"), until)).toBe("closed");
+    expect(windowState(EVENT, at(EVENT.closesAt), until)).toBe("late");
+    expect(windowState(EVENT, at(until) - 1, until)).toBe("late");
+    expect(windowState(EVENT, at(until), until)).toBe("closed");
   });
 
   it("never opens early on a late pass", () => {

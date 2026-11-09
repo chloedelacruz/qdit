@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDatabase } from "@/test/fake-supabase";
 
 import { mindmapPath } from "./schemas";
-import { namesOnOtherTeam, submitErrorState } from "./submit-errors";
+import { namesOfStaff, namesOnOtherTeam, submitErrorState } from "./submit-errors";
 
 /**
  * `submitHackathonEntry` (QDIT-47): validation with the hackathon's team
@@ -99,7 +99,9 @@ describe("submitHackathonEntry", () => {
     expect(afterCallbacks).toHaveLength(1);
     expect(runGradingFor).not.toHaveBeenCalled();
     await afterCallbacks[0]();
-    expect(runGradingFor).toHaveBeenCalledWith(VERSION);
+    expect(runGradingFor).toHaveBeenCalledWith(VERSION, undefined, { budgetMs: 200_000 });
+    // Well inside the page's maxDuration of 300 s.
+    expect(runGradingFor.mock.calls[0][2].budgetMs).toBeLessThanOrEqual(200_000);
   });
 
   it("swallows a follow-up failure and logs only the version id", async () => {
@@ -209,6 +211,36 @@ describe("submitErrorState: every code submit_hackathon_entry raises", () => {
     ).toBe("A team member just joined another team in this hackathon. Check the team and submit again.");
   });
 
+  it("QD409 member_is_staff names the people", () => {
+    expect(
+      submitErrorState({
+        code: "QD409",
+        message: "member_is_staff",
+        details: "Staff of this hackathon cannot be on a team: ada.",
+      }),
+    ).toEqual({ fieldErrors: { memberIds: "ada is hackathon staff and can't be on a team." } });
+
+    expect(
+      submitErrorState({
+        code: "QD409",
+        message: "member_is_staff",
+        details: "Staff of this hackathon cannot be on a team: ada, lin.",
+      }).fieldErrors?.memberIds,
+    ).toBe("ada and lin are hackathon staff and can't be on a team.");
+  });
+
+  it("QD409 member_is_staff without names", () => {
+    expect(submitErrorState({ code: "QD409", message: "member_is_staff" }).fieldErrors?.memberIds).toBe(
+      "A team member is hackathon staff and can't be on a team.",
+    );
+  });
+
+  it("QD413 payload_too_large belongs to the doqtri push, so it gets the generic message", () => {
+    expect(submitErrorState({ code: "QD413", message: "payload_too_large" })).toEqual({
+      error: "The submission did not go through. Try again in a moment.",
+    });
+  });
+
   it("QD413 snapshot_too_large", () => {
     expect(submitErrorState({ code: "QD413", message: "snapshot_too_large" }).error).toMatch(
       /^This project is too large to submit \(over 2 MB\)\./,
@@ -261,5 +293,7 @@ describe("namesOnOtherTeam", () => {
     expect(namesOnOtherTeam("Already on another team in this hackathon: ada, lin.")).toEqual(["ada", "lin"]);
     expect(namesOnOtherTeam("Something else.")).toEqual([]);
     expect(namesOnOtherTeam(null)).toEqual([]);
+    expect(namesOfStaff("Staff of this hackathon cannot be on a team: ada, lin.")).toEqual(["ada", "lin"]);
+    expect(namesOfStaff("Already on another team in this hackathon: ada.")).toEqual([]);
   });
 });

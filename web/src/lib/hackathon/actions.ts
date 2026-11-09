@@ -12,6 +12,14 @@ import {
 } from "@/lib/hackathon/schemas";
 import { submitErrorState } from "@/lib/hackathon/submit-errors";
 import { fieldErrorsOf } from "@/lib/schemas";
+
+/**
+ * The follow-up's own budget. `after()` runs inside the page's
+ * `maxDuration = 300`; 200 s leaves room for the action itself and for the
+ * worker to settle what it started. Anything unfinished is picked up again
+ * by the minute sweep once its lease runs out.
+ */
+const FOLLOW_UP_BUDGET_MS = 200_000;
 import { createClient, getUser } from "@/lib/supabase/server";
 
 /**
@@ -80,7 +88,8 @@ export async function submitHackathonEntry(
  */
 async function startFollowUp(versionId: string): Promise<void> {
   try {
-    await runGradingFor(versionId);
+    // `undefined` keeps the worker's default (production) dependencies.
+    await runGradingFor(versionId, undefined, { budgetMs: FOLLOW_UP_BUDGET_MS });
   } catch {
     console.error(`hackathon submit: follow-up for version ${versionId} did not start`);
   }

@@ -75,7 +75,17 @@ export function ImageUpload({
   useEffect(() => {
     reportBusy.current = onBusyChange;
   }, [onBusyChange]);
-  useEffect(() => () => reportBusy.current(false), []);
+  // False once this slot is gone (the project changed, the dialog closed): a
+  // late upload then reports nothing, so it cannot touch the slot that
+  // replaced this one under the same name.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      reportBusy.current(false);
+    };
+  }, []);
 
   const setBusyBoth = (next: boolean) => {
     setBusy(next);
@@ -97,6 +107,7 @@ export function ImageUpload({
         .storage.from(MINDMAP_BUCKET)
         .upload(path, file, { contentType: file.type, upsert: false, cacheControl: "3600" });
 
+      if (!mounted.current) return;
       if (uploadError) {
         setError(uploadErrorMessage(uploadError.message));
         return;
@@ -106,9 +117,9 @@ export function ImageUpload({
       blobUrl.current = URL.createObjectURL(file);
       onChange({ path, previewUrl: blobUrl.current });
     } catch {
-      setError("The upload did not finish. Check your connection and try again.");
+      if (mounted.current) setError("The upload did not finish. Check your connection and try again.");
     } finally {
-      setBusyBoth(false);
+      if (mounted.current) setBusyBoth(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
