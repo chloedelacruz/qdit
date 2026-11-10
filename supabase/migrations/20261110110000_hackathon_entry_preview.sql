@@ -2,6 +2,11 @@
 -- qdit — Stellar Builder Task Hub
 -- 20261110110000_hackathon_entry_preview.sql
 --
+-- Applied to the hosted project through the Supabase MCP, which stamped it
+-- 20261110043649: before 20261110100000_hackathons, which this depends on.
+-- The ledger row was set back to this file's version rather than renaming the
+-- file (gaps.md section 2). SQL unchanged.
+--
 -- QDIT-55 (WP-4.7): the submission dialog checks a team's current work against
 -- the eligibility gate before it submits, with "Submit anyway" always offered.
 --
