@@ -137,6 +137,23 @@ export const taskSchema = z.object({
   dueDate: z.iso.date("Use YYYY-MM-DD.").optional().or(z.literal("")),
 });
 
+/**
+ * One in-place edit from the board or the task panel (QDIT-53): only the keys
+ * present are written, and `null` clears a field. Strict, so a typo in a key
+ * fails here instead of silently writing nothing.
+ */
+export const taskFieldsSchema = z
+  .object({
+    assigneeId: z.guid().nullable(),
+    milestoneId: z.guid().nullable(),
+    priority: z.enum(["low", "medium", "high", "urgent"]),
+    dueDate: z.iso.date("Use YYYY-MM-DD.").nullable(),
+  })
+  .partial()
+  .strict();
+
+export type TaskFieldsInput = z.infer<typeof taskFieldsSchema>;
+
 export const milestoneSchema = z.object({
   projectId: z.guid(),
   title: z.string().trim().min(1, "Required.").max(300, "Keep it under 300 characters."),
