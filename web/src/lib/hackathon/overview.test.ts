@@ -80,3 +80,29 @@ describe("buildOverview", () => {
     expect(out[0].submissions?.[0]).toMatchObject({ versions: 0, lastSubmittedAt: "2026-11-14T09:00:00+08:00" });
   });
 });
+
+describe("test hackathons (QDIT-51)", () => {
+  const T = { id: "t1", slug: "test-e2e", name: "Test", opens_at: "2026-11-10T09:00:00+08:00", closes_at: "2026-11-10T11:00:00+08:00", released_at: null };
+  const base = { submissions: [], versions: [] };
+
+  it("hides a test- hackathon from everyone outside it", () => {
+    const out = buildOverview({ ...base, hackathons: [H1, T], staff: [], myTeams: [] });
+    expect(out.map((h) => h.slug)).toEqual(["san-beda-hackathon"]);
+  });
+
+  it("shows it to its staff", () => {
+    const out = buildOverview({ ...base, hackathons: [T], staff: [{ hackathon_id: "t1", role: "admin" }], myTeams: [] });
+    expect(out.map((h) => h.slug)).toEqual(["test-e2e"]);
+  });
+
+  it("shows it to a team in it", () => {
+    const out = buildOverview({
+      hackathons: [T],
+      staff: [],
+      submissions: [{ id: "s1", hackathon_id: "t1", team_name: "Testers", created_at: "2026-11-10T09:30:00+08:00" }],
+      versions: [],
+      myTeams: [{ hackathon_id: "t1", submission_id: "s1" }],
+    });
+    expect(out[0]).toMatchObject({ slug: "test-e2e", myTeam: "Testers" });
+  });
+});
