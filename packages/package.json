@@ -3,7 +3,8 @@
   "private": true,
   "description": "Off-chain tooling for the qdit contracts. Not part of the web app.",
   "workspaces": [
-    "merkle"
+    "merkle",
+    "qdit-batch"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

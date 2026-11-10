@@ -125,11 +125,12 @@ jobs:
 
       - run: npm ci
 
+      # First, because qdit-batch imports @qdit/merkle through its dist/.
+      - run: npm run build
+
       - run: npm run typecheck
 
       - run: npm test
-
-      - run: npm run build
 
   wasm:
     name: contracts — build wasm

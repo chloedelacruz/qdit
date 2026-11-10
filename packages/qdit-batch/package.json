@@ -1,0 +1,28 @@
+{
+  "name": "qdit-batch",
+  "version": "0.1.0",
+  "description": "Build a qdit Merkle batch, anchor its root on Stellar in one transaction, and write an inclusion-proof file per milestone.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "qdit-batch": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "cli": "node src/cli.ts"
+  },
+  "dependencies": {
+    "@qdit/merkle": "0.1.0",
+    "@stellar/stellar-sdk": "^16.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5.9"
+  }
+}

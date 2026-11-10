@@ -1,0 +1,17 @@
+{
+  "project_id": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2",
+  "milestones": [
+    {
+      "milestone_id": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7",
+      "proof_hash": "15dcb0240b4a34bcb53294f97ca5069628bcd3acb599de20f0bd1f90f10e7c35"
+    },
+    {
+      "milestone_id": "45c48cce-2e2d-4fbd-8a6e-2b1f3e9a7c10",
+      "proof_hash": "3d42e394cddda1b8b91c68306e79b33c6bbd3b827b0ecb6595a8173b69b42564"
+    },
+    {
+      "milestone_id": "d3d94468-02a4-4e1b-9b5f-6a3c1e2d8f90",
+      "proof_hash": "2f7a1d0758c3e112c5ff5412947c48953b9c94648cea977c7823d39c343b9e08"
+    }
+  ]
+}

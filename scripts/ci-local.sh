@@ -14,7 +14,7 @@
 #   contracts contracts/          cargo fmt --check, clippy -D warnings, test
 #   wasm      contracts/          stellar contract build
 #   database  supabase/           supabase db start, supabase test db
-#   packages  packages/           npm typecheck, test, build
+#   packages  packages/           npm build, typecheck, test
 # docs/merkle/ (the shared Merkle vectors) selects contracts and packages.
 # A change to .github/workflows/ or scripts/ci-local.sh selects every job.
 #
@@ -112,9 +112,9 @@ job_packages() {
   need npm packages
   cd "$root/packages"
   [[ -d node_modules ]] || npm ci
+  npm run build   # first: qdit-batch imports @qdit/merkle through its dist/
   npm run typecheck
   npm test
-  npm run build
 }
 
 job_database() {
