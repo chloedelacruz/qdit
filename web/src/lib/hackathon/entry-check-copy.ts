@@ -21,6 +21,36 @@ export const CHAIN_UNCHECKED_REASON = "Couldn't check on-chain anchoring right n
 export const RESEND_HINT =
   "qdit reads your notes from the last snapshot doqtri sent. To include newer notes, use Send to qdit hackathon in doqtri again, then Check again.";
 
+/** The hint when no snapshot has arrived: there is nothing to resend yet. */
+export const FIRST_SEND_HINT =
+  "In doqtri, open the global mindmap and use Send to qdit hackathon, then Check again.";
+
+/** What to do about the doqtri items, worded for whether a snapshot has arrived. */
+export function doqtriHint(check: EntryCheck): string {
+  return check.doqtri ? RESEND_HINT : FIRST_SEND_HINT;
+}
+
+/**
+ * The checklist in two groups: what qdit reads from the project, and what it
+ * reads from the doqtri snapshot. Rule order is kept within each group.
+ */
+export function groupEntryRules(check: EntryCheck): { qdit: EntryCheckRule[]; doqtri: EntryCheckRule[] } {
+  return {
+    qdit: check.rules.filter((r) => !DOQTRI_RULES.has(r.id)),
+    doqtri: check.rules.filter((r) => DOQTRI_RULES.has(r.id)),
+  };
+}
+
+/**
+ * A rule's reason as the checklist shows it, or null when it would only
+ * repeat the group's own line (every doqtri item says "no snapshot" when none
+ * has arrived, and the group already says so once).
+ */
+export function ruleDetail(rule: EntryCheckRule, check: EntryCheck): string | null {
+  if (!check.doqtri && DOQTRI_RULES.has(rule.id) && rule.passed === false) return null;
+  return rule.reason;
+}
+
 /** Some doqtri rule did not pass (or could not be checked): the snapshot line and resend hint are worth showing. */
 export function needsDoqtriHint(check: EntryCheck): boolean {
   return check.rules.some((r) => DOQTRI_RULES.has(r.id) && r.passed !== true);

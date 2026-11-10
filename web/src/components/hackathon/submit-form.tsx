@@ -365,12 +365,15 @@ function SubmitFields({
         {errors.images ? <p className="text-xs text-destructive">{errors.images}</p> : null}
       </fieldset>
 
-      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-        <ICON.planDoc className="mt-px size-3.5 shrink-0" aria-hidden />
-        <span>{project?.doqtriStatus ?? NO_DOQTRI}</span>
-      </p>
-
-      {state.entryCheck ? <EntryCheckPanel check={state.entryCheck} /> : null}
+      {/* The checklist says which doqtri snapshot it read, so this line would repeat it. */}
+      {state.entryCheck ? (
+        <EntryCheckPanel check={state.entryCheck} />
+      ) : (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <ICON.planDoc className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>{project?.doqtriStatus ?? NO_DOQTRI}</span>
+        </p>
+      )}
     </>
   );
 }
