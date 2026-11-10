@@ -887,8 +887,9 @@ export type Database = {
       }
 
       /**
-       * A hackathon (20261110100000_hackathons.sql, D-115). Created and edited
-       * by operator SQL; every signed-in first-party user reads it.
+       * A hackathon (20261110100000_hackathons.sql, D-115). Created, edited
+       * and deleted through `create_hackathon` / `update_hackathon` /
+       * `delete_hackathon` (QDIT-56); every signed-in first-party user reads it.
        * `released_at` is set once by `release_hackathon_grades` (D-116).
        */
       hackathons: {
@@ -904,6 +905,8 @@ export type Database = {
           team_max: number
           /** 1–10. */
           finalist_count: number
+          /** Unlisted (QDIT-56): out of the banner and non-staff's index; the page still opens by link. */
+          hidden: boolean
           released_at: string | null
           released_by: string | null
           created_at: string
@@ -1553,6 +1556,70 @@ export type Database = {
        * doqtri_note_count}`. Writes nothing. Same session, role and window
        * checks (and error codes) as submit.
        */
+      /** QDIT-56. Whether the caller is a qdit operator (first-party sessions only). */
+      is_qdit_operator: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      /** QDIT-56. Operators only; the caller becomes its admin. Returns the id. */
+      create_hackathon: {
+        Args: {
+          p_slug: string
+          p_name: string
+          p_description: string | null
+          p_opens_at: string
+          p_closes_at: string
+          p_team_min: number
+          p_team_max: number
+          p_finalist_count: number
+          p_hidden: boolean
+        }
+        Returns: string
+      }
+      /**
+       * QDIT-56. Operators or the hackathon's admins; replaces every field.
+       * QD409 `slug_locked` | `released_locked`.
+       */
+      update_hackathon: {
+        Args: {
+          p_id: string
+          p_slug: string
+          p_name: string
+          p_description: string | null
+          p_opens_at: string
+          p_closes_at: string
+          p_team_min: number
+          p_team_max: number
+          p_finalist_count: number
+          p_hidden: boolean
+        }
+        Returns: undefined
+      }
+      /** QDIT-56. Operators only; QD409 `hackathon_not_empty` with any entry or snapshot. */
+      delete_hackathon: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      /** QDIT-56. The hackathons the caller may manage, with counts and whether Delete is allowed. */
+      hackathon_manage_list: {
+        Args: Record<string, never>
+        Returns: {
+          id: string
+          slug: string
+          name: string
+          description: string | null
+          opens_at: string
+          closes_at: string
+          team_min: number
+          team_max: number
+          finalist_count: number
+          hidden: boolean
+          released_at: string | null
+          entries: number
+          snapshots: number
+          can_delete: boolean
+        }[]
+      }
       preview_hackathon_entry: {
         Args: {
           p_hackathon_id: string

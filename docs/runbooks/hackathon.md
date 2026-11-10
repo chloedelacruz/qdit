@@ -76,27 +76,22 @@ select public.hackathon_grading_scheduler_health();
 
 `<qdit host>` is the production host, the same one as in `qdit_deliver_webhooks_url`.
 
-### 1.5 Insert the hackathon and its first admin
+### 1.5 Create the hackathon
 
-There is no RPC for either (D-115). In the SQL editor, with placeholders filled in.
-Times are `timestamptz`. Write them with the `+08` offset so they mean Manila time:
+A qdit operator creates it on `/hackathons/manage` > **New hackathon** (QDIT-56): name,
+slug (`a-z`, `0-9` and `-`, e.g. `bootcamp-2026-11`; `manage` is reserved), description,
+opens and closes in Manila time, team size and finalists. The creator becomes its first
+admin. The same page edits it, hides it (out of the Hackathons list and the banner, still
+open by link) and deletes it while no team has sent work to it. After that, Hide it
+instead. The slug is locked once a team has sent work, because doqtri finds the hackathon
+by slug. Dates, team size and finalists are locked once grades are released.
+
+Operators are rows in `public.qdit_operators`, added in the SQL editor (no client can
+write the table):
 
 ```sql
-insert into public.hackathons
-  (slug, name, description, opens_at, closes_at, team_min, team_max, finalist_count)
-values
-  ('<slug>',                          -- a-z, 0-9 and -, e.g. bootcamp-2026-11
-   '<Event name>',
-   '<One paragraph shown on the page>',
-   '<YYYY-MM-DD HH:MM>+08',           -- opens: start of the build
-   '<YYYY-MM-DD HH:MM>+08',           -- closes: end of the 5-minute submit window
-   3, 4, 10)
-returning id;
-
-insert into public.hackathon_staff (hackathon_id, user_id, role)
-select h.id, p.id, 'admin'
-  from public.hackathons h, public.profiles p
- where h.slug = '<slug>' and p.username = '<admin username>';
+insert into public.qdit_operators (user_id, note)
+select p.id, '<why>' from public.profiles p where p.username = '<username>';
 ```
 
 That admin adds the other admins and the judges by username on

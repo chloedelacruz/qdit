@@ -105,4 +105,34 @@ describe("test hackathons (QDIT-51)", () => {
     });
     expect(out[0]).toMatchObject({ slug: "test-e2e", myTeam: "Testers" });
   });
+
+  describe("hidden hackathons (QDIT-56)", () => {
+    const HIDDEN = { ...H3, id: "h4", slug: "secret", hidden: true };
+    const base = { staff: [], submissions: [], versions: [], myTeams: [] };
+
+    it("leaves a hidden hackathon out for everyone else", () => {
+      const out = buildOverview({ ...base, hackathons: [H1, HIDDEN] });
+      expect(out.map((h) => h.id)).toEqual(["h1"]);
+    });
+
+    it("shows it, marked unlisted, to its staff, its teams and operators", () => {
+      const staff = buildOverview({ ...base, hackathons: [HIDDEN], staff: [{ hackathon_id: "h4", role: "judge" }] });
+      const team = buildOverview({
+        ...base,
+        hackathons: [HIDDEN],
+        myTeams: [{ hackathon_id: "h4", submission_id: "s1" }],
+        submissions: [{ id: "s1", hackathon_id: "h4", team_name: "Owls", created_at: "2026-12-01T01:00:00+08:00" }],
+      });
+      const operator = buildOverview({ ...base, hackathons: [HIDDEN], isOperator: true });
+      for (const out of [staff, team, operator]) {
+        expect(out).toHaveLength(1);
+        expect(out[0].unlisted).toBe(true);
+      }
+    });
+
+    it("treats a test- slug as unlisted too, and a plain one as listed", () => {
+      const out = buildOverview({ ...base, hackathons: [H1, { ...H2, slug: "test-run" }], isOperator: true });
+      expect(Object.fromEntries(out.map((h) => [h.slug, h.unlisted]))).toEqual({ "san-beda-hackathon": false, "test-run": true });
+    });
+  });
 });

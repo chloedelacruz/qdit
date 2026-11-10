@@ -82,7 +82,7 @@ export const APP_ACCESS = {
     "Approve or reject milestones, or delete projects or milestones",
     "Change anything about a milestone except a linked milestone's title",
     "Change members, roles or project settings",
-    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, or its record of which apps you disconnected",
+    "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, its record of which apps you disconnected, or its list of qdit operators",
     "See your teammates' profiles or who else is in your projects",
     "See or change qdit's hackathons, their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
   ],
@@ -142,6 +142,9 @@ export const APP_READ_SCOPE = {
     // When the user disconnected each app (20261025130000_oauth_revocations.sql):
     // what /api/v1 checks a token against, never something an app reads.
     "oauth_client_revocations",
+    // Who runs qdit (20261110120000_hackathon_management.sql, QDIT-56): closed
+    // to every client role; read only through is_qdit_operator().
+    "qdit_operators",
     "stellar_proofs",
     "tasks",
   ],
