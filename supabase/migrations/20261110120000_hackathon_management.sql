@@ -2,6 +2,11 @@
 -- qdit — Stellar Builder Task Hub
 -- 20261110120000_hackathon_management.sql
 --
+-- Applied to the hosted project through the Supabase MCP, which stamped it
+-- 20261110050254, before the migrations it depends on. The ledger row was set
+-- back to this file's version rather than renaming the file (gaps.md section
+-- 2). SQL unchanged.
+--
 -- QDIT-56 (WP-4.7): create, edit, hide and delete hackathons from a page,
 -- instead of by hand-written SQL.
 --
