@@ -1,6 +1,6 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20261110100000_task_assignee_membership.sql
+-- 20261110130000_task_assignee_membership.sql
 --
 -- QDIT-52 (WP-2.9): a task's assignee is a member of the task's project.
 --
