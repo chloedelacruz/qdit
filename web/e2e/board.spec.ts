@@ -161,4 +161,35 @@ test.describe("task detail panel", () => {
     await expect(page.getByRole("menu")).toBeVisible();
     await expect(page.getByRole("dialog")).toBeHidden();
   });
+
+  // QDIT-53. Opens the pickers and closes them with Escape: nothing is saved,
+  // so this spec writes nothing to the hosted database.
+  test("the assignee chip on a card opens the assignee picker, not the panel", async ({
+    page,
+  }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: /^Assignee:/ }).click();
+
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Unassigned" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: MEMBERS.ben.name })).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.keyboard.press("Escape");
+  });
+
+  test("the panel's fields open their pickers", async ({ page }) => {
+    await card(page, TASKS.todo).getByRole("button", { name: TASKS.todo }).click();
+    const panel = page.getByRole("dialog");
+
+    for (const field of [/^Assignee:/, /^Priority:/, /^Milestone:/]) {
+      await panel.getByRole("button", { name: field }).click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("menu")).toBeHidden();
+    }
+
+    await panel.getByRole("button", { name: /^Due date:/ }).click();
+    await expect(page.getByLabel("Due date", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+  });
 });

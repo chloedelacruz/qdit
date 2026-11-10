@@ -5,6 +5,13 @@ import { useState } from "react";
 import { TaskRowActions } from "@/components/entity-row-actions";
 import { MemberAvatar } from "@/components/rows";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  TaskAssigneeMenu,
+  TaskDueDatePicker,
+  TaskMilestoneMenu,
+  TaskPriorityMenu,
+  type MemberOption,
+} from "@/components/task-field-menus";
 import { TaskStatusMenu } from "@/components/task-status-menu";
 import {
   Sheet,
@@ -46,7 +53,7 @@ export function TaskDetailSheet({
   /** The task to show. `null` closes the panel. */
   task: TaskRow | null;
   milestones: { id: string; title: string }[];
-  members: { id: string; name: string }[];
+  members: MemberOption[];
   canEdit: boolean;
   onClose: () => void;
 }) {
@@ -131,17 +138,34 @@ export function TaskDetailSheet({
                 the home indicator when the panel is the whole screen. */}
             <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
               <dl className="border-b border-border/70">
+                {/* Each value opens its own picker for anyone who can edit
+                    the task (QDIT-53); a viewer reads the same values. */}
                 <Field label="Assignee">
-                  <span className="flex items-center gap-2">
-                    <MemberAvatar
-                      avatarUrl={shown.assigneeAvatarUrl}
-                      initials={shown.assigneeInitials}
-                      name={shown.assigneeName}
+                  {canEdit ? (
+                    <TaskAssigneeMenu
+                      key={shown.id}
+                      taskId={shown.id}
+                      assignee={{
+                        id: shown.assigneeId,
+                        name: shown.assigneeName,
+                        initials: shown.assigneeInitials,
+                        avatarUrl: shown.assigneeAvatarUrl,
+                      }}
+                      members={members}
+                      variant="field"
                     />
-                    <span className={shown.assigneeInitials ? undefined : "text-muted-foreground"}>
-                      {shown.assigneeName}
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <MemberAvatar
+                        avatarUrl={shown.assigneeAvatarUrl}
+                        initials={shown.assigneeInitials}
+                        name={shown.assigneeName}
+                      />
+                      <span className={shown.assigneeInitials ? undefined : "text-muted-foreground"}>
+                        {shown.assigneeName}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </Field>
 
                 {/* The full word, not the P0–P3 chip. The abbreviation earns
@@ -149,18 +173,31 @@ export function TaskDetailSheet({
                     the label column already names the field, so the value can
                     simply be the value. */}
                 <Field label="Priority">
-                  <StatusBadge
-                    dot={false}
-                    state={TASK_PRIORITY[shown.priority]}
-                  />
+                  {canEdit ? (
+                    <TaskPriorityMenu key={shown.id} taskId={shown.id} priority={shown.priority} />
+                  ) : (
+                    <StatusBadge dot={false} state={TASK_PRIORITY[shown.priority]} />
+                  )}
                 </Field>
 
                 <Field label="Milestone">
-                  {shown.milestoneTitle ?? <Unset>No milestone</Unset>}
+                  {canEdit ? (
+                    <TaskMilestoneMenu
+                      key={shown.id}
+                      taskId={shown.id}
+                      milestoneId={shown.milestoneId}
+                      milestoneTitle={shown.milestoneTitle}
+                      milestones={milestones}
+                    />
+                  ) : (
+                    (shown.milestoneTitle ?? <Unset>No milestone</Unset>)
+                  )}
                 </Field>
 
                 <Field label="Due">
-                  {shown.dueDate ? (
+                  {canEdit ? (
+                    <TaskDueDatePicker key={shown.id} taskId={shown.id} dueDate={shown.dueDate} />
+                  ) : shown.dueDate ? (
                     <span className="tabular-nums">{shown.dueDate}</span>
                   ) : (
                     <Unset>No due date</Unset>

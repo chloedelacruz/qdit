@@ -28,6 +28,7 @@ import { toast } from "sonner";
 
 import { MemberChip, RowMeta } from "@/components/data-list";
 import { TaskRowActions } from "@/components/entity-row-actions";
+import { TaskAssigneeMenu, type MemberOption } from "@/components/task-field-menus";
 import { PriorityChip } from "@/components/rows";
 import { StatusBadge } from "@/components/status-badge";
 import { TaskDetailSheet } from "@/components/task-detail";
@@ -62,7 +63,7 @@ export function TaskBoard({
   /** Drives the per-column "Load more", which pages by raising `limit`. */
   filters: Filters;
   milestones: { id: string; title: string }[];
-  members: { id: string; name: string }[];
+  members: MemberOption[];
   canEdit: boolean;
 }) {
   const [, startTransition] = useTransition();
@@ -402,7 +403,7 @@ function SortableCard({
 }: {
   task: TaskRow;
   milestones: { id: string; title: string }[];
-  members: { id: string; name: string }[];
+  members: MemberOption[];
   onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -428,6 +429,19 @@ function SortableCard({
       // to hit on a surface whose cards are already only two lines tall.
       handleProps={{ ...attributes, ...listeners }}
       placeholder={isDragging}
+      assignee={
+        <TaskAssigneeMenu
+          taskId={task.id}
+          assignee={{
+            id: task.assigneeId,
+            name: task.assigneeName,
+            initials: task.assigneeInitials,
+            avatarUrl: task.assigneeAvatarUrl,
+          }}
+          members={members}
+          variant="chip"
+        />
+      }
       actions={
         <TaskRowActions
           task={task}
@@ -464,6 +478,7 @@ function Card({
   handleProps,
   placeholder,
   dragging,
+  assignee,
   actions,
   onOpen,
 }: {
@@ -475,6 +490,11 @@ function Card({
   placeholder?: boolean;
   /** The copy following the cursor. */
   dragging?: boolean;
+  /**
+   * Replaces the assignee chip with a control: the assignee picker on a card
+   * the caller can edit (QDIT-53). A viewer's card keeps the plain chip.
+   */
+  assignee?: React.ReactNode;
   actions?: React.ReactNode;
   /** Opens the detail panel. Omitted on the drag overlay, which is not a target. */
   onOpen?: () => void;
@@ -567,11 +587,11 @@ function Card({
 
         <RowMeta className="min-w-0 flex-1" items={[task.milestoneTitle, task.dueDate]} />
 
-        {/* Guarded like the controls: the chip's name hint opens on tap, and
-            without the guard that same tap would also open the panel and leave
-            the hint floating over it. */}
+        {/* Guarded like the controls: the chip's name hint (or, on a card
+            the caller can edit, the assignee menu) opens on tap, and without
+            the guard that same tap would also open the panel or start a drag. */}
         <span {...stopActivation} className="flex">
-          <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />
+          {assignee ?? <MemberChip initials={task.assigneeInitials} name={task.assigneeName} />}
         </span>
 
         {actions ? <span {...stopActivation}>{actions}</span> : null}

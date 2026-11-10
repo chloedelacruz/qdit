@@ -15,7 +15,9 @@ import {
   projectSchema,
   projectUpdateSchema,
   proofSchema,
+  taskFieldsSchema,
   taskSchema,
+  type TaskFieldsInput,
 } from "@/lib/schemas";
 import {
   MILESTONE_OWNER_ONLY,
@@ -181,6 +183,43 @@ export async function updateTask(_prev: ActionState, formData: FormData): Promis
       due_date: orNull(formData.get("dueDate")),
     })
     .eq("id", taskId);
+
+  if (error) return { error: friendly(error.message, error.code) };
+
+  revalidateAll();
+  return { ok: true };
+}
+
+/**
+ * An in-place edit of one or more of a task's fields, from the board card or
+ * the task panel (QDIT-53). Writes only the keys given, so two pickers saved
+ * close together never overwrite each other with stale values the way two
+ * whole-form `updateTask` saves would.
+ */
+export async function updateTaskFields(
+  taskId: string,
+  fields: TaskFieldsInput,
+): Promise<ActionState> {
+  if (!z.guid().safeParse(taskId).success) return { error: "Missing task." };
+
+  const parsed = taskFieldsSchema.safeParse(fields);
+  if (!parsed.success) return toFieldErrors(parsed.error);
+
+  const patch: {
+    assignee_id?: string | null;
+    milestone_id?: string | null;
+    priority?: TaskFieldsInput["priority"];
+    due_date?: string | null;
+  } = {};
+  if (parsed.data.assigneeId !== undefined) patch.assignee_id = parsed.data.assigneeId;
+  if (parsed.data.milestoneId !== undefined) patch.milestone_id = parsed.data.milestoneId;
+  if (parsed.data.priority !== undefined) patch.priority = parsed.data.priority;
+  if (parsed.data.dueDate !== undefined) patch.due_date = parsed.data.dueDate;
+
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
 
   if (error) return { error: friendly(error.message, error.code) };
 
