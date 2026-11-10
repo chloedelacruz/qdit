@@ -170,6 +170,11 @@ the snapshot route.
   state) and the Release panel's counters (Runs pending, running, failed, done).
 - Grading starts at each submit (`after()` in the submit action) and is swept every
   minute by pg_cron. Target: everything graded within 3 minutes of the close.
+- The gate needs on-chain work (QDIT-54): at least 5 event notes anchored on
+  DoqtriRegistry, and at least 1 milestone submitted on the project's milestone_proof
+  contract during the event. Tell teams at the start. A job whose chain read failed shows
+  `chain_unavailable:<reason>` and retries every ~60 s without spending an attempt;
+  `chain_unavailable:unconfigured` fails at once and means `DOQTRI_REGISTRY_*` is unset.
 - Grant late passes only for a team that was blocked by something outside its control
   (section 4.1). Release refuses while a pass is in force.
 
@@ -402,6 +407,7 @@ section 7.
 | R-13 | `after()` is cut off at the function's maxDuration | maxDuration 300 on the submit page; leases return a cut job to the queue; pg_cron sweeps every minute | Jobs stuck `running` past 4 minutes (4.5) |
 | R-14 | Prompt injection inside a team's notes or board | No tools, schema-only output, team content JSON-encoded in one data block, `manipulation` flag, scores clamped in code; teams 01–05 of the dry run carry attempts | The **Possible manipulation** banner after release |
 | R-15 | The database owner or service role can still read sealed grades | Accepted and documented; no client role or RPC exposes them before release | Nobody reads `hackathon_ai_runs` by hand before release |
-| R-16 | doqtri timestamps or template and imported notes make a team look eligible | `created_at` and `source` come from doqtri's server; template and import notes don't count; an override needs a reason | Eligibility chips and reasons on the admin page |
+| R-16 | doqtri timestamps or template and imported notes make a team look eligible | `created_at` and `source` come from doqtri's server; template and import notes don't count; 5 event notes must be anchored on DoqtriRegistry and 1 milestone submitted on chain inside the window (QDIT-54); an override needs a reason | Eligibility chips and reasons on the admin page |
+| R-19 | Stellar RPC slow or down while grading | Chain reads retry uncounted (`chain_unavailable:*`), never make an entry ineligible; reads stop once each bar is met | `chain_unavailable` codes in 4.4; release only at 0 pending |
 | R-17 | e2e and dry-run data written to production | Dedicated `e2e-` slug with teardown of rows and Storage objects; the seed script refuses hosted projects without `--allow-hosted` and has `--clean` | After an e2e run: `select count(*) from hackathons where slug like 'e2e-%'` is 0 |
 | R-18 | The two CONTRACT.md copies had already drifted (line 470) | Fixed in v1.2.0; `cmp` check in both PRs | `cmp` the two copies before merging #19 and doqtri #113 |

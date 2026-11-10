@@ -15,6 +15,7 @@ import {
   type EligibilityInput,
   type EligibilityRuleId,
   type HackathonWindow,
+  type QditSnapshotMilestone,
   type QditSnapshotTask,
   type QditSnapshotV1,
 } from "@/lib/hackathon/types";
@@ -75,7 +76,7 @@ function snapshot(overrides: Partial<QditSnapshotV1> = {}): QditSnapshotV1 {
       display_name: null,
       wallet_address: null,
     })),
-    milestones: [],
+    milestones: [milestone("m1")],
     tasks: tasks(5),
     milestone_reviews: [],
     milestone_anchors: [],
@@ -84,6 +85,19 @@ function snapshot(overrides: Partial<QditSnapshotV1> = {}): QditSnapshotV1 {
     doc_links: [],
     milestone_links: [],
     ...overrides,
+  };
+}
+
+function milestone(id: string): QditSnapshotMilestone {
+  return {
+    id,
+    title: id,
+    description: null,
+    status: "submitted",
+    due_date: null,
+    order_index: 0,
+    created_at: DURING,
+    updated_at: DURING,
   };
 }
 
@@ -135,6 +149,7 @@ function input(overrides: Partial<EligibilityInput> = {}): EligibilityInput {
     snapshot: snapshot(),
     doqtri: doqtri(FIVE.map((id) => note(id))),
     hasGlobalMindmapImage: true,
+    chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: ["m1"] },
     ...overrides,
   };
 }
@@ -406,6 +421,74 @@ describe("checkEligibility", () => {
       reason: "4 of 5 event notes connected in the global mindmap",
     },
 
+    // notes_on_chain
+    {
+      name: "null doqtri",
+      rule: "notes_on_chain",
+      input: { doqtri: null },
+      passed: false,
+      reason: "No doqtri snapshot received",
+    },
+    {
+      name: "4 of 5 event notes anchored",
+      rule: "notes_on_chain",
+      input: { chain: { anchoredNoteIds: FIVE.slice(0, 4), anchoredMilestoneIds: ["m1"] } },
+      passed: false,
+      reason: "4 of 5 event notes anchored on chain",
+    },
+    {
+      name: "an anchored template note does not make up the count",
+      rule: "notes_on_chain",
+      input: {
+        doqtri: doqtri([...FIVE.slice(0, 4).map((id) => note(id)), note("tpl", { source: "template" })]),
+        chain: { anchoredNoteIds: [...FIVE.slice(0, 4), "tpl"], anchoredMilestoneIds: ["m1"] },
+      },
+      passed: false,
+      reason: "4 of 5 event notes anchored on chain",
+    },
+    {
+      name: "doc ids compare case-insensitively",
+      rule: "notes_on_chain",
+      input: {
+        doqtri: doqtri(FIVE.map((id) => note(id.toUpperCase()))),
+        chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: ["m1"] },
+      },
+      passed: true,
+      reason: "5 event notes anchored on chain (needs 5)",
+    },
+
+    // milestones_on_chain
+    {
+      name: "one milestone anchored",
+      rule: "milestones_on_chain",
+      input: {},
+      passed: true,
+      reason: "1 milestone anchored on chain during the event",
+    },
+    {
+      name: "none anchored, project not registered",
+      rule: "milestones_on_chain",
+      input: { chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: [] } },
+      passed: false,
+      reason: "No milestone anchored on chain during the event (project not registered on chain)",
+    },
+    {
+      name: "none anchored, project registered",
+      rule: "milestones_on_chain",
+      input: {
+        snapshot: snapshot({ project: { ...snapshot().project, chain_contract_id: "CABC" } }),
+        chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: [] },
+      },
+      passed: false,
+      reason: "No milestone anchored on chain during the event",
+    },
+    {
+      name: "an anchored id that is not one of the snapshot's milestones",
+      rule: "milestones_on_chain",
+      input: { chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: ["elsewhere"] } },
+      passed: false,
+    },
+
     // global_mindmap_image
     {
       name: "no image",
@@ -444,6 +527,19 @@ describe("checkEligibility with a truncated snapshot", () => {
     expect(rule(result, "team_size").reason).not.toContain(TRUNCATED_SUFFIX);
     // doqtri rule.
     expect(rule(result, "notes_during_event").reason).toBe("No doqtri snapshot received");
+  });
+
+  it("marks a failed milestones_on_chain, a qdit rule", () => {
+    const result = checkEligibility(
+      input({
+        snapshot: snapshot({ truncated: true }),
+        chain: { anchoredNoteIds: FIVE, anchoredMilestoneIds: [] },
+      }),
+    );
+    expect(rule(result, "milestones_on_chain").reason).toBe(
+      `No milestone anchored on chain during the event (project not registered on chain)${TRUNCATED_SUFFIX}`,
+    );
+    expect(rule(result, "notes_on_chain").reason).not.toContain(TRUNCATED_SUFFIX);
   });
 
   it("leaves reasons alone when the snapshot is complete", () => {

@@ -12,7 +12,7 @@ import {
   type GradingInput,
 } from "@/lib/hackathon/prompt";
 import { checkEligibility } from "@/lib/hackathon/eligibility";
-import { doqtriSnapshot, IMAGE, note, qditSnapshot, task, TEAM, WINDOW } from "@/test/hackathon-fixtures";
+import { anchoredChain, doqtriSnapshot, IMAGE, note, qditSnapshot, task, TEAM, WINDOW } from "@/test/hackathon-fixtures";
 
 function input(overrides: Partial<GradingInput> = {}): GradingInput {
   const qdit = overrides.qdit ?? qditSnapshot();
@@ -28,6 +28,7 @@ function input(overrides: Partial<GradingInput> = {}): GradingInput {
       snapshot: qdit,
       doqtri,
       hasGlobalMindmapImage: true,
+      chain: anchoredChain(doqtri),
     }),
     images: [IMAGE],
     ...overrides,
