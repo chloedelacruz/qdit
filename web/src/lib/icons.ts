@@ -17,6 +17,7 @@ import {
   Search,
   Send,
   Sun,
+  Trophy,
   X,
 } from "lucide-react";
 
@@ -169,6 +170,8 @@ export const ICON = {
   search: Search,
   filter: ListFilter,
   next: ArrowRight,
+  /** Hackathons (WP-4.7): the event index and its nav entry. */
+  hackathon: Trophy,
   chevronRight: ChevronRight,
   chevronDown: ChevronDown,
   chooser: ChevronsUpDown,

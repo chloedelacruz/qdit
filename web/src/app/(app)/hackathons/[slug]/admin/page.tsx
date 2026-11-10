@@ -54,7 +54,7 @@ export default async function HackathonAdminPage({ params }: { params: Promise<{
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
-        breadcrumb={[{ label: hackathon.name, href: `/hackathons/${slug}` }]}
+        breadcrumb={[{ label: "Hackathons", href: "/hackathons" }, { label: hackathon.name, href: `/hackathons/${slug}` }]}
         title="Admin"
         info="Entries, eligibility and grading for this hackathon. Grades stay sealed for everyone until an admin releases them; after release only admins see them."
         meta={
