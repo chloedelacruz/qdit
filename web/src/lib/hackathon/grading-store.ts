@@ -187,7 +187,7 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
-function asDoqtriSnapshot(payload: unknown): DoqtriSnapshotV1 | null {
+export function asDoqtriSnapshot(payload: unknown): DoqtriSnapshotV1 | null {
   if (payload == null) return null;
   if (
     !isRecord(payload) ||
@@ -201,7 +201,7 @@ function asDoqtriSnapshot(payload: unknown): DoqtriSnapshotV1 | null {
   return payload as unknown as DoqtriSnapshotV1;
 }
 
-function asQditSnapshot(value: unknown): QditSnapshotV1 {
+export function asQditSnapshot(value: unknown): QditSnapshotV1 {
   if (!isRecord(value) || value.schema_version !== 1 || !Array.isArray(value.tasks)) {
     throw new GradingStoreError("read qdit snapshot (unexpected shape)", null);
   }

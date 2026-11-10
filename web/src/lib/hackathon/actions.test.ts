@@ -33,7 +33,12 @@ vi.mock("@/lib/hackathon/grading-worker", () => ({
   runGradingFor: (...args: unknown[]) => runGradingFor(...args),
 }));
 
-const { submitHackathonEntry } = await import("./actions");
+const checkEntry = vi.fn();
+vi.mock("@/lib/hackathon/entry-check", () => ({
+  checkEntry: (...args: unknown[]) => checkEntry(...args),
+}));
+
+const { checkHackathonEntry, submitHackathonEntry } = await import("./actions");
 
 const HACKATHON = "3f0c2a8e-1b4d-4c6e-9a7f-2d5b8e1c0a93";
 const PROJECT = "7a9e4c21-5d3b-4f8a-b6c0-1e2d3f4a5b6c";
@@ -45,7 +50,14 @@ const PEOPLE = [
 ];
 const GLOBAL_MAP = mindmapPath(HACKATHON, PROJECT, "aaaaaaaa-aaaa-4aaa-8aaa-000000000001", "png");
 
-const HACKATHON_ROW = { id: HACKATHON, slug: "bootcamp-nov", team_min: 3, team_max: 4 };
+const HACKATHON_ROW = {
+  id: HACKATHON,
+  slug: "bootcamp-nov",
+  opens_at: "2026-11-20T01:00:00.000Z",
+  closes_at: "2026-11-20T02:20:00.000Z",
+  team_min: 3,
+  team_max: 4,
+};
 
 function form(overrides: Record<string, string | string[]> = {}) {
   const fields: Record<string, string | string[]> = {
@@ -75,6 +87,78 @@ function database(rpc: { data: unknown; error: unknown }) {
 afterEach(() => {
   vi.clearAllMocks();
   afterCallbacks.length = 0;
+});
+
+describe("checkHackathonEntry", () => {
+  const CHECK = { allPassed: false, rules: [], chainUnavailable: false, doqtri: null };
+  const PREVIEW = { qdit_snapshot: {}, doqtri_snapshot: null };
+
+  function previewDatabase(rpc: { data: unknown; error: unknown }) {
+    const db = fakeDatabase({
+      from: { hackathons: [{ data: HACKATHON_ROW, error: null }] },
+      rpc: { preview_hackathon_entry: [rpc] },
+    });
+    createClient.mockResolvedValue(db.client);
+    return db;
+  }
+
+  it("runs the gate on the preview and returns it without ok, writing nothing", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = previewDatabase({ data: PREVIEW, error: null });
+    checkEntry.mockResolvedValue(CHECK);
+
+    const result = await checkHackathonEntry({}, form());
+
+    expect(result).toEqual({ entryCheck: CHECK });
+    const rpcs = db.requests.filter((r) => r.kind === "rpc");
+    expect(rpcs).toHaveLength(1);
+    expect(rpcs[0].args).toEqual({ p_hackathon_id: HACKATHON, p_project_id: PROJECT });
+    expect(checkEntry).toHaveBeenCalledWith({
+      window: expect.objectContaining({ opens_at: HACKATHON_ROW.opens_at, closes_at: HACKATHON_ROW.closes_at, team_min: 3, team_max: 4 }),
+      memberIds: PEOPLE,
+      hasGlobalMindmapImage: true,
+      preview: PREVIEW,
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(afterCallbacks).toHaveLength(0);
+  });
+
+  it("gives the same field errors as submit, before any RPC", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = previewDatabase({ data: PREVIEW, error: null });
+
+    const result = await checkHackathonEntry({}, form({ teamName: " " }));
+
+    expect(result.fieldErrors).toEqual({ teamName: "Enter a team name." });
+    expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
+    expect(checkEntry).not.toHaveBeenCalled();
+  });
+
+  it("maps the RPC's errors as submit does", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    previewDatabase({ data: null, error: { code: "QD409", message: "hackathon_closed" } });
+
+    expect(await checkHackathonEntry({}, form())).toEqual({ error: "Submissions for this hackathon are closed." });
+    expect(checkEntry).not.toHaveBeenCalled();
+  });
+
+  it("says it could not check, without content in the log, when the preview cannot be read", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    previewDatabase({ data: PREVIEW, error: null });
+    checkEntry.mockRejectedValue(new Error("Night Owls"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await checkHackathonEntry({}, form())).toEqual({
+      error: "Couldn't check the entry right now.",
+    });
+    expect(String(log.mock.calls[0][0])).not.toContain("Night Owls");
+    log.mockRestore();
+  });
+
+  it("refuses a signed-out caller", async () => {
+    getUser.mockResolvedValue(null);
+    expect(await checkHackathonEntry({}, form())).toEqual({ error: "Sign in to submit." });
+  });
 });
 
 describe("submitHackathonEntry", () => {

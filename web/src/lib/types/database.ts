@@ -1547,6 +1547,19 @@ export type Database = {
        * `member_is_staff`, QD413 `snapshot_too_large` (still over 2 MB with
        * text clipped to 300 characters). Messages: 20261110100000_hackathons.sql.
        */
+      /**
+       * QDIT-55. What `submit_hackathon_entry` would freeze right now:
+       * `{qdit_snapshot, doqtri_snapshot, doqtri_received_at,
+       * doqtri_note_count}`. Writes nothing. Same session, role and window
+       * checks (and error codes) as submit.
+       */
+      preview_hackathon_entry: {
+        Args: {
+          p_hackathon_id: string
+          p_project_id: string
+        }
+        Returns: Json
+      }
       submit_hackathon_entry: {
         Args: {
           p_hackathon_id: string

@@ -292,6 +292,28 @@ export interface ChainFacts {
   anchoredMilestoneIds: readonly string[];
 }
 
+/**
+ * The submission dialog's pre-submit check (QDIT-55): the gate run on the
+ * team's current work. Advisory only; grading recomputes it from the frozen
+ * version.
+ */
+export interface EntryCheckRule {
+  id: EligibilityRuleId;
+  /** Null when the rule could not be checked (the chain did not answer). */
+  passed: boolean | null;
+  reason: string;
+}
+
+export interface EntryCheck {
+  /** Every rule passed: the dialog submits without asking. */
+  allPassed: boolean;
+  rules: EntryCheckRule[];
+  /** The chain could not be read, so the two chain rules are unchecked. */
+  chainUnavailable: boolean;
+  /** The doqtri snapshot the check read (the one submit would attach), or null. */
+  doqtri: { receivedAt: string; noteCount: number } | null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* AI review                                                                  */
 /* -------------------------------------------------------------------------- */

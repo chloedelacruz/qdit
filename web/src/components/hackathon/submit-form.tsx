@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Field, FormDialog, SelectField } from "@/components/form-dialog";
 import { DisabledReason } from "@/components/hint";
+import { EntryCheckPanel } from "@/components/hackathon/entry-check-panel";
 import { ImageUpload, type SlotValue } from "@/components/hackathon/image-upload";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { ActionState } from "@/lib/actions";
-import { submitHackathonEntry } from "@/lib/hackathon/actions";
+import { checkHackathonEntry, submitHackathonEntry } from "@/lib/hackathon/actions";
+import { checkThenSubmit, SUBMIT_ANYWAY } from "@/lib/hackathon/check-then-submit";
 import { markEdited, noEdits, visibleFieldErrors } from "@/lib/hackathon/form-errors";
 import { acceptsUpload, formerMembersNote, rosterMembers } from "@/lib/hackathon/team";
 import { IMAGE_SLOTS, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
@@ -73,7 +75,7 @@ export function SubmitForm({
       if (busySlots.current.size > 0) {
         return { error: "Wait for the images to finish uploading, then submit." };
       }
-      return submitHackathonEntry(prev, formData);
+      return checkThenSubmit(prev, formData, { check: checkHackathonEntry, submit: submitHackathonEntry });
     },
     [],
   );
@@ -124,10 +126,24 @@ export function SubmitForm({
       trigger={trigger}
       title={label}
       description="Your qdit project, your latest doqtri snapshot and these images are saved together as one submission."
-      submitLabel="Submit"
+      submitLabel={(state) => (state.entryCheck ? "Check again" : "Submit")}
       successMessage="Submission received."
       action={action}
       singleSubmit
+      extraActions={(state, busy) =>
+        state.entryCheck ? (
+          <Button
+            type="submit"
+            name={SUBMIT_ANYWAY}
+            value="1"
+            variant="outline"
+            disabled={busy}
+            className="pointer-coarse:h-11"
+          >
+            Submit anyway
+          </Button>
+        ) : null
+      }
       className="sm:max-w-lg"
     >
       {(state) => (
@@ -353,6 +369,8 @@ function SubmitFields({
         <ICON.planDoc className="mt-px size-3.5 shrink-0" aria-hidden />
         <span>{project?.doqtriStatus ?? NO_DOQTRI}</span>
       </p>
+
+      {state.entryCheck ? <EntryCheckPanel check={state.entryCheck} /> : null}
     </>
   );
 }

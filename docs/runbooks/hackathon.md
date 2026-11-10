@@ -163,6 +163,11 @@ the snapshot route.
   members, the global mindmap image (required) and up to two note maps. They may resubmit
   until the close; the last submission counts. A push after the last submit counts only
   after another submit ("Submit again to include it").
+- Submit first runs the submission checklist on the team's current work (QDIT-55). All
+  met: it submits at once. Otherwise the dialog lists what is missing, with **Check again**
+  and **Submit anyway**. Notes are read from the last doqtri push, so a team that wrote
+  notes since must use Send to qdit hackathon again. The checklist is advisory: grading
+  recomputes it from the frozen version, and a check that cannot run never blocks a submit.
 
 **The 5-minute submit window, then the close**
 

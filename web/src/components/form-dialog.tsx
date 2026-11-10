@@ -72,13 +72,15 @@ export function FormDialog({
   open: controlledOpen,
   onOpenChange,
   singleSubmit = false,
+  extraActions,
   children,
 }: {
   /** Omit when driving the dialog from outside, e.g. a row's overflow menu. */
   trigger?: React.ReactNode;
   title: string;
   description?: string;
-  submitLabel: string;
+  /** A function when the label depends on the last result ("Check again"). */
+  submitLabel: string | ((state: ActionState) => string);
   successMessage: string;
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   className?: string;
@@ -90,6 +92,12 @@ export function FormDialog({
    * hackathon submit writes a new version each time).
    */
   singleSubmit?: boolean;
+  /**
+   * More buttons, between Cancel and the submit button. A `type="submit"`
+   * button here with a `name` sends its `value` in the form data, so the
+   * action can tell which one was pressed.
+   */
+  extraActions?: (state: ActionState, busy: boolean) => React.ReactNode;
   children: (state: ActionState) => React.ReactNode;
 }) {
   /**
@@ -162,6 +170,11 @@ export function FormDialog({
               setLocked(true);
             }
             const data = new FormData(event.currentTarget);
+            // Which button submitted, as a native submit would send it.
+            const submitter = (event.nativeEvent as SubmitEvent).submitter;
+            if (submitter instanceof HTMLButtonElement && submitter.name) {
+              data.set(submitter.name, submitter.value);
+            }
             startTransition(() => formAction(data));
           }}
         >
@@ -185,9 +198,10 @@ export function FormDialog({
             >
               Cancel
             </Button>
+            {extraActions?.(state, pending || locked)}
             <Button type="submit" disabled={pending || locked} className="pointer-coarse:h-11">
               {pending ? <ICON.spinner className="animate-spin" data-icon="inline-start" /> : null}
-              {submitLabel}
+              {typeof submitLabel === "function" ? submitLabel(state) : submitLabel}
             </Button>
           </DialogFooter>
         </form>

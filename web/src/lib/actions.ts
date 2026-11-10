@@ -26,6 +26,7 @@ import {
   type MilestoneStatus,
 } from "@/lib/constants";
 import { parseClientId } from "@/lib/auth/oauth-grants";
+import type { EntryCheck } from "@/lib/hackathon/types";
 import { createClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/supabase/server";
 
@@ -55,6 +56,11 @@ export type ActionState = {
    * dialog can go straight on to registering it on chain (QDIT-36).
    */
   id?: string;
+  /**
+   * The hackathon dialog's pre-submit check (QDIT-55). Set only by
+   * `checkHackathonEntry`; never with `ok`, so the dialog stays open on it.
+   */
+  entryCheck?: EntryCheck;
 };
 
 function toFieldErrors(error: ZodError): ActionState {
