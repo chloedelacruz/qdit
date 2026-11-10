@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { QditMark, QditWordmark } from "@/components/brand/qdit-mark";
+import { HackathonBanner } from "@/components/hackathon/hackathon-banner";
 import { MarketingHeader } from "@/components/landing/marketing-header";
 import { ProofRecord } from "@/components/landing/proof-record";
 import { Reveal } from "@/components/landing/reveal";
@@ -11,7 +12,15 @@ import {
   VerifyVignette,
 } from "@/components/landing/vignettes";
 import { Button } from "@/components/ui/button";
+import { loadPublicHackathonBanner } from "@/lib/hackathon/banner";
 import { ICON } from "@/lib/icons";
+
+/**
+ * Static, regenerated every 5 minutes so a newly created hackathon reaches the
+ * promo strip without a deploy. The strip decides "opens on…" versus "in
+ * progress" from the visitor's clock, so a cached copy is never stale on that.
+ */
+export const revalidate = 300;
 
 /**
  * The landing page.
@@ -92,9 +101,11 @@ const EVIDENCE = [
   { value: "241", label: "app tests", sub: "117 unit, 124 end-to-end" },
 ] as const;
 
-export default function Home() {
+export default async function Home() {
+  const hackathon = await loadPublicHackathonBanner();
   return (
     <>
+      <HackathonBanner hackathon={hackathon} />
       {/* Reveal ships its children hidden so nothing flashes in and back out.
           With scripting off there is no observer to unhide them, so unhide
           them here instead — the copy is never gated on JavaScript. */}

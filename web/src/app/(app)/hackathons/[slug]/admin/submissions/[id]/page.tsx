@@ -59,7 +59,7 @@ export default async function HackathonSubmissionPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         breadcrumb={[
-          { label: hackathon.name, href: `/hackathons/${slug}` },
+          { label: "Hackathons", href: "/hackathons" }, { label: hackathon.name, href: `/hackathons/${slug}` },
           ...(role === "admin" ? [{ label: "Admin", href: `/hackathons/${slug}/admin` }] : [{ label: "Judging", href: `/hackathons/${slug}/judge` }]),
         ]}
         title={toPlainText(view.team_name, 80)}

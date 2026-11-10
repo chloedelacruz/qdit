@@ -33,7 +33,7 @@ export default async function HackathonJudgePage({ params }: { params: Promise<{
 
   const header = (
     <PageHeader
-      breadcrumb={[{ label: hackathon.name, href: `/hackathons/${slug}` }]}
+      breadcrumb={[{ label: "Hackathons", href: "/hackathons" }, { label: hackathon.name, href: `/hackathons/${slug}` }]}
       title="Judging"
       info="Score each finalist from 1 to 5 on Clarity, Structure, Accuracy, Connections and Pitch. Only you see your scores; the final order is the judges' mean."
     />

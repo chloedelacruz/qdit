@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { QditLogo } from "@/components/brand/qdit-mark";
+import { HackathonBanner } from "@/components/hackathon/hackathon-banner";
+import type { HackathonBannerData } from "@/lib/hackathon/banner-state";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
@@ -79,6 +81,7 @@ export function AppShell({
   email,
   notifications,
   unread,
+  hackathon = null,
   children,
 }: {
   projects: ProjectOption[];
@@ -86,6 +89,8 @@ export function AppShell({
   /** Rendered by the layout on every navigation — see `NotificationBell`. */
   notifications: NotificationRow[];
   unread: number;
+  /** The next hackathon not yet closed, for the promo strip (WP-4.7). */
+  hackathon?: HackathonBannerData | null;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -104,6 +109,8 @@ export function AppShell({
       {/* Solid, not translucent — the spec rules out glass, and depth here
           comes from the surface ladder instead. */}
       <header className="bg-sidebar sticky top-0 z-40 border-b pt-[env(safe-area-inset-top)]">
+        {/* Inside the header so the notch inset is paid once; dismissible. */}
+        <HackathonBanner hackathon={hackathon} />
         <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
           <Link href="/dashboard" className="transition-qdit shrink-0 hover:opacity-80">
             <QditLogo />

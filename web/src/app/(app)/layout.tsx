@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { REQUEST_PATH_HEADER, signInRedirect } from "@/lib/auth/request-path";
 import { hasRecoveryCredential } from "@/lib/auth/wallet-identity";
+import { loadAppHackathonBanner } from "@/lib/hackathon/banner";
 import {
   countUnreadNotifications,
   listNotifications,
@@ -19,11 +20,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * and the redirect below still fires. Awaiting them in sequence added a whole
    * round trip to every navigation in the app.
    */
-  const [user, projects, notifications, unread] = await Promise.all([
+  const [user, projects, notifications, unread, hackathon] = await Promise.all([
     getUser(),
     listProjectOptions(),
     listNotifications(),
     countUnreadNotifications(),
+    // The promo strip (WP-4.7). Never throws: no banner rather than no app.
+    loadAppHackathonBanner(),
   ]);
 
   // The gate for every authenticated route. RLS is the real enforcement — this
@@ -57,6 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       email={user.email ?? ""}
       notifications={notifications}
       unread={unread}
+      hackathon={hackathon}
     >
       {children}
     </AppShell>

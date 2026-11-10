@@ -43,6 +43,9 @@ export const WORKSPACE_NAV: NavItem[] = [
   { href: "/milestones", label: "All milestones", icon: ICON.milestone },
   { href: "/deployments", label: "All deployments", icon: ICON.deployment },
   { href: "/proofs", label: "Proof registry", icon: ICON.proof },
+  // Not exact: inside a hackathon (its page, admin console, judging) the
+  // entry stays lit, so staff always have a way back to the index.
+  { href: "/hackathons", label: "Hackathons", icon: ICON.hackathon },
 ];
 
 export const FOOTER_NAV: NavItem[] = [

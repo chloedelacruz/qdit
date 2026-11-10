@@ -60,10 +60,14 @@ function snapshotLine(project: MyProject): string | null {
 
 export default async function HackathonPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { slug } = await params;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  // "Submit a project" on the Hackathons index lands here with the dialog open.
+  const autoOpen = query.submit === "1";
   const page = await loadPage(slug);
   if (!page) notFound();
 
@@ -131,6 +135,7 @@ export default async function HackathonPage({
               projects={submittable}
               label={label}
               disabledReason={disabledReason}
+              autoOpen={autoOpen}
             />
           ) : null
         }
