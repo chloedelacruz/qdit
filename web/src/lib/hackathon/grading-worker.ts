@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { ChainUnavailableError, readChainFacts, type ChainFactsInput } from "@/lib/hackathon/chain-facts";
 import { checkEligibility } from "@/lib/hackathon/eligibility";
 import {
   gradeOnce,
@@ -31,7 +32,13 @@ import {
   type CombinedRuns,
 } from "@/lib/hackathon/rubric";
 import { createServiceClient, serviceSecretKey } from "@/lib/hackathon/service-client";
-import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput, type EligibilityResult } from "@/lib/hackathon/types";
+import {
+  AI_FLAGS,
+  CRITERION_KEYS,
+  type AiRunOutput,
+  type ChainFacts,
+  type EligibilityResult,
+} from "@/lib/hackathon/types";
 
 /**
  * The hidden AI review worker (WP-4.7, D-116, D-119).
@@ -56,6 +63,8 @@ import { AI_FLAGS, CRITERION_KEYS, type AiRunOutput, type EligibilityResult } fr
  *   refusal, cut-off answer, invalid output    permanent: failed at once
  *   provider 429 / 529 / overloaded            not counted; retry-after honoured
  *   aborted at the end of the run budget       not counted
+ *   chain unreadable (RPC, timeout, decode)    not counted; 60 s (QDIT-54)
+ *   no DoqtriRegistry configured               permanent: failed at once
  *   anything else (lease abort included)       counted; 30 s, then 60 s
  * Every delay gets ±30% jitter (retry-after only upwards), so 60 teams that
  * failed together do not retry together.
@@ -78,6 +87,8 @@ export const RETRY_AFTER_SECONDS = [30, 60] as const;
 export const OVERLOAD_RETRY_SECONDS = 30;
 /** A job aborted by the end of the run budget goes back almost at once. */
 export const BUDGET_ABORT_RETRY_SECONDS = 5;
+/** A chain read that failed before the gate could run (QDIT-54). */
+export const CHAIN_RETRY_SECONDS = 60;
 /** ±30% on every delay. */
 export const JITTER = 0.3;
 /** fail_grading_job() caps delays at an hour. */
@@ -138,6 +149,7 @@ export class GradingAbortError extends Error {
  * ^[a-z0-9_:.-]{1,80}$): never a message, never content.
  */
 export function describeError(error: unknown): string {
+  if (error instanceof ChainUnavailableError) return `chain_unavailable:${error.reason}`;
   if (error instanceof GradingAbortError) return `aborted:${error.abortCause}`;
   if (error instanceof GraderRefusalError) return error.category ? toErrorCode(`refusal:${error.category}`) : "refusal";
   if (error instanceof GraderTruncatedError) {
@@ -161,6 +173,18 @@ export function planFailure(error: unknown, attempts: number, random: number, no
     error instanceof InvalidAiRunError
   ) {
     return { error: description, retryAfterSeconds: 0, permanent: true, countAttempt: false };
+  }
+  if (error instanceof ChainUnavailableError) {
+    // A missing registry is config, not weather: retrying cannot fix it.
+    if (error.reason === "unconfigured") {
+      return { error: description, retryAfterSeconds: 0, permanent: true, countAttempt: false };
+    }
+    return {
+      error: description,
+      retryAfterSeconds: jittered(CHAIN_RETRY_SECONDS, random),
+      permanent: false,
+      countAttempt: false,
+    };
   }
   if (isOverload(error)) {
     const asked = providerRetryAfter(error.headers, nowMs);
@@ -250,6 +274,8 @@ export interface WorkerDeps {
   random?: () => number;
   log?: (event: WorkerLogEvent) => void;
   model?: string;
+  /** The chain reads behind the chain eligibility rules; chain-facts.ts by default. */
+  readChain?: (input: ChainFactsInput) => Promise<ChainFacts>;
 }
 
 export interface SweepCounts {
@@ -341,6 +367,8 @@ class Sweep {
   private readonly random: () => number;
   private readonly log: (event: WorkerLogEvent) => void;
   private readonly model: string;
+  private readonly readChain: (input: ChainFactsInput) => Promise<ChainFacts>;
+  private readonly chainRead = new Map<string, Promise<ChainFacts>>();
   private readonly eligibilityStored = new Map<string, Promise<void>>();
   private readonly images = new Map<string, Promise<(GradingImage | null)[]>>();
   private readonly thirdRunQueued = new Set<string>();
@@ -353,6 +381,7 @@ class Sweep {
     this.random = deps.random ?? Math.random;
     this.log = deps.log ?? defaultLog;
     this.model = deps.model ?? graderModel();
+    this.readChain = deps.readChain ?? ((input) => readChainFacts(input));
   }
 
   async run(options: SweepOptions): Promise<SweepCounts> {
@@ -417,16 +446,22 @@ class Sweep {
       return "superseded";
     }
 
-    const eligibility =
-      job.storedEligibility ??
-      checkEligibility({
+    let eligibility = job.storedEligibility;
+    if (!eligibility) {
+      // Throws ChainUnavailableError when the chain cannot settle a rule: the
+      // job is retried and nothing is stored, so a dead RPC never makes an
+      // entry ineligible.
+      const chain = await this.chainFacts(job);
+      eligibility = checkEligibility({
         window: job.window,
         teamMemberIds: job.memberIds,
         snapshot: job.qditSnapshot,
         doqtri: job.doqtriSnapshot,
         hasGlobalMindmapImage: job.imagePaths.length > 0,
+        chain,
       });
-    if (!job.storedEligibility) await this.storeEligibility(job.versionId, eligibility);
+      await this.storeEligibility(job.versionId, eligibility);
+    }
 
     const eligible = job.eligibilityOverride ?? eligibility.eligible;
     if (!eligible) {
@@ -490,6 +525,17 @@ class Sweep {
       // The lease runs out and claim_grading_jobs() puts it back (or fails it).
       return "error";
     }
+  }
+
+  /** Once per version per sweep, like storeEligibility; a failure is dropped so the next job reads again. */
+  private chainFacts(job: ClaimedJob): Promise<ChainFacts> {
+    let pending = this.chainRead.get(job.versionId);
+    if (!pending) {
+      pending = this.readChain({ window: job.window, snapshot: job.qditSnapshot, doqtri: job.doqtriSnapshot });
+      pending.catch(() => this.chainRead.delete(job.versionId));
+      this.chainRead.set(job.versionId, pending);
+    }
+    return pending;
   }
 
   /** Once per version per sweep; a failure is dropped so the next job tries again. */

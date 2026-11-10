@@ -250,6 +250,8 @@ export const ELIGIBILITY_RULE_IDS = [
   "notes_during_event",
   "notes_connected",
   "global_mindmap_image",
+  "notes_on_chain",
+  "milestones_on_chain",
 ] as const;
 
 export type EligibilityRuleId = (typeof ELIGIBILITY_RULE_IDS)[number];
@@ -273,6 +275,43 @@ export interface EligibilityInput {
   snapshot: QditSnapshotV1;
   doqtri: DoqtriSnapshotV1 | null;
   hasGlobalMindmapImage: boolean;
+  /** What the chain said, read by the grading worker before the gate runs (chain-facts.ts). */
+  chain: ChainFacts;
+}
+
+/**
+ * What the chain confirmed for one submission (WP-4.7, QDIT-54), read once
+ * per version by `lib/hackathon/chain-facts.ts`. Only confirmations are
+ * listed: a read that failed never produces a ChainFacts at all, so an
+ * absent id always means "the chain answered, and not this one".
+ */
+export interface ChainFacts {
+  /** Lowercase doc_ids of event notes anchored on this deployment's DoqtriRegistry. */
+  anchoredNoteIds: readonly string[];
+  /** Milestone ids whose on-chain record was submitted inside the event window. */
+  anchoredMilestoneIds: readonly string[];
+}
+
+/**
+ * The submission dialog's pre-submit check (QDIT-55): the gate run on the
+ * team's current work. Advisory only; grading recomputes it from the frozen
+ * version.
+ */
+export interface EntryCheckRule {
+  id: EligibilityRuleId;
+  /** Null when the rule could not be checked (the chain did not answer). */
+  passed: boolean | null;
+  reason: string;
+}
+
+export interface EntryCheck {
+  /** Every rule passed: the dialog submits without asking. */
+  allPassed: boolean;
+  rules: EntryCheckRule[];
+  /** The chain could not be read, so the two chain rules are unchecked. */
+  chainUnavailable: boolean;
+  /** The doqtri snapshot the check read (the one submit would attach), or null. */
+  doqtri: { receivedAt: string; noteCount: number } | null;
 }
 
 /* -------------------------------------------------------------------------- */

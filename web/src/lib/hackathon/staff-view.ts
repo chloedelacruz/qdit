@@ -106,6 +106,8 @@ export const RULE_LABEL: Record<EligibilityRuleId, string> = {
   notes_during_event: "Event notes",
   notes_connected: "Notes connected",
   global_mindmap_image: "Global map image",
+  notes_on_chain: "Notes on chain",
+  milestones_on_chain: "Milestone on chain",
 };
 
 const RULE_IDS: ReadonlySet<string> = new Set(ELIGIBILITY_RULE_IDS);

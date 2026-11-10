@@ -15,6 +15,7 @@ import type {
   AiRunOutput,
   DoqtriSnapshotNote,
   DoqtriSnapshotV1,
+  ChainFacts,
   EligibilityResult,
   HackathonWindow,
   QditSnapshotTask,
@@ -79,7 +80,18 @@ export function qditSnapshot(overrides: Partial<QditSnapshotV1> = {}): QditSnaps
       display_name: null,
       wallet_address: null,
     })),
-    milestones: [],
+    milestones: [
+      {
+        id: "m1",
+        title: "Alert pilot",
+        description: null,
+        status: "submitted",
+        due_date: "2026-11-21",
+        order_index: 0,
+        created_at: DURING,
+        updated_at: DURING,
+      },
+    ],
     tasks: Array.from({ length: 6 }, (_, i) => task(i)),
     milestone_reviews: [],
     milestone_anchors: [],
@@ -120,6 +132,14 @@ export function doqtriSnapshot(notes: DoqtriSnapshotNote[] = ["n1", "n2", "n3", 
       ],
       links: ids.map((id) => ({ source: `doc:${id}`, target: "concept:hub" })),
     },
+  };
+}
+
+/** What the chain answers for an entry whose notes and milestone are all anchored (QDIT-54). */
+export function anchoredChain(doqtri: DoqtriSnapshotV1 | null = doqtriSnapshot()): ChainFacts {
+  return {
+    anchoredNoteIds: (doqtri?.notes ?? []).map((n) => n.doc_id.toLowerCase()),
+    anchoredMilestoneIds: ["m1"],
   };
 }
 

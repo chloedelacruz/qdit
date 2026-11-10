@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 
 import type { ActionState } from "@/lib/actions";
+import { checkEntry } from "@/lib/hackathon/entry-check";
 import { runGradingFor } from "@/lib/hackathon/grading-worker";
 import {
   readSubmitForm,
   submitEntrySchema,
   submitTargetSchema,
+  type SubmitEntry,
 } from "@/lib/hackathon/schemas";
 import { submitErrorState } from "@/lib/hackathon/submit-errors";
 import { fieldErrorsOf } from "@/lib/schemas";
@@ -39,30 +41,10 @@ export async function submitHackathonEntry(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await getUser();
-  if (!user) return { error: "Sign in to submit." };
+  const checked = await validateEntry(formData);
+  if (!checked.ok) return checked.state;
+  const { supabase, hackathon, entry } = checked;
 
-  const input = readSubmitForm(formData);
-
-  const target = submitTargetSchema.safeParse(input);
-  if (!target.success) return { fieldErrors: fieldErrorsOf(target.error) };
-
-  const supabase = await createClient();
-
-  const { data: hackathon } = await supabase
-    .from("hackathons")
-    .select("id, slug, team_min, team_max")
-    .eq("id", target.data.hackathonId)
-    .maybeSingle();
-  if (!hackathon) return { error: "That hackathon was not found." };
-
-  const parsed = submitEntrySchema({
-    teamMin: hackathon.team_min,
-    teamMax: hackathon.team_max,
-  }).safeParse(input);
-  if (!parsed.success) return { fieldErrors: fieldErrorsOf(parsed.error) };
-
-  const entry = parsed.data;
   const { data: versionId, error } = await supabase.rpc("submit_hackathon_entry", {
     p_hackathon_id: entry.hackathonId,
     p_project_id: entry.projectId,
@@ -80,6 +62,77 @@ export async function submitHackathonEntry(
 
   revalidatePath(`/hackathons/${hackathon.slug}`);
   return { ok: true };
+}
+
+type ValidatedEntry =
+  | {
+      ok: true;
+      supabase: Awaited<ReturnType<typeof createClient>>;
+      hackathon: { id: string; slug: string; opens_at: string; closes_at: string; team_min: number; team_max: number };
+      entry: SubmitEntry;
+    }
+  | { ok: false; state: ActionState };
+
+/** The dialog's fields, checked with the hackathon's own team size. Shared by submit and the check. */
+async function validateEntry(formData: FormData): Promise<ValidatedEntry> {
+  const user = await getUser();
+  if (!user) return { ok: false, state: { error: "Sign in to submit." } };
+
+  const input = readSubmitForm(formData);
+
+  const target = submitTargetSchema.safeParse(input);
+  if (!target.success) return { ok: false, state: { fieldErrors: fieldErrorsOf(target.error) } };
+
+  const supabase = await createClient();
+
+  const { data: hackathon } = await supabase
+    .from("hackathons")
+    .select("id, slug, opens_at, closes_at, team_min, team_max")
+    .eq("id", target.data.hackathonId)
+    .maybeSingle();
+  if (!hackathon) return { ok: false, state: { error: "That hackathon was not found." } };
+
+  const parsed = submitEntrySchema({
+    teamMin: hackathon.team_min,
+    teamMax: hackathon.team_max,
+  }).safeParse(input);
+  if (!parsed.success) return { ok: false, state: { fieldErrors: fieldErrorsOf(parsed.error) } };
+
+  return { ok: true, supabase, hackathon, entry: parsed.data };
+}
+
+/**
+ * The pre-submit check (QDIT-55): the eligibility gate on what a submit would
+ * freeze right now. Writes nothing. Returns `entryCheck` (never `ok`),
+ * or the same errors a submit would give for the same fields and checks.
+ */
+export async function checkHackathonEntry(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const checked = await validateEntry(formData);
+  if (!checked.ok) return checked.state;
+  const { supabase, hackathon, entry } = checked;
+
+  const { data: preview, error } = await supabase.rpc("preview_hackathon_entry", {
+    p_hackathon_id: entry.hackathonId,
+    p_project_id: entry.projectId,
+  });
+  if (error) return submitErrorState(error);
+
+  try {
+    const entryCheck = await checkEntry({
+      window: hackathon,
+      memberIds: entry.memberIds,
+      hasGlobalMindmapImage: entry.imagePaths.length > 0,
+      preview,
+    });
+    return { entryCheck };
+  } catch {
+    console.error(`hackathon check: the preview for project ${entry.projectId} could not be read`);
+    // The dialog submits on any error that is not a field error (check-then-submit.ts).
+    return { error: "Couldn't check the entry right now." };
+  }
 }
 
 /**

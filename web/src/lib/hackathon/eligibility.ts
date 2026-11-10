@@ -11,7 +11,11 @@ import type {
 } from "@/lib/hackathon/types";
 
 /**
- * The deterministic eligibility gate (WP-4.7, D-119; defaults Q-12, Q-13).
+ * The deterministic eligibility gate (WP-4.7, D-119; defaults Q-12, Q-13;
+ * the two chain rules from QDIT-54).
+ *
+ * The chain rules read `input.chain`, which the grading worker fetches before
+ * calling this (chain-facts.ts), so the gate itself stays pure.
  *
  * A submission that fails any rule is not scored. Every rule is always
  * evaluated and reported, so an admin reviewing an override sees all the
@@ -25,6 +29,11 @@ export const MIN_SPECIFIED_CARDS = 5;
 export const MIN_EVENT_NOTES = 5;
 /** The largest connected group of event notes in the global mindmap. */
 export const MIN_CONNECTED_NOTES = 5;
+
+/** QDIT-54: event notes anchored on DoqtriRegistry. */
+export const MIN_ANCHORED_NOTES = 5;
+/** QDIT-54: milestones whose on-chain record was submitted during the event. */
+export const MIN_ANCHORED_MILESTONES = 1;
 
 /** Appended to the reason of a failed rule read from a truncated qdit snapshot. */
 export const TRUNCATED_SUFFIX = " (snapshot was truncated)";
@@ -190,7 +199,7 @@ function plural(n: number, one: string, many = `${one}s`): string {
 
 /** Throws a RangeError when the window's timestamps are unreadable. */
 export function checkEligibility(input: EligibilityInput): EligibilityResult {
-  const { window, snapshot, doqtri, hasGlobalMindmapImage } = input;
+  const { window, snapshot, doqtri, hasGlobalMindmapImage, chain } = input;
   const parsedWindow = parseWindow(window);
   const team = [...new Set(input.teamMemberIds)];
   const members = memberIds(snapshot);
@@ -300,6 +309,39 @@ export function checkEligibility(input: EligibilityInput): EligibilityResult {
       ? "Global mindmap image uploaded"
       : "Global mindmap image missing",
   });
+
+  // 8. notes_on_chain
+  if (doqtri == null) {
+    rules.push({ id: "notes_on_chain", passed: false, reason: "No doqtri snapshot received" });
+  } else {
+    const anchored = new Set(chain.anchoredNoteIds.map((id) => id.toLowerCase()));
+    const count = qualifyingNotes(doqtri, window).filter((n) => anchored.has(n.doc_id.toLowerCase())).length;
+    const passed = count >= MIN_ANCHORED_NOTES;
+    rules.push({
+      id: "notes_on_chain",
+      passed,
+      reason: passed
+        ? `${plural(count, "event note")} anchored on chain (needs ${MIN_ANCHORED_NOTES})`
+        : `${count} of ${MIN_ANCHORED_NOTES} event notes anchored on chain`,
+    });
+  }
+
+  // 9. milestones_on_chain
+  {
+    const anchored = new Set(chain.anchoredMilestoneIds);
+    const count = snapshot.milestones.filter((m) => anchored.has(m.id)).length;
+    const passed = count >= MIN_ANCHORED_MILESTONES;
+    const unregistered = snapshot.project.chain_contract_id == null ? " (project not registered on chain)" : "";
+    rules.push(
+      qditRule({
+        id: "milestones_on_chain",
+        passed,
+        reason: passed
+          ? `${plural(count, "milestone")} anchored on chain during the event`
+          : `No milestone anchored on chain during the event${unregistered}`,
+      }),
+    );
+  }
 
   return { eligible: rules.every((r) => r.passed), rules };
 }

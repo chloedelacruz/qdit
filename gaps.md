@@ -69,6 +69,14 @@ The last three were applied through the Supabase MCP as well, and stamped
 as the pair above them were. **That is now four times.** Assume it will happen
 again and check `schema_migrations` after every MCP apply.
 
+**A stamp can also sort too early.** `hackathon_entry_preview` (QDIT-55) was
+stamped `20261110043649`, before `20261110100000_hackathons`, which it depends on.
+Renaming the file to that would break a fresh `supabase db reset`. So on
+10 Nov 2026 the ledger row was set back to the file's `20261110110000` instead
+(`update supabase_migrations.schema_migrations set version = …`, the product
+owner's call). When a stamp sorts before a migration the file depends on, fix
+the ledger, not the filename.
+
 All six hosted profiles were backfilled with a username derived from their
 display name (`Ada Builder` → `ada_builder`); none collided, and none were left
 null. The one placeholder-email account got `gb7k_zc5d` from its own truncated
