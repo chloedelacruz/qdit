@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient, serviceSecretKey } from "@/lib/hackathon/service-client";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
-import type { HackathonBannerData } from "./banner-state";
+import { TEST_SLUG_PREFIX, type HackathonBannerData } from "./banner-state";
 
 /**
  * The next hackathon that has not closed yet, for the site-wide banner.
@@ -19,6 +19,8 @@ async function nextOpenHackathon(client: SupabaseClient<Database>): Promise<Hack
       .from("hackathons")
       .select("slug, name, opens_at, closes_at")
       .gt("closes_at", new Date().toISOString())
+      // Rehearsals (`test-…`) are never promoted to everyone.
+      .not("slug", "like", `${TEST_SLUG_PREFIX}%`)
       .order("opens_at", { ascending: true })
       .limit(1)
       .maybeSingle();

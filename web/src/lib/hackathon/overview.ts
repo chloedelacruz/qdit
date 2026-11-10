@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/types/database";
+import { isTestHackathon } from "./banner-state";
 
 /**
  * The `/hackathons` index (WP-4.7, QDIT-50): every hackathon a signed-in user
@@ -111,6 +112,8 @@ export function buildOverview(input: {
         myTeam: myTeamBy.get(h.id) ?? null,
       };
     })
+    // A rehearsal shows only to the people in it (QDIT-51).
+    .filter((h) => !isTestHackathon(h.slug) || h.role !== null || h.myTeam !== null)
     .sort((a, b) => {
       // Staffed first, then the soonest-relevant: open or upcoming before past.
       if (!!a.role !== !!b.role) return a.role ? -1 : 1;

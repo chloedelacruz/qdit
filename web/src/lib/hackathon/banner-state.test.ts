@@ -5,6 +5,7 @@ import {
   bannerDismissKey,
   bannerOpensLabel,
   bannerState,
+  isTestHackathon,
   type HackathonBannerData,
 } from "./banner-state";
 
@@ -46,5 +47,16 @@ describe("labels and keys", () => {
 
   it("keeps a dismissed 'upcoming' separate from 'live'", () => {
     expect(bannerDismissKey(H.slug, "upcoming")).not.toBe(bannerDismissKey(H.slug, "live"));
+  });
+});
+
+describe("isTestHackathon", () => {
+  it.each([
+    ["test-e2e", true],
+    ["test-", true],
+    ["san-beda-hackathon", false],
+    ["contest-2026", false],
+  ] as const)("%s → %s", (slug, expected) => {
+    expect(isTestHackathon(slug)).toBe(expected);
   });
 });

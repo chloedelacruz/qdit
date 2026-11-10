@@ -23,6 +23,17 @@ export const UPCOMING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 export const BANNER_TIMEZONE = "Asia/Manila";
 
 /**
+ * Rehearsal hackathons (QDIT-51): a slug starting `test-` is never in the
+ * banner, and only its staff and teams see it on the Hackathons index. Anyone
+ * with the link can still open it, which is how a tester submits.
+ */
+export const TEST_SLUG_PREFIX = "test-";
+
+export function isTestHackathon(slug: string): boolean {
+  return slug.startsWith(TEST_SLUG_PREFIX);
+}
+
+/**
  * `live` while submissions are open, `upcoming` in the two weeks before, and
  * null otherwise (closed, too far out, or unreadable times). The window end is
  * exclusive, matching the database (`clock_timestamp() < closes_at`).
