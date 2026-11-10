@@ -1,0 +1,28 @@
+{
+  "name": "@qdit/merkle",
+  "version": "0.1.0",
+  "description": "The qdit Merkle batch scheme (qdit/merkle/v1): leaf and node hashing, trees and inclusion proofs. Matches milestone_proof_v2.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5.9"
+  }
+}

@@ -14,6 +14,8 @@
 #   contracts contracts/          cargo fmt --check, clippy -D warnings, test
 #   wasm      contracts/          stellar contract build
 #   database  supabase/           supabase db start, supabase test db
+#   packages  packages/           npm typecheck, test, build
+# docs/merkle/ (the shared Merkle vectors) selects contracts and packages.
 # A change to .github/workflows/ or scripts/ci-local.sh selects every job.
 #
 # Keep this in step with ci.yml: when a job there changes, change it here.
@@ -23,7 +25,7 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-all_jobs=(web contracts wasm database)
+all_jobs=(web contracts wasm database packages)
 jobs=()
 
 if [[ $# -gt 0 && "$1" == "--all" ]]; then
@@ -43,6 +45,11 @@ else
       grep -q '^web/' <<<"$changed" && jobs+=(web)
       grep -q '^contracts/' <<<"$changed" && jobs+=(contracts wasm)
       grep -q '^supabase/' <<<"$changed" && jobs+=(database)
+      grep -q '^packages/' <<<"$changed" && jobs+=(packages)
+      if grep -q '^docs/merkle/' <<<"$changed"; then
+        [[ " ${jobs[*]} " == *" contracts "* ]] || jobs+=(contracts)
+        [[ " ${jobs[*]} " == *" packages "* ]] || jobs+=(packages)
+      fi
     fi
   fi
 fi
@@ -101,6 +108,15 @@ supabase_cli() {
   npx --yes "supabase@$v" "$@"
 }
 
+job_packages() {
+  need npm packages
+  cd "$root/packages"
+  [[ -d node_modules ]] || npm ci
+  npm run typecheck
+  npm test
+  npm run build
+}
+
 job_database() {
   need npx database
   need docker database
@@ -121,7 +137,7 @@ job_database() {
 
 failed=()
 for job in "${jobs[@]}"; do
-  case "$job" in web|contracts|wasm|database) ;; *)
+  case "$job" in web|contracts|wasm|database|packages) ;; *)
     echo "ci-local: unknown job '$job' (jobs: ${all_jobs[*]})" >&2
     exit 2 ;;
   esac

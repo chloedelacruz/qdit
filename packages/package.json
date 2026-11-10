@@ -1,0 +1,13 @@
+{
+  "name": "qdit-packages",
+  "private": true,
+  "description": "Off-chain tooling for the qdit contracts. Not part of the web app.",
+  "workspaces": [
+    "merkle"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "typecheck": "npm run typecheck --workspaces"
+  }
+}

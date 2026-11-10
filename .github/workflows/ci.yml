@@ -103,6 +103,34 @@ jobs:
 
       - run: cargo test
 
+  packages:
+    name: packages — typecheck, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 runs the .ts tests directly, with no build step or test
+      # framework. The Merkle tests read docs/merkle/vectors.json, the same
+      # file the milestone_proof_v2 tests load, so the TypeScript library and
+      # the contract are checked against one set of vectors.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
   wasm:
     name: contracts — build wasm
     runs-on: ubuntu-latest
