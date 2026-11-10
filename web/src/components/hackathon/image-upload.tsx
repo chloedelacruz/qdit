@@ -128,8 +128,9 @@ export function ImageUpload({
     <div className="space-y-1.5">
       <input type="hidden" name={name} value={value?.path ?? ""} />
 
-      <div className="flex items-center justify-between gap-2">
-        <span id={`${inputId}-label`} className="text-xs font-medium">
+      {/* Fixed height: a Remove button must not push this tile below its neighbours. */}
+      <div className="flex h-6 items-center justify-between gap-2 pointer-coarse:h-9">
+        <span id={`${inputId}-label`} className="min-w-0 truncate text-xs font-medium">
           {label}
           {required ? null : (
             <span className="ml-1.5 font-normal text-muted-foreground">Optional</span>
@@ -202,7 +203,8 @@ export function ImageUpload({
         />
       </label>
 
-      <p id={statusId} aria-live="polite" className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
+      {/* The tile already shows the state; only an error needs a visible line. */}
+      <p id={statusId} aria-live="polite" className={error ? "text-xs text-destructive" : "sr-only"}>
         {error ?? (busy ? "Uploading…" : value ? "Attached." : "Not attached.")}
       </p>
     </div>
