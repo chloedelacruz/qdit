@@ -19,8 +19,9 @@ async function nextOpenHackathon(client: SupabaseClient<Database>): Promise<Hack
       .from("hackathons")
       .select("slug, name, opens_at, closes_at")
       .gt("closes_at", new Date().toISOString())
-      // Rehearsals (`test-…`) are never promoted to everyone.
+      // Rehearsals (`test-…`) and hidden hackathons are never promoted to everyone.
       .not("slug", "like", `${TEST_SLUG_PREFIX}%`)
+      .eq("hidden", false)
       .order("opens_at", { ascending: true })
       .limit(1)
       .maybeSingle();

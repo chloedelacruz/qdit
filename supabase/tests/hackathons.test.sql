@@ -343,6 +343,7 @@ select is_empty(
               'hackathon_mindmap_path', 'hackathon_mindmap_upload_allowed', 'hackathon_mindmap_read_allowed',
               -- the user RPCs, each checking session and role itself
               'submit_hackathon_entry', 'preview_hackathon_entry', 'push_doqtri_hackathon_snapshot', 'hackathon_grading_status',
+              'create_hackathon', 'update_hackathon', 'delete_hackathon', 'hackathon_manage_list',
               'hackathon_leaderboard', 'release_hackathon_grades', 'grant_late_pass', 'set_eligibility_override',
               'set_hackathon_staff', 'hackathon_staff_list', 'set_pitch_order', 'regrade_submission',
               'hackathon_finals_for_judge', 'upsert_judge_score')

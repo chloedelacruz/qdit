@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/types/database";
-import { isTestHackathon } from "./banner-state";
+import { isUnlistedHackathon } from "./banner-state";
 
 /**
  * The `/hackathons` index (WP-4.7, QDIT-50): every hackathon a signed-in user
@@ -29,6 +29,8 @@ export type OverviewHackathon = {
   opensAt: string;
   closesAt: string;
   releasedAt: string | null;
+  /** Unlisted (hidden, or a `test-` rehearsal); shown only to the people who see it anyway. */
+  unlisted: boolean;
   role: StaffRole | null;
   /** Staff only; null for everyone else. Newest submission first. */
   submissions: OverviewSubmission[] | null;
@@ -43,6 +45,7 @@ type HackathonRow = {
   opens_at: string;
   closes_at: string;
   released_at: string | null;
+  hidden?: boolean | null;
 };
 type StaffRow = { hackathon_id: string; role: string };
 type SubmissionRow = { id: string; hackathon_id: string; team_name: string; created_at: string };
@@ -56,6 +59,8 @@ export function buildOverview(input: {
   submissions: SubmissionRow[];
   versions: VersionRow[];
   myTeams: TeamRow[];
+  /** A qdit operator sees unlisted hackathons too (QDIT-56). */
+  isOperator?: boolean;
 }): OverviewHackathon[] {
   const roleBy = new Map<string, StaffRole>();
   for (const s of input.staff) {
@@ -107,13 +112,14 @@ export function buildOverview(input: {
         opensAt: h.opens_at,
         closesAt: h.closes_at,
         releasedAt: h.released_at,
+        unlisted: isUnlistedHackathon(h),
         role,
         submissions: subs,
         myTeam: myTeamBy.get(h.id) ?? null,
       };
     })
-    // A rehearsal shows only to the people in it (QDIT-51).
-    .filter((h) => !isTestHackathon(h.slug) || h.role !== null || h.myTeam !== null)
+    // An unlisted hackathon shows only to the people in it (QDIT-51, QDIT-56).
+    .filter((h) => !h.unlisted || h.role !== null || h.myTeam !== null || input.isOperator === true)
     .sort((a, b) => {
       // Staffed first, then the soonest-relevant: open or upcoming before past.
       if (!!a.role !== !!b.role) return a.role ? -1 : 1;
@@ -130,14 +136,27 @@ function rows<T>(res: { data: unknown; error: { message: string } | null }, what
 export async function loadHackathonOverview(
   supabase: SupabaseClient<Database>,
   userId: string,
-): Promise<{ hackathons: OverviewHackathon[]; nowMs: number; canSubmit: boolean }> {
-  const [hRes, staffRes, teamRes, adminRes] = await Promise.all([
-    supabase.from("hackathons").select("id, slug, name, opens_at, closes_at, released_at").order("opens_at", { ascending: false }),
+): Promise<{
+  hackathons: OverviewHackathon[];
+  nowMs: number;
+  canSubmit: boolean;
+  /** Operators, and anyone who admins a hackathon, get the management page (QDIT-56). */
+  canManage: boolean;
+  isOperator: boolean;
+}> {
+  const [hRes, staffRes, teamRes, adminRes, operatorRes] = await Promise.all([
+    supabase
+      .from("hackathons")
+      .select("id, slug, name, opens_at, closes_at, released_at, hidden")
+      .order("opens_at", { ascending: false }),
     supabase.from("hackathon_staff").select("hackathon_id, role").eq("user_id", userId),
     supabase.from("hackathon_team_members").select("hackathon_id, submission_id").eq("user_id", userId),
     // Only a project's owner or admin can submit it (submit_hackathon_entry).
     supabase.from("project_members").select("project_id").eq("user_id", userId).in("role", ["owner", "admin"]).limit(1),
+    supabase.rpc("is_qdit_operator"),
   ]);
+  // A failed operator read is "not an operator": it only adds a link and unlisted cards.
+  const isOperator = operatorRes.data === true;
   const canSubmit = rows<{ project_id: string }>(adminRes, "your projects").length > 0;
   const hackathons = rows<HackathonRow>(hRes, "hackathons");
   const staff = rows<StaffRow>(staffRes, "staff roles");
@@ -173,8 +192,10 @@ export async function loadHackathonOverview(
 
   // The request's clock, for each card's open/closed badge.
   return {
-    hackathons: buildOverview({ hackathons, staff, submissions, versions, myTeams }),
+    hackathons: buildOverview({ hackathons, staff, submissions, versions, myTeams, isOperator }),
     nowMs: Date.now(),
     canSubmit,
+    canManage: isOperator || staff.some((s) => s.role === "admin"),
+    isOperator,
   };
 }

@@ -34,6 +34,14 @@ export function isTestHackathon(slug: string): boolean {
 }
 
 /**
+ * Unlisted: hidden by an operator or admin (QDIT-56), or a `test-` rehearsal.
+ * Kept out of the banner and, for anyone but its staff and teams, the index.
+ */
+export function isUnlistedHackathon(h: { slug: string; hidden?: boolean | null }): boolean {
+  return h.hidden === true || isTestHackathon(h.slug);
+}
+
+/**
  * `live` while submissions are open, `upcoming` in the two weeks before, and
  * null otherwise (closed, too far out, or unreadable times). The window end is
  * exclusive, matching the database (`clock_timestamp() < closes_at`).

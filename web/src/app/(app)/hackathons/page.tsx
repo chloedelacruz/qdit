@@ -23,15 +23,25 @@ export const metadata: Metadata = { title: "Hackathons" };
 export default async function HackathonsPage() {
   const [user, supabase] = await Promise.all([getUser(), createClient()]);
   // The (app) layout already redirects signed-out visitors.
-  const { hackathons, nowMs: now, canSubmit } = user
+  const { hackathons, nowMs: now, canSubmit, canManage } = user
     ? await loadHackathonOverview(supabase, user.id)
-    : { hackathons: [], nowMs: 0, canSubmit: false };
+    : { hackathons: [], nowMs: 0, canSubmit: false, canManage: false };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader
         title="Hackathons"
         info="Events you can enter or run. Admins and judges see every submission to the hackathons they staff."
+        actions={
+          canManage ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/hackathons/manage">
+                <ICON.settings data-icon="inline-start" />
+                Manage hackathons
+              </Link>
+            </Button>
+          ) : null
+        }
       />
 
       {hackathons.length === 0 ? (
@@ -67,6 +77,7 @@ function HackathonCard({ h, now, canSubmit }: { h: OverviewHackathon; now: numbe
             </h2>
             <StatusBadge state={stateBadge(state)} />
             {h.releasedAt ? <StatusBadge state={{ label: "Grades released", tone: "success" }} /> : null}
+            {h.unlisted ? <StatusBadge dot={false} state={{ label: "Hidden", tone: "neutral" }} /> : null}
             {h.role ? (
               <StatusBadge dot={false} state={{ label: h.role === "admin" ? "Admin" : "Judge", tone: "accent" }} />
             ) : null}
