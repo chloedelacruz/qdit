@@ -65,6 +65,7 @@ function asContractError(method: string, raw: string): Error {
 
 export const sc = {
   string: (s: string) => nativeToScVal(s, { type: "string" }),
+  symbol: (s: string) => xdr.ScVal.scvSymbol(s),
   u32: (n: number) => nativeToScVal(n, { type: "u32" }),
   bytes: (b: Uint8Array) => xdr.ScVal.scvBytes(Buffer.from(b)),
   address: (a: string) => new Address(a).toScVal(),

@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
-    "cli": "node src/cli.ts"
+    "cli": "node src/cli.ts",
+    "bench": "node src/bench.ts"
   },
   "dependencies": {
     "@qdit/merkle": "0.1.0",

@@ -91,3 +91,16 @@ in section 7 of the spec.
 
 `--network testnet` is the default. For any other network, pass `--network <name>
 --rpc-url <url> --passphrase "<network passphrase>"`.
+
+## Benchmark
+
+`src/bench.ts` compares one `submit_milestone_proof` per milestone with a single
+`anchor_batch`, at 1, 10, 50 and 100 milestones, on testnet. The published run is in
+[`docs/merkle/BENCHMARK.md`](../../docs/merkle/BENCHMARK.md): at 100 milestones a batch
+is one transaction in one ledger, against 100 transactions over 306 ledgers, and costs
+117.6 times less.
+
+```sh
+node src/bench.ts --contract <C...> --out results.json
+node src/bench-table.ts results.json
+```
