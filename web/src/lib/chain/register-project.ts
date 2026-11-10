@@ -86,7 +86,13 @@ export async function runRegistration(
     }
 
     const prepared = await steps.prepare(signer);
-    if (!prepared.ok) return { kind: "error", message: prepared.error };
+    if (!prepared.ok) {
+      // The simulation is where a missing account actually shows up, and the
+      // server returns it rather than throwing, so the catch below never sees
+      // it (QDIT-59).
+      if (isUnfundedError(prepared.error)) return { kind: "unfunded", address: signer };
+      return { kind: "error", message: prepared.error };
+    }
 
     const signed = await signTransaction(prepared.data.xdr);
 

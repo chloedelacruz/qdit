@@ -147,6 +147,19 @@ describe("runRegistration", () => {
     await expect(runRegistration("testnet", steps)).resolves.toEqual({ kind: "declined" });
   });
 
+  it("reports an unfunded account found by the simulation, without a signing prompt", async () => {
+    // What the server action returns when the signer has no ledger entry: the
+    // simulation fails first, so this is where it shows up in practice.
+    prepare.mockResolvedValue({ ok: false, error: `Account not found: ${SIGNER}` });
+
+    await expect(runRegistration("testnet", steps)).resolves.toEqual({
+      kind: "unfunded",
+      address: SIGNER,
+    });
+    expect(wallet.signTransaction).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it("reports an unfunded account with the address to fund", async () => {
     wallet.signTransaction.mockRejectedValue(new Error("Account not found"));
 
