@@ -2,7 +2,7 @@
 -- qdit — pgTAP
 -- supabase/tests/task_assignee_membership.test.sql
 --
--- Covers 20261110100000_task_assignee_membership.sql (QDIT-52, WP-2.9): a
+-- Covers 20261110130000_task_assignee_membership.sql (QDIT-52, WP-2.9): a
 -- task's assignee must be a member of the task's project, whoever writes the
 -- row; leaving a project unassigns the leaver's tasks there and nowhere else;
 -- and deleting a project or an account still works with assigned tasks.
