@@ -1158,6 +1158,33 @@ export async function listMilestoneOptionsByProject(): Promise<
   return byProject;
 }
 
+/**
+ * Who a task in each project can be assigned to: that project's members, for
+ * pages whose rows span projects. `tasks_guard_assignee` refuses anyone else,
+ * so offering the caller's whole `listMembers()` would only offer failures.
+ */
+export async function listMemberOptionsByProject(): Promise<
+  Map<string, { id: string; name: string }[]>
+> {
+  const supabase = await createClient();
+  const [{ data }, profiles] = await Promise.all([
+    supabase.from("project_members").select("project_id, user_id"),
+    memberMap(),
+  ]);
+
+  const byProject = new Map<string, { id: string; name: string }[]>();
+  for (const row of data ?? []) {
+    const list = byProject.get(row.project_id) ?? [];
+    list.push({ id: row.user_id, name: profiles.get(row.user_id)?.name ?? "Unknown" });
+    byProject.set(row.project_id, list);
+  }
+  for (const list of byProject.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return byProject;
+}
+
 // ---------------------------------------------------------------------------
 // Plan docs (doqtri)
 // ---------------------------------------------------------------------------

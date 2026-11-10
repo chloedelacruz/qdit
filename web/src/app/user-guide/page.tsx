@@ -330,7 +330,11 @@ const SECTIONS: Section[] = [
         Click <strong>New task</strong>.
       </>,
       <>Type a title for the task.</>,
-      <>Set a priority, an assignee, or a milestone. Each field is optional.</>,
+      <>
+        Set a priority, an assignee, or a milestone. Each field is optional. The
+        assignee list shows only this project&apos;s members, and removing someone
+        from the project unassigns their tasks in it.
+      </>,
       <>
         Click <strong>Create task</strong>.
       </>,

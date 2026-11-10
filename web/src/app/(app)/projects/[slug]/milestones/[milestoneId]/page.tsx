@@ -24,8 +24,8 @@ import {
   getMilestone,
   getProject,
   getProjectRole,
-  listMembers,
   listMilestoneOptions,
+  listProjectMembers,
   listProofs,
   listTasks,
 } from "@/lib/queries";
@@ -80,7 +80,7 @@ export default async function MilestonePage({ params }: { params: Params }) {
     getProjectRole(project.id),
     getCurrentUserId(),
     listMilestoneOptions(project.id),
-    listMembers(),
+    listProjectMembers(project.id),
   ]);
 
   const canEdit = canContribute(role);

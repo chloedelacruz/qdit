@@ -65,6 +65,9 @@ function orNull(value: FormDataEntryValue | null): string | null {
   return text === "" ? null : text;
 }
 
+/** Raised verbatim by `tasks_guard_assignee` (QDIT-52). */
+const ASSIGNEE_NOT_MEMBER = "The assignee is not a member of this project.";
+
 /**
  * Turns a Postgres error into something a person can act on. Anything
  * unrecognised is passed through rather than replaced with a generic message,
@@ -75,7 +78,11 @@ function friendly(message: string, code?: string): string {
   if (code === "42501" || code === "PGRST301") {
     return "You do not have permission to do that in this project.";
   }
-  if (code === "23514") return "That value is not allowed by the database constraints.";
+  if (code === "23514") {
+    // tasks_guard_assignee's own message says which field and why.
+    if (message === ASSIGNEE_NOT_MEMBER) return ASSIGNEE_NOT_MEMBER;
+    return "That value is not allowed by the database constraints.";
+  }
   return message;
 }
 

@@ -10,6 +10,7 @@ import { ICON } from "@/lib/icons";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
   canContribute,
+  listMemberOptionsByProject,
   listMembers,
   listMilestoneOptionsByProject,
   listProjectOptions,
@@ -30,13 +31,15 @@ export default async function AllTasksPage({
   searchParams: Promise<SearchParams>;
 }) {
   const filters = parseFilters(await searchParams);
-  const [page, members, projects, roles, milestonesByProject] = await Promise.all([
+  const [page, members, projects, roles, milestonesByProject, membersByProject] = await Promise.all([
     listTasks({}, filters),
     listMembers(),
     listProjectOptions(),
     // Rows here span projects, and the caller's role can differ in each.
     listProjectRoles(),
     listMilestoneOptionsByProject(),
+    // A task's edit dialog offers its own project's members, nobody else.
+    listMemberOptionsByProject(),
   ]);
 
   return (
@@ -105,7 +108,7 @@ export default async function AllTasksPage({
               <TaskRowActions
                 task={task}
                 milestones={milestonesByProject.get(task.projectId) ?? []}
-                members={members}
+                members={membersByProject.get(task.projectId) ?? []}
                 canEdit={canContribute(roles.get(task.projectId) ?? null)}
               />
             }
