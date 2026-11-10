@@ -47,6 +47,7 @@ export function SubmitForm({
   projects,
   label,
   disabledReason,
+  autoOpen = false,
 }: {
   hackathonId: string;
   teamMin: number;
@@ -56,6 +57,8 @@ export function SubmitForm({
   label: string;
   /** Set when the button cannot be used; shown as its tooltip. */
   disabledReason: string | null;
+  /** Open on arrival: `?submit=1`, from the Hackathons index (QDIT-50). */
+  autoOpen?: boolean;
 }) {
   // Which slots are mid-upload. A ref, because the action reads it at submit
   // time and must not see the value from the render that created it.
@@ -84,8 +87,19 @@ export function SubmitForm({
 
   // A new FormDialog per opening: its action state (and so every error from
   // the last attempt) starts empty each time the dialog opens.
-  const [open, setOpen] = useState(false);
-  const [opening, setOpening] = useState(0);
+  const canOpen = !disabledReason && projects.length > 0;
+  const [open, setOpen] = useState(() => autoOpen && canOpen);
+  const [opening, setOpening] = useState(() => (autoOpen && canOpen ? 1 : 0));
+
+  // Drop `?submit=1` once it has done its job, so a reload or a shared link
+  // doesn't reopen the dialog. No state is set here.
+  useEffect(() => {
+    if (!autoOpen) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("submit")) return;
+    url.searchParams.delete("submit");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, [autoOpen]);
   const onOpenChange = useCallback((next: boolean) => {
     if (next) setOpening((n) => n + 1);
     setOpen(next);

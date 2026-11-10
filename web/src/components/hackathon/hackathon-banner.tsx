@@ -71,7 +71,8 @@ export function HackathonBanner({ hackathon }: { hackathon: HackathonBannerData 
   // Already on the hackathon's own pages: the banner would point at itself.
   if (pathname?.startsWith(`/hackathons/${hackathon.slug}`)) return null;
 
-  const href = `/hackathons/${hackathon.slug}`;
+  // Live: straight into the submit dialog (it only opens for someone who can submit).
+  const href = `/hackathons/${hackathon.slug}${state === "live" ? "?submit=1" : ""}`;
 
   function dismiss() {
     if (!key) return;

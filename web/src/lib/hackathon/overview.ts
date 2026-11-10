@@ -127,12 +127,15 @@ function rows<T>(res: { data: unknown; error: { message: string } | null }, what
 export async function loadHackathonOverview(
   supabase: SupabaseClient<Database>,
   userId: string,
-): Promise<{ hackathons: OverviewHackathon[]; nowMs: number }> {
-  const [hRes, staffRes, teamRes] = await Promise.all([
+): Promise<{ hackathons: OverviewHackathon[]; nowMs: number; canSubmit: boolean }> {
+  const [hRes, staffRes, teamRes, adminRes] = await Promise.all([
     supabase.from("hackathons").select("id, slug, name, opens_at, closes_at, released_at").order("opens_at", { ascending: false }),
     supabase.from("hackathon_staff").select("hackathon_id, role").eq("user_id", userId),
     supabase.from("hackathon_team_members").select("hackathon_id, submission_id").eq("user_id", userId),
+    // Only a project's owner or admin can submit it (submit_hackathon_entry).
+    supabase.from("project_members").select("project_id").eq("user_id", userId).in("role", ["owner", "admin"]).limit(1),
   ]);
+  const canSubmit = rows<{ project_id: string }>(adminRes, "your projects").length > 0;
   const hackathons = rows<HackathonRow>(hRes, "hackathons");
   const staff = rows<StaffRow>(staffRes, "staff roles");
   const myTeams = rows<TeamRow>(teamRes, "your teams");
@@ -166,5 +169,9 @@ export async function loadHackathonOverview(
     : [];
 
   // The request's clock, for each card's open/closed badge.
-  return { hackathons: buildOverview({ hackathons, staff, submissions, versions, myTeams }), nowMs: Date.now() };
+  return {
+    hackathons: buildOverview({ hackathons, staff, submissions, versions, myTeams }),
+    nowMs: Date.now(),
+    canSubmit,
+  };
 }

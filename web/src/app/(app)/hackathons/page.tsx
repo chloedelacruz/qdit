@@ -23,9 +23,9 @@ export const metadata: Metadata = { title: "Hackathons" };
 export default async function HackathonsPage() {
   const [user, supabase] = await Promise.all([getUser(), createClient()]);
   // The (app) layout already redirects signed-out visitors.
-  const { hackathons, nowMs: now } = user
+  const { hackathons, nowMs: now, canSubmit } = user
     ? await loadHackathonOverview(supabase, user.id)
-    : { hackathons: [], nowMs: 0 };
+    : { hackathons: [], nowMs: 0, canSubmit: false };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -41,15 +41,19 @@ export default async function HackathonsPage() {
           description="When organisers open one, it shows up here."
         />
       ) : (
-        hackathons.map((h) => <HackathonCard key={h.id} h={h} now={now} />)
+        hackathons.map((h) => <HackathonCard key={h.id} h={h} now={now} canSubmit={canSubmit} />)
       )}
     </div>
   );
 }
 
-function HackathonCard({ h, now }: { h: OverviewHackathon; now: number }) {
+function HackathonCard({ h, now, canSubmit }: { h: OverviewHackathon; now: number; canSubmit: boolean }) {
   const state = windowState({ opensAt: h.opensAt, closesAt: h.closesAt, releasedAt: h.releasedAt }, now);
   const base = `/hackathons/${h.slug}`;
+  // One click to the submit dialog: a project owner or admin, while it is
+  // open. Staff can't be on a team (member_is_staff), so they don't get it.
+  // A per-project late pass still works from the event page itself.
+  const showSubmit = canSubmit && !h.role && state === "open";
 
   return (
     <section aria-labelledby={`h-${h.id}`} className="surface rounded-xl border border-border">
@@ -81,6 +85,14 @@ function HackathonCard({ h, now }: { h: OverviewHackathon; now: number }) {
           <Button asChild size="sm" variant="outline">
             <Link href={base}>{h.role ? "Event page" : "Open"}</Link>
           </Button>
+          {showSubmit ? (
+            <Button asChild size="sm">
+              <Link href={`${base}?submit=1`}>
+                <ICON.send data-icon="inline-start" />
+                {h.myTeam ? "Update submission" : "Submit a project"}
+              </Link>
+            </Button>
+          ) : null}
           {h.role ? (
             <Button asChild size="sm" variant="outline">
               <Link href={`${base}/judge`}>Judging</Link>

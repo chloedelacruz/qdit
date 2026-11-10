@@ -34,7 +34,7 @@ describe("HackathonBanner", () => {
     expect(out).toContain("San Beda University Hackathon");
     expect(out).toContain("in progress!");
     expect(out).toContain("Submit your projects here");
-    expect(out).toContain('href="/hackathons/san-beda-hackathon"');
+    expect(out).toContain('href="/hackathons/san-beda-hackathon?submit=1"');
     expect(out).toContain('aria-label="Dismiss hackathon announcement"');
   });
 
@@ -45,6 +45,7 @@ describe("HackathonBanner", () => {
     expect(out).toContain("opens Nov 14");
     expect(out).toContain("Get your team ready");
     expect(out).not.toContain("in progress");
+    expect(out).toContain('href="/hackathons/san-beda-hackathon"');
   });
 
   it("renders nothing after close, with no hackathon, or on the hackathon's pages", () => {
