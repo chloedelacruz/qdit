@@ -51,6 +51,13 @@ const SHEET_BELOW_SM = cn(
 );
 
 /**
+ * From `sm` up the dialog is centred and fixed, so a form taller than the
+ * window could not be scrolled at all (QDIT-58): cap it at the viewport and
+ * let it scroll, as the bottom sheet already does.
+ */
+const SCROLL_FROM_SM = "sm:max-h-[calc(100dvh-4rem)] sm:overflow-y-auto";
+
+/**
  * The shell every create/edit form in the app is built on.
  *
  * It exists so the five dialogs stay identical in behaviour as well as looks:
@@ -83,7 +90,8 @@ export function FormDialog({
   submitLabel: string | ((state: ActionState) => string);
   successMessage: string;
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
-  className?: string;
+  /** A function when the width depends on the last result (a checklist beside the fields). */
+  className?: string | ((state: ActionState) => string);
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
@@ -145,7 +153,14 @@ export function FormDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
 
-      <DialogContent className={cn(SHEET_BELOW_SM, "sm:max-w-md", className)}>
+      <DialogContent
+        className={cn(
+          SHEET_BELOW_SM,
+          SCROLL_FROM_SM,
+          "sm:max-w-md",
+          typeof className === "function" ? className(state) : className,
+        )}
+      >
         {/* Clears the close button, which grows to 44px under a finger. */}
         <DialogHeader className="pointer-coarse:pr-10">
           <DialogTitle>{title}</DialogTitle>
@@ -188,8 +203,13 @@ export function FormDialog({
 
           {/* Below `sm` the primitive already stacks these full width, submit
               on top; the home-indicator inset keeps them clear of the
-              gesture bar on a bottom sheet. */}
-          <DialogFooter className="max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
+              gesture bar on a bottom sheet. Sticky, so the buttons stay in
+              reach while a long form scrolls; the gradient repeats the
+              footer's translucent tint over an opaque base, so fields do not
+              show through it. -bottom-4 because sticky offsets count from inside
+              the dialog's 1rem padding, which would leave a strip of fields
+              showing below the buttons. */}
+          <DialogFooter className="sticky -bottom-4 z-10 bg-popover bg-linear-to-b from-muted/50 to-muted/50 max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
             <Button
               type="button"
               variant="ghost"

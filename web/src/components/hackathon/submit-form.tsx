@@ -144,7 +144,8 @@ export function SubmitForm({
           </Button>
         ) : null
       }
-      className="sm:max-w-lg"
+      // Wide enough for the checklist beside the fields once it shows.
+      className={(state) => (state.entryCheck ? "sm:max-w-lg lg:max-w-5xl" : "sm:max-w-lg")}
     >
       {(state) => (
         <SubmitFields
@@ -241,139 +242,164 @@ function SubmitFields({
   const sizeHint =
     teamMin === teamMax ? `Choose ${teamMin}.` : `Choose ${teamMin} to ${teamMax}.`;
 
+  const check = state.entryCheck;
+
+  // Below `lg` the checklist lands under the fields, out of sight: bring it
+  // into view when a check comes back.
+  const checkRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!check) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    checkRef.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, [check]);
+
   return (
-    <>
-      <input type="hidden" name="hackathonId" value={hackathonId} />
+    <div
+      className={
+        check
+          ? "space-y-3.5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start lg:gap-6 lg:space-y-0"
+          : "space-y-3.5"
+      }
+    >
+      <div className="space-y-3.5">
+        <input type="hidden" name="hackathonId" value={hackathonId} />
 
-      <Field id="hackathon-project" label="Team project" error={errors.projectId}>
-        {projects.length === 1 ? (
-          <>
-            <input type="hidden" name="projectId" value={projectId} />
-            <p id="hackathon-project" className="text-sm">
-              {project?.name}
+        <Field id="hackathon-project" label="Team project" error={errors.projectId}>
+          {projects.length === 1 ? (
+            <>
+              <input type="hidden" name="projectId" value={projectId} />
+              <p id="hackathon-project" className="text-sm">
+                {project?.name}
+              </p>
+            </>
+          ) : (
+            <SelectField
+              id="hackathon-project"
+              name="projectId"
+              value={projectId}
+              onValueChange={chooseProject}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </SelectField>
+          )}
+        </Field>
+
+        <Field id="hackathon-team-name" label="Team name" error={errors.teamName}>
+          <Input
+            id="hackathon-team-name"
+            name="teamName"
+            value={teamName}
+            onChange={(event) => {
+              touched("teamName");
+              setTeamName(event.target.value);
+            }}
+            maxLength={TEAM_NAME_MAX}
+            autoComplete="off"
+            aria-invalid={errors.teamName ? true : undefined}
+            aria-describedby={errors.teamName ? "hackathon-team-name-error" : undefined}
+          />
+        </Field>
+
+        <fieldset className="space-y-1.5" aria-describedby="hackathon-members-status">
+          <legend className="flex w-full items-center justify-between text-sm font-medium">
+            Team members
+            <span className="text-xs font-normal text-muted-foreground tabular-nums">
+              {memberIds.length} selected
+            </span>
+          </legend>
+
+          {memberIds.map((id) => (
+            <input key={id} type="hidden" name="memberIds" value={id} />
+          ))}
+
+          {project && project.members.length > 0 ? (
+            <ul className="well max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+              {project.members.map((member) => {
+                const checked = memberIds.includes(member.id);
+                const boxId = `hackathon-member-${member.id}`;
+                return (
+                  <li key={member.id} className="flex min-h-9 items-center gap-2.5 px-2.5">
+                    <Checkbox
+                      id={boxId}
+                      checked={checked}
+                      disabled={!checked && full}
+                      onCheckedChange={(value) => toggleMember(member.id, value === true)}
+                    />
+                    <label htmlFor={boxId} className="flex min-w-0 flex-1 items-baseline gap-1.5 py-2 text-sm">
+                      <span className="truncate">{member.name}</span>
+                      {member.username ? (
+                        <span className="truncate text-xs text-muted-foreground">@{member.username}</span>
+                      ) : null}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              This project has no members to choose yet. Add them on the project&apos;s Members page.
             </p>
-          </>
-        ) : (
-          <SelectField
-            id="hackathon-project"
-            name="projectId"
-            value={projectId}
-            onValueChange={chooseProject}
+          )}
+
+          <p
+            id="hackathon-members-status"
+            className={errors.memberIds ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
           >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </SelectField>
-        )}
-      </Field>
+            {errors.memberIds ?? `${sizeHint} Each person can be on one team only.`}
+          </p>
+          {formerMembersNote(removedMembers) ? (
+            <p className="text-xs text-muted-foreground">{formerMembersNote(removedMembers)}</p>
+          ) : null}
+        </fieldset>
 
-      <Field id="hackathon-team-name" label="Team name" error={errors.teamName}>
-        <Input
-          id="hackathon-team-name"
-          name="teamName"
-          value={teamName}
-          onChange={(event) => {
-            touched("teamName");
-            setTeamName(event.target.value);
-          }}
-          maxLength={TEAM_NAME_MAX}
-          autoComplete="off"
-          aria-invalid={errors.teamName ? true : undefined}
-          aria-describedby={errors.teamName ? "hackathon-team-name-error" : undefined}
-        />
-      </Field>
-
-      <fieldset className="space-y-1.5" aria-describedby="hackathon-members-status">
-        <legend className="flex w-full items-center justify-between text-sm font-medium">
-          Team members
-          <span className="text-xs font-normal text-muted-foreground tabular-nums">
-            {memberIds.length} selected
-          </span>
-        </legend>
-
-        {memberIds.map((id) => (
-          <input key={id} type="hidden" name="memberIds" value={id} />
-        ))}
-
-        {project && project.members.length > 0 ? (
-          <ul className="well max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border">
-            {project.members.map((member) => {
-              const checked = memberIds.includes(member.id);
-              const boxId = `hackathon-member-${member.id}`;
-              return (
-                <li key={member.id} className="flex min-h-9 items-center gap-2.5 px-2.5">
-                  <Checkbox
-                    id={boxId}
-                    checked={checked}
-                    disabled={!checked && full}
-                    onCheckedChange={(value) => toggleMember(member.id, value === true)}
-                  />
-                  <label htmlFor={boxId} className="flex min-w-0 flex-1 items-baseline gap-1.5 py-2 text-sm">
-                    <span className="truncate">{member.name}</span>
-                    {member.username ? (
-                      <span className="truncate text-xs text-muted-foreground">@{member.username}</span>
-                    ) : null}
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
+        <fieldset className="space-y-1.5">
+          <legend className="text-sm font-medium">Mindmap images</legend>
           <p className="text-xs text-muted-foreground">
-            This project has no members to choose yet. Add them on the project&apos;s Members page.
+            The global mindmap is required. PNG, JPEG or WebP, up to 5 MB each.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {IMAGE_SLOTS.map((slot, index) => (
+              <ImageUpload
+                key={`${projectId}-${slot.name}`}
+                name={slot.name}
+                label={index === 0 ? slot.label : `${slot.label} ${index}`}
+                required={slot.required}
+                hackathonId={hackathonId}
+                projectId={projectId}
+                value={slots[index]}
+                onChange={(value) => {
+                  if (!acceptsUpload(value, hackathonId, live.current.projectId, live.current.open)) return;
+                  touched("images");
+                  setSlots((current) => current.map((s, i) => (i === index ? value : s)));
+                }}
+                onBusyChange={(busy) => onBusyChange(slot.name, busy)}
+                disabled={!projectId}
+              />
+            ))}
+          </div>
+          {errors.images ? <p className="text-xs text-destructive">{errors.images}</p> : null}
+        </fieldset>
+
+        {/* The checklist says which doqtri snapshot it read, so this line would repeat it. */}
+        {check ? null : (
+          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+            <ICON.planDoc className="mt-px size-3.5 shrink-0" aria-hidden />
+            <span>{project?.doqtriStatus ?? NO_DOQTRI}</span>
           </p>
         )}
+      </div>
 
-        <p
-          id="hackathon-members-status"
-          className={errors.memberIds ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
-        >
-          {errors.memberIds ?? `${sizeHint} Each person can be on one team only.`}
-        </p>
-        {formerMembersNote(removedMembers) ? (
-          <p className="text-xs text-muted-foreground">{formerMembersNote(removedMembers)}</p>
-        ) : null}
-      </fieldset>
-
-      <fieldset className="space-y-1.5">
-        <legend className="text-sm font-medium">Mindmap images</legend>
-        <p className="text-xs text-muted-foreground">
-          The global mindmap is required. PNG, JPEG or WebP, up to 5 MB each.
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {IMAGE_SLOTS.map((slot, index) => (
-            <ImageUpload
-              key={`${projectId}-${slot.name}`}
-              name={slot.name}
-              label={index === 0 ? slot.label : `${slot.label} ${index}`}
-              required={slot.required}
-              hackathonId={hackathonId}
-              projectId={projectId}
-              value={slots[index]}
-              onChange={(value) => {
-                if (!acceptsUpload(value, hackathonId, live.current.projectId, live.current.open)) return;
-                touched("images");
-                setSlots((current) => current.map((s, i) => (i === index ? value : s)));
-              }}
-              onBusyChange={(busy) => onBusyChange(slot.name, busy)}
-              disabled={!projectId}
-            />
-          ))}
+      {/* Beside the fields from `lg`, and kept in view while they scroll;
+          below the fields on smaller screens. */}
+      {check ? (
+        <div ref={checkRef} className="lg:sticky lg:top-0">
+          <EntryCheckPanel check={check} />
         </div>
-        {errors.images ? <p className="text-xs text-destructive">{errors.images}</p> : null}
-      </fieldset>
-
-      {/* The checklist says which doqtri snapshot it read, so this line would repeat it. */}
-      {state.entryCheck ? (
-        <EntryCheckPanel check={state.entryCheck} />
-      ) : (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <ICON.planDoc className="mt-px size-3.5 shrink-0" aria-hidden />
-          <span>{project?.doqtriStatus ?? NO_DOQTRI}</span>
-        </p>
-      )}
-    </>
+      ) : null}
+    </div>
   );
 }
