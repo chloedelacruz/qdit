@@ -1,6 +1,6 @@
 # `milestone_proof_v2`
 
-On-chain team roles and M-of-N milestone approval. A new contract beside
+On-chain team roles, M-of-N milestone approval and Merkle batch anchoring. A new contract beside
 [`milestone_proof`](../milestone_proof), not an upgrade of it: v1 and its records are
 not touched, and the app and doqtri stay on v1. Testnet only for now.
 
@@ -23,14 +23,17 @@ never from an argument.
 | `get_project(project_id)` | none | `ProjectNotFound` |
 | `get_members(project_id)` | none | `ProjectNotFound` |
 | `get_milestone_status(project_id, milestone_id)` | none | `MilestoneNotFound` |
+| `anchor_batch(project_id, batch_id, submitter, root, leaf_count)` | `submitter`, role `Submitter` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `InvalidBatch`, `BatchExists` |
+| `get_batch(project_id, batch_id)` | none | `BatchNotFound` |
+| `verify_inclusion(project_id, batch_id, milestone_id, proof_hash, index, path) -> bool` | none | `BatchNotFound` |
 
 Every call also refuses an id over 64 characters with `IdTooLong`.
 
 Errors: `ProjectExists = 1`, `ProjectNotFound = 2`, `MilestoneNotFound = 3`,
 `NotAuthorized = 4`, `InvalidStatus = 5`, `IdTooLong = 6`, `NotMember = 7`,
-`AlreadyApproved = 8`, `InvalidThreshold = 9`, `MemberLimit = 10`, `ProofMismatch = 12`.
-Code 11 is reserved for `BatchExists`. Off the roster is `NotMember`; on it with the wrong role is
-`NotAuthorized`.
+`AlreadyApproved = 8`, `InvalidThreshold = 9`, `MemberLimit = 10`, `BatchExists = 11`,
+`ProofMismatch = 12`, `BatchNotFound = 13`, `InvalidBatch = 14`. Off the roster is `NotMember`;
+on it with the wrong role is `NotAuthorized`.
 
 ## Rules
 
@@ -80,6 +83,27 @@ approver, whose approval finalises it.
   `get_project`.
 - **Ids may be empty**, as in v1.
 
+## Merkle batches
+
+`anchor_batch` stores one Merkle root for many milestone proofs, in one transaction.
+`verify_inclusion` checks one milestone against it. The scheme, the proof format and
+the shared test vectors are in [`docs/merkle/SPEC.md`](../../docs/merkle/SPEC.md).
+
+- **A batch moves no milestone.** It is a timestamped commitment that its proof hashes
+  existed. Approval stays per milestone, through `submit_milestone_proof` and
+  `approve_milestone`.
+- **Write once.** `batch_id` is the caller's, at most 64 bytes and unique per project.
+  Reusing one is `BatchExists`, so an anchored root is never replaced.
+- **1 to 65,536 leaves** (`MAX_BATCH_LEAVES`), else `InvalidBatch`. A proof holds at most
+  16 hashes.
+- **`false`, not an error, for a bad proof.** `verify_inclusion` rebuilds the leaf from
+  `project_id`, `milestone_id` and `proof_hash`, takes every left/right side from `index`
+  and the stored leaf count, and returns `false` for a wrong, short, long or
+  out-of-range proof. Only an unknown batch is an error (`BatchNotFound`). It is
+  read-only, so a simulation is enough and costs no fee.
+- The contract never sees the leaves, so it can't refuse a batch that names the same
+  milestone twice. `qdit-batch` refuses one before anchoring.
+
 ## Events
 
 Every write emits one event, and a refused call emits none. Topic 0 is `qdit`, topic 1
@@ -96,6 +120,7 @@ rebuild state without reading storage.
 | `submit` | `milestone_id`, `submitter`, `proof_hash`, `version`, `timestamp` |
 | `approve` | `milestone_id`, `approver`, `version`, `proof_hash`, `status` (after the call) |
 | `reject` | `milestone_id`, `approver`, `version`, `proof_hash` |
+| `batch` | `batch_id`, `submitter`, `root`, `leaf_count`, `timestamp` |
 
 ## Test
 

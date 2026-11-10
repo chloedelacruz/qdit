@@ -5,7 +5,7 @@ Rust workspace for the QDIT builder task hub's on-chain components.
 | Crate | Purpose |
 | --- | --- |
 | [`milestone_proof`](./milestone_proof) | Registers project references and records milestone proof hashes with an owner-gated approve/reject flow. |
-| [`milestone_proof_v2`](./milestone_proof_v2) | New contract with on-chain team roles and M-of-N approval. Testnet only, and nothing in the app calls it yet. |
+| [`milestone_proof_v2`](./milestone_proof_v2) | New contract with on-chain team roles, M-of-N approval and Merkle batch anchoring. Testnet only, and nothing in the app calls it yet. |
 
 Built against **soroban-sdk 27.0.4** and **stellar CLI 27.x**, targeting `wasm32v1-none`.
 

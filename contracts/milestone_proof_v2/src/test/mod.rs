@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod approvals;
+mod batches;
 mod members;
 mod milestones;
 mod project;

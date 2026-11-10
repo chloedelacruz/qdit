@@ -26,7 +26,12 @@ pub enum Error {
     InvalidThreshold = 9,
     /// The project's roster is full.
     MemberLimit = 10,
-    // 11 is reserved for `BatchExists` (QDIT-17).
+    /// A batch with this id is already anchored for this project.
+    BatchExists = 11,
     /// The approver named a hash other than the milestone's current one.
     ProofMismatch = 12,
+    /// No batch is anchored under this id for this project.
+    BatchNotFound = 13,
+    /// A batch's leaf count is 0 or over `MAX_BATCH_LEAVES`.
+    InvalidBatch = 14,
 }

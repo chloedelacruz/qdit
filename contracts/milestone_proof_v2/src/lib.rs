@@ -5,18 +5,26 @@
 //! privileged override and no upgrade entry point. Every write requires the
 //! acting address's signature and reads roles from storage, never from an
 //! argument.
+//!
+//! It also anchors Merkle batches: one root for many milestone proofs, with a
+//! read-only inclusion check (`docs/merkle/SPEC.md`).
 
+mod batches;
 mod errors;
 mod events;
 mod members;
+mod merkle;
 mod milestones;
 mod storage;
 
 pub use errors::Error;
 pub use events::*;
-pub use storage::{DataKey, MilestoneRecord, MilestoneStatus, Project, Role, MAX_MEMBERS};
+pub use merkle::{MAX_BATCH_LEAVES, MAX_PROOF_LEN, TAG as MERKLE_TAG};
+pub use storage::{
+    BatchRecord, DataKey, MilestoneRecord, MilestoneStatus, Project, Role, MAX_MEMBERS,
+};
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String, Vec};
 
 #[contract]
 pub struct MilestoneProofV2Contract;
@@ -186,6 +194,55 @@ impl MilestoneProofV2Contract {
         milestone_id: String,
     ) -> Result<MilestoneRecord, Error> {
         milestones::get_status(&env, project_id, milestone_id)
+    }
+
+    /// Anchor the Merkle root of a batch of milestone proofs in one call.
+    ///
+    /// `submitter` must hold the `Submitter` role. `batch_id` is the caller's
+    /// and unique per project: reusing one is refused with
+    /// [`Error::BatchExists`], so an anchored root is never replaced.
+    /// `leaf_count` must be 1 to [`MAX_BATCH_LEAVES`], else
+    /// [`Error::InvalidBatch`]. No milestone changes status.
+    pub fn anchor_batch(
+        env: Env,
+        project_id: String,
+        batch_id: String,
+        submitter: Address,
+        root: BytesN<32>,
+        leaf_count: u32,
+    ) -> Result<(), Error> {
+        batches::anchor(&env, project_id, batch_id, submitter, root, leaf_count)
+    }
+
+    /// Read an anchored batch's root, leaf count, submitter and ledger.
+    pub fn get_batch(env: Env, project_id: String, batch_id: String) -> Result<BatchRecord, Error> {
+        batches::get(&env, project_id, batch_id)
+    }
+
+    /// Check that a milestone proof is a leaf of an anchored batch.
+    ///
+    /// Read-only. The leaf is rebuilt from `project_id`, `milestone_id` and
+    /// `proof_hash`. `path` is the sibling hashes, leaf level first, and every
+    /// side is derived from `index` and the stored leaf count. A wrong or
+    /// malformed proof is `false`; an unknown batch is [`Error::BatchNotFound`].
+    pub fn verify_inclusion(
+        env: Env,
+        project_id: String,
+        batch_id: String,
+        milestone_id: String,
+        proof_hash: BytesN<32>,
+        index: u32,
+        path: Vec<BytesN<32>>,
+    ) -> Result<bool, Error> {
+        batches::verify_inclusion(
+            &env,
+            project_id,
+            batch_id,
+            milestone_id,
+            proof_hash,
+            index,
+            path,
+        )
     }
 }
 

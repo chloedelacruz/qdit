@@ -72,6 +72,25 @@ pub enum DataKey {
     Members(String),
     /// `(project_id, milestone_id) -> MilestoneRecord`.
     Milestone(String, String),
+    /// `(project_id, batch_id) -> BatchRecord`.
+    Batch(String, String),
+}
+
+/// An anchored Merkle batch (`docs/merkle/SPEC.md`). Written once, never
+/// replaced.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchRecord {
+    /// Merkle root over the batch's milestone leaves.
+    pub root: BytesN<32>,
+    /// Leaves in the tree. Inclusion proofs derive their sides from it.
+    pub leaf_count: u32,
+    /// Address that anchored the batch.
+    pub submitter: Address,
+    /// Ledger timestamp of the anchoring.
+    pub timestamp: u64,
+    /// Ledger sequence of the anchoring.
+    pub ledger: u32,
 }
 
 /// Reject an identifier longer than [`MAX_ID_LEN`].
@@ -134,6 +153,25 @@ pub fn set_milestone(
 ) {
     env.storage().persistent().set(
         &DataKey::Milestone(project_id.clone(), milestone_id.clone()),
+        record,
+    );
+}
+
+pub fn get_batch(env: &Env, project_id: &String, batch_id: &String) -> Option<BatchRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Batch(project_id.clone(), batch_id.clone()))
+}
+
+pub fn has_batch(env: &Env, project_id: &String, batch_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Batch(project_id.clone(), batch_id.clone()))
+}
+
+pub fn set_batch(env: &Env, project_id: &String, batch_id: &String, record: &BatchRecord) {
+    env.storage().persistent().set(
+        &DataKey::Batch(project_id.clone(), batch_id.clone()),
         record,
     );
 }

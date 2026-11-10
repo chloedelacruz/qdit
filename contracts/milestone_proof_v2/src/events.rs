@@ -95,3 +95,16 @@ pub struct MilestoneRejected {
     /// The hash the approver named and signed for.
     pub proof_hash: BytesN<32>,
 }
+
+/// Emitted when a Merkle batch root is anchored. The leaves stay off chain.
+#[contractevent(topics = ["qdit", "batch"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchAnchored {
+    #[topic]
+    pub project_id: String,
+    pub batch_id: String,
+    pub submitter: Address,
+    pub root: BytesN<32>,
+    pub leaf_count: u32,
+    pub timestamp: u64,
+}

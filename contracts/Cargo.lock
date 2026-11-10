@@ -1025,6 +1025,7 @@ dependencies = [
 name = "milestone_proof_v2"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "soroban-sdk",
 ]
 
