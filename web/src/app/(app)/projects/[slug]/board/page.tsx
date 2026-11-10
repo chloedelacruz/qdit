@@ -13,8 +13,8 @@ import {
   getProject,
   getProjectRole,
   listBoard,
-  listMembers,
   listMilestoneOptions,
+  listProjectMembers,
 } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Board" };
@@ -33,7 +33,8 @@ export default async function ProjectBoardPage({
   const filters = parseFilters(await searchParams);
   const [board, members, milestones, role] = await Promise.all([
     listBoard({ projectId: project.id }, filters),
-    listMembers(),
+    // Only this project's members: anyone else could not see the task.
+    listProjectMembers(project.id),
     listMilestoneOptions(project.id),
     getProjectRole(project.id),
   ]);
