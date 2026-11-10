@@ -154,7 +154,11 @@ export function MilestoneAnchorDialog({
 
         const prepared = await prepareMilestoneAnchor(milestoneId, action, address);
         if (!prepared.ok) {
-          setError(prepared.error);
+          // A signer with no account fails here, in the simulation, and comes
+          // back as a returned error rather than a throw — so handleFailure
+          // never sees it. Offer the fund prompt, not the raw RPC text (QDIT-59).
+          if (isUnfundedError(prepared.error)) setUnfunded(address);
+          else setError(prepared.error);
           setStage("idle");
           return;
         }
