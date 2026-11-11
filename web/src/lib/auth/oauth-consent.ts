@@ -66,7 +66,12 @@ export type DecisionOutcome =
  * title is then the linking app's (D-12); and, from contract v1.2.0, sending a
  * hackathon snapshot through push_doqtri_hackathon_snapshot()
  * (20261110100000_hackathons.sql, D-117), which only doqtri's own client may
- * do and which it cannot read back.
+ * do and which it cannot read back; and, from contract v1.3.0, listing the
+ * open and upcoming hackathons through list_open_hackathons_for_client()
+ * (20261111120000_hackathon_list_for_clients.sql, D-122): their slug, name
+ * and window only. The hackathons table itself stays closed to apps, which is
+ * why it is still under `hidden` in APP_READ_SCOPE and why the "cannot" line
+ * still names qdit's hackathons, for everything beyond that list.
  */
 export const APP_ACCESS = {
   can: [
@@ -77,6 +82,7 @@ export const APP_ACCESS = {
     "Link its documents to projects you administer, and link their headings to milestones where you are a member or above",
     "Rename a milestone that is linked to one of its headings — the title only",
     "Send a snapshot of its documents to a hackathon entry for projects you administer",
+    "See which hackathons are open or coming up in qdit",
   ],
   cannot: [
     "Approve or reject milestones, or delete projects or milestones",
@@ -84,7 +90,7 @@ export const APP_ACCESS = {
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, its record of which apps you disconnected, or its list of qdit operators",
     "See your teammates' profiles or who else is in your projects",
-    "See or change qdit's hackathons, their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
+    "Change qdit's hackathons, see hidden or closed ones or anything about them beyond the open and upcoming ones' names and dates, or see or change their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
   ],
 } as const;
 

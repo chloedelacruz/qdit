@@ -108,6 +108,31 @@ In doqtri's Vercel project (Production): `NEXT_PUBLIC_QDIT_HACKATHON=1`. It need
 qdit. Both are build-time, so redeploy. With either one off, the **Send to qdit
 hackathon** button is hidden and `POST /api/integrations/qdit/hackathon` answers 404.
 
+### 1.7 Apply the hackathon list migration, before merging QDIT-60
+
+`supabase/migrations/20261111120000_hackathon_list_for_clients.sql` adds one function,
+`list_open_hackathons_for_client()`, behind `GET /api/v1/hackathons` (contract v1.3.0,
+D-122). doqtri's Send to qdit hackathon dialog uses it to list hackathons instead of asking
+for a link. No table or policy changes: the `hackathons` table stays closed to apps. Merged
+before the migration, the route answers `500 internal_error`; doqtri then falls back to the
+link field.
+
+Apply it with the Supabase CLI, as in 1.2, then check:
+
+```sql
+select p.prosecdef, p.proconfig,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated
+  from pg_proc p
+ where p.oid = 'public.list_open_hackathons_for_client()'::regprocedure;
+-- t, {"search_path=\"\""}, f, t
+```
+
+The list holds what the Hackathons index and the banner show to everyone: not hidden, no
+`test-` slug, not yet closed, earliest first, at most 50. So **Hide** on
+`/hackathons/manage` also takes a hackathon out of doqtri's list. A closed hackathon is never
+listed; a team with a late pass sends by link, as before.
+
 ---
 
 ## 2. Merge order

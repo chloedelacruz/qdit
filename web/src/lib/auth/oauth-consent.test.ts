@@ -358,6 +358,20 @@ describe("APP_ACCESS matches the guard migration", () => {
     expect(guards).toMatch(/create or replace function public\.push_doqtri_hackathon_snapshot\(/);
   });
 
+  it("promises the hackathon list only alongside the migration that serves it", () => {
+    // 20261111120000_hackathon_list_for_clients.sql serves GET /hackathons
+    // (D-122) through a function; the table's SELECT guard stays, so the
+    // screen still says an app cannot see the rest of qdit's hackathons.
+    const can = APP_ACCESS.can.join(" ");
+    const cannot = APP_ACCESS.cannot.join(" ");
+    expect(files).toContain("20261111120000_hackathon_list_for_clients.sql");
+    expect(guards).toMatch(/create or replace function public\.list_open_hackathons_for_client\(/);
+    expect(can).toContain("See which hackathons are open or coming up in qdit");
+    expect(selectGuards.has("hackathons")).toBe(true);
+    expect(cannot).toContain("see hidden or closed ones");
+    expect(cannot).not.toContain("See or change qdit's hackathons");
+  });
+
   it("still tells the user an app cannot decide or delete", () => {
     const cannot = APP_ACCESS.cannot.join(" ").toLowerCase();
     expect(cannot).toContain("approve or reject");

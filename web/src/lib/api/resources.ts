@@ -1,4 +1,5 @@
-import type { Tables } from "@/lib/types/database";
+import { toPlainText } from "@/lib/hackathon/staff-view";
+import type { Database, Tables } from "@/lib/types/database";
 
 /**
  * Response shapes for `/api/v1` — integration contract section 7.
@@ -268,5 +269,52 @@ export function toDocLink(
     doc_url: row.doc_url,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+/**
+ * A hackathon in `GET /hackathons` (section 8, D-122): the five public fields
+ * and nothing else. `state` is `open` while `opens_at <= now < closes_at`,
+ * `upcoming` before; closed hackathons are never listed.
+ */
+export type ApiHackathon = {
+  slug: string;
+  name: string;
+  opens_at: string;
+  closes_at: string;
+  state: "open" | "upcoming";
+};
+
+export type HackathonListRow =
+  Database["public"]["Functions"]["list_open_hackathons_for_client"]["Returns"][number];
+
+const HACKATHON_NAME_MAX = 200;
+
+/**
+ * One row of `list_open_hackathons_for_client()` as the contract sends it, or
+ * null for a row whose `state` this version does not know.
+ *
+ * `name` is "plain text, 1 to 200 characters" (section 8). The function
+ * already trims it and cuts it to 200; here control and bidi-override
+ * characters are removed, as qdit's own Hackathons index does
+ * (`toPlainText(h.name, 200)`), and the result is held to 200 characters
+ * counted as Postgres counts them (code points, so a name is never cut
+ * inside an emoji). A name that is nothing but such characters falls back to
+ * the slug rather than go out empty.
+ *
+ * The function only ever answers `open` or `upcoming`; a row with anything
+ * else is dropped rather than sent with a state a client was never promised.
+ */
+export function toHackathon(row: HackathonListRow): ApiHackathon | null {
+  if (row.state !== "open" && row.state !== "upcoming") return null;
+
+  const name = Array.from(toPlainText(row.name).trim()).slice(0, HACKATHON_NAME_MAX).join("");
+
+  return {
+    slug: row.slug,
+    name: name || row.slug,
+    opens_at: row.opens_at,
+    closes_at: row.closes_at,
+    state: row.state,
   };
 }

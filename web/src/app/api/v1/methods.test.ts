@@ -24,6 +24,7 @@ const { ROUTE_METHODS, endpointNotFound } = await import("@/lib/api/handler");
 /** Route directory under `app/api/v1` -> the methods the contract lists. */
 const SUPPORTED: Record<string, string[]> = {
   "[[...path]]": [],
+  hackathons: ["GET"],
   "links/[id]": ["PATCH", "DELETE"],
   me: ["GET"],
   milestones: ["POST"],
