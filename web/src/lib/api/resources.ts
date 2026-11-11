@@ -297,7 +297,8 @@ const HACKATHON_NAME_MAX = 200;
  * `name` is "plain text, 1 to 200 characters" (section 8). The function
  * already trims it and cuts it to 200; here control and bidi-override
  * characters are removed, as qdit's own Hackathons index does
- * (`toPlainText(h.name, 200)`), and the result is held to 200 characters
+ * (`toPlainText(h.name, 200)`), runs of whitespace (tabs and line breaks
+ * included) become one space, and the result is held to 200 characters
  * counted as Postgres counts them (code points, so a name is never cut
  * inside an emoji). A name that is nothing but such characters falls back to
  * the slug rather than go out empty.
@@ -308,7 +309,10 @@ const HACKATHON_NAME_MAX = 200;
 export function toHackathon(row: HackathonListRow): ApiHackathon | null {
   if (row.state !== "open" && row.state !== "upcoming") return null;
 
-  const name = Array.from(toPlainText(row.name).trim()).slice(0, HACKATHON_NAME_MAX).join("");
+  const name = Array.from(toPlainText(row.name).replace(/\s+/g, " ").trim())
+    .slice(0, HACKATHON_NAME_MAX)
+    .join("")
+    .trim();
 
   return {
     slug: row.slug,

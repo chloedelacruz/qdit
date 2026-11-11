@@ -90,7 +90,7 @@ export const APP_ACCESS = {
     "Change members, roles or project settings",
     "See or change tasks, proofs of work, deployments, review notes, your notifications, qdit's log of its requests, its webhook settings and queue, its integration settings, its record of which connections keep a plan linked, its record of which apps you disconnected, or its list of qdit operators",
     "See your teammates' profiles or who else is in your projects",
-    "Change qdit's hackathons, see hidden or closed ones or anything about them beyond the open and upcoming ones' names and dates, or see or change their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
+    "Change qdit's hackathons, or see anything about them beyond the slug, name, dates and state of the listed open and upcoming ones (never hidden, rehearsal or closed ones), or see or change their staff, entries, teams, entry versions, eligibility overrides, late passes, grading queue, grades, finalists, finalist ranks or judges' scores, or read back a hackathon snapshot it sent",
   ],
 } as const;
 

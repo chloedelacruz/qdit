@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fakeDatabase } from "@/test/fake-supabase";
@@ -16,6 +18,13 @@ vi.mock("next/server", () => ({ after: () => {} }));
 
 const { GET, POST, HEAD } = await import("./route");
 const { unauthorized } = await import("@/lib/api/errors");
+
+const MIGRATION = readFileSync(
+  new URL("../../../../../../supabase/migrations/20261111120000_hackathon_list_for_clients.sql", import.meta.url),
+  "utf8",
+);
+const REVOKED = "This app's access to qdit was revoked.";
+const NO_USER = "Sign in first.";
 
 const USER = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const CLIENT = "9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d";
@@ -133,6 +142,8 @@ describe("GET /api/v1/hackathons", () => {
         row({ slug: "a", name: "  Bidi‮ trick\u0007  " }),
         row({ slug: "b", name: "\u{1F680}".repeat(250) }),
         row({ slug: "c-only-controls", name: "\u0001\u0002" }),
+        row({ slug: "d", name: "Line\tone\n\n  line   two" }),
+        row({ slug: "e-blank", name: " \t\n " }),
       ],
       error: null,
     });
@@ -145,6 +156,9 @@ describe("GET /api/v1/hackathons", () => {
     expect(data[1].name).toBe("\u{1F680}".repeat(200));
     // Never empty: falls back to the slug.
     expect(data[2].name).toBe("c-only-controls");
+    // Tabs, line breaks and runs of spaces collapse to one space.
+    expect(data[3].name).toBe("Line one line two");
+    expect(data[4].name).toBe("e-blank");
   });
 
   it("drops a row whose state it does not know rather than send it", async () => {
@@ -155,7 +169,7 @@ describe("GET /api/v1/hackathons", () => {
     expect(data.map((h: { slug: string }) => h.slug)).toEqual(["kept"]);
   });
 
-  it("is 401 in the error envelope without a valid token, and never reaches the database", async () => {
+  it("is 401 in the error envelope without a valid token", async () => {
     authenticate.mockRejectedValue(unauthorized());
 
     const response = await GET(request());
@@ -165,14 +179,41 @@ describe("GET /api/v1/hackathons", () => {
     expect((await response.json()).error.code).toBe("unauthorized");
   });
 
-  it("is 401 when the function refuses the token (a revoke after authentication)", async () => {
+  it("matches the function's two token refusals verbatim", () => {
+    // `raise exception '...'` doubles the apostrophe.
+    expect(MIGRATION).toContain(`raise exception '${REVOKED.replace("'", "''")}' using errcode = '42501'`);
+    expect(MIGRATION).toContain(`raise exception '${NO_USER}' using errcode = '42501'`);
+  });
+
+  it.each([
+    ["a revoke after authentication", REVOKED],
+    ["a token with no user", NO_USER],
+  ])("is 401 when the function refuses the token: %s", async (_case, message) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    signedIn({ data: null, error: { code: "42501", message: "This app's access to qdit was revoked." } });
+    signedIn({ data: null, error: { code: "42501", message } });
 
     const response = await GET(request());
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
     expect((await response.json()).error.code).toBe("unauthorized");
+  });
+
+  it("does not answer 401 for any other 42501, such as a missing grant", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    signedIn({
+      data: null,
+      error: { code: "42501", message: "permission denied for function list_open_hackathons_for_client" },
+    });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    // databaseError(): a 42501 that is not one of the token refusals is 403,
+    // never the 401 that would make doqtri disconnect the user.
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe("forbidden");
+    expect(JSON.stringify(body)).not.toContain("permission denied");
   });
 
   it("maps a database error to internal_error without leaking it", async () => {

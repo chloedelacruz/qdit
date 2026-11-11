@@ -1,6 +1,15 @@
 import { databaseError, unauthorized } from "@/lib/api/errors";
+import { REVOKED_MESSAGE } from "@/lib/api/hackathon-snapshot-errors";
 import { apiRoute, endpointNotFound, json } from "@/lib/api/handler";
 import { toHackathon, type ApiHackathon } from "@/lib/api/resources";
+
+/**
+ * `list_open_hackathons_for_client()`'s two 42501 messages
+ * (20261111120000_hackathon_list_for_clients.sql), verbatim. route.test.ts
+ * checks both against the migration. Kept private: a route file exports only
+ * its handlers.
+ */
+const TOKEN_REFUSALS: ReadonlySet<string> = new Set([REVOKED_MESSAGE, "Sign in first."]);
 
 /**
  * `GET /api/v1/hackathons` — the hackathons a signed-in qdit user is offered
@@ -26,11 +35,12 @@ export const GET = apiRoute(async ({ auth }) => {
 
   if (error) {
     console.error("api v1 hackathons: list failed", error);
-    // The function's only 42501s are "no user" and "revoked token": token
-    // problems, which the contract answers 401 here (a revoke that landed
-    // after authenticate() checked). It never refuses for a role, so this
-    // endpoint has no 403.
-    if (error.code === "42501") throw unauthorized();
+    // The function's own two refusals are token problems, answered 401 (a
+    // revoke that landed after authenticate() checked, or a token with no
+    // user). Matched on their exact text, like hackathon-snapshot-errors.ts:
+    // any other 42501, e.g. "permission denied for function" from a missing
+    // grant, is qdit's fault and must not tell doqtri to disconnect the user.
+    if (error.code === "42501" && TOKEN_REFUSALS.has(error.message)) throw unauthorized();
     throw databaseError(error);
   }
 

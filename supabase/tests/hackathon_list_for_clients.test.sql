@@ -21,7 +21,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(23);
 
 
 -- ----------------------------------------------------------------------------
@@ -44,7 +44,8 @@ select '00000000-0000-0000-0000-000000000000',
 insert into public.hackathons (id, slug, name, opens_at, closes_at, hidden)
 values
   -- listed
-  ('c6000000-0000-4000-8000-000000000001', 'hl-early',    'Early',        now() - interval '2 hours',  now() + interval '3 hours', false),
+  -- 205 characters stored, 200 once trimmed: the most the table's check allows.
+  ('c6000000-0000-4000-8000-000000000001', 'hl-early',    '   ' || repeat('Ab', 100) || '  ', now() - interval '2 hours',  now() + interval '3 hours', false),
   ('c6000000-0000-4000-8000-000000000002', 'hl-open-b',   'Open B',       now() - interval '1 hour',   now() + interval '1 hour',  false),
   ('c6000000-0000-4000-8000-000000000003', 'hl-open-a',   '  Padded  ',   now() - interval '1 hour',   now() + interval '1 hour',  false),
   ('c6000000-0000-4000-8000-000000000004', 'hl-test-mid', 'Test in the middle', now() - interval '30 minutes', now() + interval '1 hour', false),
@@ -159,9 +160,13 @@ select is(
   'name comes back trimmed'
 );
 
-select ok(
-  (select bool_and(char_length(r.name) between 1 and 200) from public.list_open_hackathons_for_client() r),
-  'every name is 1 to 200 characters'
+-- hl-early is stored as 3 spaces + 200 characters + 2 spaces (205).
+select is(
+  (select char_length(r.name) || ':' || (r.name = repeat('Ab', 100))
+     from public.list_open_hackathons_for_client() r
+    where r.slug = 'hl-early'),
+  '200:true',
+  'a 200-character name stored with surrounding spaces comes back trimmed to exactly those 200'
 );
 
 select is(
@@ -306,6 +311,15 @@ select is(
   (pg_temp.listed())[1:6],
   array['hl-early:open', 'hl-open-a:open', 'hl-open-b:open', 'hl-test-mid:open', 'hl-bulk-01:upcoming', 'hl-bulk-02:upcoming'],
   'the limit keeps the earliest opens_at, and the order holds across them'
+);
+
+-- 5 of this file's rows open before the bulk ones and 50 fit: hl-bulk-01 to
+-- hl-bulk-45 make the cut (fewer if a local seed lists earlier ones), so the
+-- latest bulk rows never do.
+select is_empty(
+  $$ select r.slug from public.list_open_hackathons_for_client() r
+      where r.slug in ('hl-bulk-46', 'hl-bulk-50', 'hl-bulk-55') $$,
+  'the latest-opening rows past the limit are left out'
 );
 
 

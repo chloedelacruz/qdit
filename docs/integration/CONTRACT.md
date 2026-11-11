@@ -144,7 +144,7 @@ Rules that follow from the decisions:
   is not locked and may move as qdit allows.
 - An OAuth token may read projects and milestones, including the milestones'
   `milestone_anchors` records (D-32: they mirror public chain data), and the
-  five public fields of listed hackathons through `GET /hackathons` only
+  five public fields of listed hackathons through `list_open_hackathons_for_client()` (served as `GET /hackathons`)
   (D-122, section 8: a `SECURITY DEFINER` function serves them, and the
   `hackathons` table's OAuth `SELECT` guard stays closed, so no OAuth app
   reads `hackathons` through PostgREST), create milestones, rename linked

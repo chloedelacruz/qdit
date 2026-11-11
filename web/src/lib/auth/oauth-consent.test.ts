@@ -368,7 +368,9 @@ describe("APP_ACCESS matches the guard migration", () => {
     expect(guards).toMatch(/create or replace function public\.list_open_hackathons_for_client\(/);
     expect(can).toContain("See which hackathons are open or coming up in qdit");
     expect(selectGuards.has("hackathons")).toBe(true);
-    expect(cannot).toContain("see hidden or closed ones");
+    expect(cannot).toContain(
+      "Change qdit's hackathons, or see anything about them beyond the slug, name, dates and state of the listed open and upcoming ones (never hidden, rehearsal or closed ones), or see or change their staff,",
+    );
     expect(cannot).not.toContain("See or change qdit's hackathons");
   });
 

@@ -61,9 +61,12 @@
 --     write only doqtri may make (D-117). This is a read every authorised
 --     client may make (D-122), so it does not check which client either.
 -- What it does refuse: no user (42501; anon has no EXECUTE anyway), and an
--- OAuth token whose user disconnected the app (42501, D-59, D-96). RLS does
--- not run inside a SECURITY DEFINER function, so the revoke check that the
--- route's authenticate() makes once per request is repeated here for a
+-- OAuth token whose user disconnected the app (42501, D-59, D-96). The
+-- function runs as its owner, who also owns public.hackathons, and RLS does
+-- not apply to a table's owner unless the table forces it (this one does
+-- not; an owner with BYPASSRLS would skip it too). So no policy filters what
+-- it reads, and the restrictive OAuth guards do not reach in here. The revoke check that the route's
+-- authenticate() makes once per request is therefore repeated here for a
 -- caller who goes to PostgREST directly, as push_doqtri_hackathon_snapshot()
 -- does.
 --
@@ -79,8 +82,9 @@ returns table (
   closes_at timestamptz,
   state     text
 )
+-- volatile, like hackathon_window_state(): it reads clock_timestamp().
 language plpgsql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
