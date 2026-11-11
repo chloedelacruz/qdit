@@ -1620,6 +1620,21 @@ export type Database = {
           can_delete: boolean
         }[]
       }
+      /**
+       * QDIT-60 (D-122). GET /api/v1/hackathons: listed hackathons (not hidden,
+       * no `test-` slug) that have not closed, opens_at then slug, at most 50.
+       * Any signed-in caller; 42501 for a revoked OAuth token.
+       */
+      list_open_hackathons_for_client: {
+        Args: Record<string, never>
+        Returns: {
+          slug: string
+          name: string
+          opens_at: string
+          closes_at: string
+          state: string
+        }[]
+      }
       preview_hackathon_entry: {
         Args: {
           p_hackathon_id: string

@@ -108,6 +108,34 @@ In doqtri's Vercel project (Production): `NEXT_PUBLIC_QDIT_HACKATHON=1`. It need
 qdit. Both are build-time, so redeploy. With either one off, the **Send to qdit
 hackathon** button is hidden and `POST /api/integrations/qdit/hackathon` answers 404.
 
+### 1.7 Apply the hackathon list migration, before merging QDIT-60 (mandatory)
+
+`supabase/migrations/20261111120000_hackathon_list_for_clients.sql` adds one function,
+`list_open_hackathons_for_client()`, behind `GET /api/v1/hackathons` (contract v1.3.0,
+D-122). doqtri's Send to qdit hackathon dialog uses it to list hackathons instead of asking
+for a link. No table or policy changes: the `hackathons` table stays closed to apps.
+
+This is the first step for QDIT-60, not optional. Merged before the migration, the route
+answers `500 internal_error`, and doqtri falls back to the link field **only** on qdit's
+JSON `404 not_found` (a qdit without the route). On a 500 the dialog has no list and no
+fallback, so teams cannot send a snapshot until the migration is applied.
+
+Apply it with the Supabase CLI, as in 1.2, then check:
+
+```sql
+select p.prosecdef, p.proconfig,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated
+  from pg_proc p
+ where p.oid = 'public.list_open_hackathons_for_client()'::regprocedure;
+-- t, {"search_path=\"\""}, f, t
+```
+
+The list holds what the Hackathons index and the banner show to everyone: not hidden, no
+`test-` slug, not yet closed, earliest first, at most 50. So **Hide** on
+`/hackathons/manage` also takes a hackathon out of doqtri's list. A closed hackathon is never
+listed; a team with a late pass sends by link, as before.
+
 ---
 
 ## 2. Merge order
@@ -125,12 +153,18 @@ Each PR targets `main`; wait for each deploy before the next.
 7. #25 QDIT-48 admin and judge consoles, CSV export
 8. QDIT-49 (branch `wp-4.7-e2e`): these specs, the seed script and this runbook. It is
    also the integration branch, with every lane above merged into it.
+9. QDIT-60 `GET /api/v1/hackathons` (contract v1.3.0). Apply its migration (1.7) first,
+   then merge the code.
 
 **doqtri**
 
 1. #113 contract v1.2.0 (same file as qdit #19)
 2. #114 `documents.created_at`, snapshot builder, qdit client (apply 1.1 first)
 3. #115 Send to qdit hackathon dialog and route (then step 1.6)
+4. DOQ-49 hackathon picker (contract v1.3.0). It may merge before qdit's QDIT-60: until
+   then qdit answers `404 not_found` on `GET /api/v1/hackathons` and the dialog falls back
+   to the link field. It must not meet a qdit where QDIT-60's code is live without its
+   migration (1.7), which answers 500 and leaves the dialog unable to send.
 
 qdit must be at #23 or later before doqtri #115 is used: before that, qdit answers 404 on
 the snapshot route.
