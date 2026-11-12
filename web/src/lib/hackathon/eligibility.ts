@@ -295,19 +295,19 @@ export function checkEligibility(input: EligibilityInput): EligibilityResult {
     );
   }
 
-  // 4. board_current
+  // 4. board_current: a card updated since the event opened. Where cards sit
+  // on the board does not count (Q-13, QDIT-68).
   {
     const updated = snapshot.tasks.filter((t) => {
       const at = parseInstant(t.updated_at);
       return at != null && at >= parsedWindow.opens;
     }).length;
-    const moved = snapshot.tasks.filter((t) => t.status !== "todo").length;
-    const passed = updated >= 1 && moved >= 1;
+    const passed = updated >= 1;
     rules.push(
       qditRule({
         id: "board_current",
         passed,
-        reason: `${plural(updated, "card")} updated since the event opened, ${moved} out of todo`,
+        reason: `${plural(updated, "card")} updated since the event opened`,
       }),
     );
   }
