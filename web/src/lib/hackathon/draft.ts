@@ -14,6 +14,11 @@ import { IMAGE_SLOTS, isMindmapPathFor, SLIDES_URL_MAX, TEAM_NAME_MAX } from "@/
  * Images are kept by Storage path. They are uploaded the moment they are
  * picked and the bucket allows no delete, so the object a path names is still
  * there when the draft comes back.
+ *
+ * The Mindmap link (QDIT-66) is kept only once the team has typed one. Until
+ * then the field follows the project's newest doqtri snapshot
+ * (`startingMindmapUrl`), so a Send in doqtri after the draft was saved is
+ * picked up the next time the dialog opens.
  */
 
 /** What the dialog's fields hold. `imagePaths` has one entry per slot. */
@@ -23,6 +28,12 @@ export type DraftFields = {
   imagePaths: (string | null)[];
   /** As typed (QDIT-63). A draft saved before the field existed reads as "". */
   slidesUrl: string;
+  /**
+   * QDIT-66. As typed, or null while the team has not typed one: the field
+   * then shows `startingMindmapUrl`. A draft saved before the field existed
+   * reads as null.
+   */
+  mindmapUrl: string | null;
 };
 
 export type EntryDraft = DraftFields & {
@@ -37,6 +48,8 @@ export type DraftBase = {
   imagePaths: readonly string[];
   /** Null on a version from before QDIT-63. */
   slidesUrl: string | null;
+  /** The current version's Mindmap link; null for none (QDIT-66). */
+  mindmapUrl: string | null;
   /** When the current version was submitted, ISO. */
   submittedAt: string | null;
 } | null;
@@ -59,14 +72,33 @@ export function draftStorage(): Storage | null {
   }
 }
 
-/** The fields the dialog starts from without a draft: the submitted entry, or empty. */
+/** The fields the dialog starts from without a draft: the submitted entry, or empty. The Mindmap link is untouched. */
 export function baseFields(base: DraftBase): DraftFields {
   return {
     teamName: base?.teamName ?? "",
     memberIds: [...(base?.memberIds ?? [])],
     imagePaths: IMAGE_SLOTS.map((_, index) => base?.imagePaths[index] ?? null),
     slidesUrl: base?.slidesUrl ?? "",
+    mindmapUrl: null,
   };
+}
+
+/**
+ * What an untouched Mindmap link field shows (QDIT-66): the link of the
+ * project's newest doqtri snapshot for this hackathon; without one, the
+ * current version's link; else empty.
+ */
+export function startingMindmapUrl(snapshotLink: string | null, base: DraftBase): string {
+  return snapshotLink || base?.mindmapUrl || "";
+}
+
+/**
+ * The Mindmap link as a draft keeps it: null (untouched, follow the
+ * snapshot) when what the team typed says the same as the field would show
+ * by itself, compared trimmed; otherwise the text as typed.
+ */
+export function typedMindmapUrl(value: string, starting: string): string | null {
+  return value.trim() === starting.trim() ? null : value;
 }
 
 /**
@@ -74,12 +106,16 @@ export function baseFields(base: DraftBase): DraftFields {
  * Member order does not matter; the slot an image sits in does. The team name
  * is compared trimmed, as the submit stores it, so a stray space typed before
  * submitting does not bring a draft back afterwards. The Slides link is
- * compared trimmed for the same reason.
+ * compared trimmed for the same reason. A typed Mindmap link always counts
+ * (`typedMindmapUrl` already turned one equal to the starting link into
+ * null).
  */
 export function sameAsBase(fields: DraftFields, base: DraftBase): boolean {
   const start = baseFields(base);
   if (fields.teamName.trim() !== start.teamName.trim()) return false;
   if (fields.slidesUrl.trim() !== start.slidesUrl.trim()) return false;
+  // Typed is a change; untouched follows the snapshot and is never one.
+  if (fields.mindmapUrl !== null) return false;
   const members = new Set(fields.memberIds);
   if (members.size !== new Set(start.memberIds).size) return false;
   if (!start.memberIds.every((id) => members.has(id))) return false;
@@ -100,12 +136,13 @@ export function parseDraft(raw: string | null, hackathonId: string, projectId: s
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { teamName, memberIds, imagePaths, slidesUrl, savedAt } = value as Record<string, unknown>;
+  const { teamName, memberIds, imagePaths, slidesUrl, mindmapUrl, savedAt } = value as Record<string, unknown>;
   if (typeof teamName !== "string") return null;
   if (!Array.isArray(memberIds) || !memberIds.every((id) => typeof id === "string")) return null;
   if (!Array.isArray(imagePaths)) return null;
   if (typeof savedAt !== "number" || !Number.isFinite(savedAt)) return null;
   if (slidesUrl !== undefined && typeof slidesUrl !== "string") return null;
+  if (mindmapUrl !== undefined && mindmapUrl !== null && typeof mindmapUrl !== "string") return null;
 
   return {
     teamName: teamName.slice(0, TEAM_NAME_MAX),
@@ -117,6 +154,8 @@ export function parseDraft(raw: string | null, hackathonId: string, projectId: s
     // Kept as typed, so a half-pasted link comes back to be finished; capped
     // a little over the limit so the field still shows why it is too long.
     slidesUrl: (typeof slidesUrl === "string" ? slidesUrl : "").slice(0, SLIDES_URL_MAX + 1),
+    // The same cap: a doqtri link is far shorter, so the field still says why.
+    mindmapUrl: typeof mindmapUrl === "string" ? mindmapUrl.slice(0, SLIDES_URL_MAX + 1) : null,
     savedAt,
   };
 }
@@ -170,6 +209,7 @@ export function saveDraft(
       memberIds: fields.memberIds,
       imagePaths: IMAGE_SLOTS.map((_, index) => fields.imagePaths[index] ?? null),
       slidesUrl: fields.slidesUrl,
+      mindmapUrl: fields.mindmapUrl,
       savedAt: now,
     };
     storage.setItem(key, JSON.stringify(draft));

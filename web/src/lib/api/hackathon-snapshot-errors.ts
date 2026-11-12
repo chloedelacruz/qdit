@@ -20,7 +20,7 @@ export const NO_HACKATHON = "No such hackathon.";
 export const REVOKED_MESSAGE = "This app's access to qdit was revoked.";
 
 /** The 22023 hints that name a field of the request (the others are the route's own arguments). */
-export const FIELD_HINTS = { snapshot_id: "snapshot_id", payload: "body" } as const;
+export const FIELD_HINTS = { snapshot_id: "snapshot_id", payload: "body", mindmap_url: "mindmap_url" } as const;
 
 /** Section 8's four 409 reasons (the QD409 MESSAGE token), with a sentence a caller may show. */
 export const SNAPSHOT_CONFLICTS = {
@@ -43,6 +43,9 @@ export type SnapshotConflict = keyof typeof SNAPSHOT_CONFLICTS;
  *                               2 MiB as the database measures it; the
  *                               contract never answers 413 itself)
  *   22023 snapshot_id   -> 400 on that field; 22023 payload -> 400 body;
+ *                          22023 mindmap_url -> 400 on that field (the
+ *                          database's origin differs from DOQTRI_ORIGIN,
+ *                          QDIT-66, 20261112140000_hackathon_mindmap_link.sql);
  *                          any other 22023 is the route's bug -> 500
  *   anything else       -> databaseError() (503 unreachable, 401 JWT, 500)
  */

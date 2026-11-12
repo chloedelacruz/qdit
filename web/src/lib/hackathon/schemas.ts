@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { doqtriOrigin, isDoqtriMindmapUrl } from "@/lib/doqtri-origin";
+
 /**
  * Input rules for "Add submission to hackathon" (WP-4.7, QDIT-47, D-115).
  *
@@ -133,6 +135,23 @@ export function slidesUrlProblem(url: string): string | null {
   return null;
 }
 
+/**
+ * The Mindmap link's error for a trimmed value, or null when it is fine
+ * (QDIT-66). Optional, so empty is fine. Otherwise the rule of
+ * `POST /hackathon-snapshots` (contract v1.4.0): exactly `origin` + `/m/` + a
+ * 22 to 64 character token (`isDoqtriMindmapUrl`), the same link doqtri
+ * sends, so a pasted link passes exactly when a sent one would.
+ * `hackathon_mindmap_url_allowed()` repeats it in the database.
+ */
+export function mindmapUrlProblem(url: string, origin: string): string | null {
+  if (url === "") return null;
+  if (!/^https:\/\//i.test(url)) return "Use the https:// link doqtri gives you.";
+  if (!isDoqtriMindmapUrl(url, origin)) {
+    return `Use a doqtri mindmap link: ${origin}/m/ followed by its code, with nothing after it.`;
+  }
+  return null;
+}
+
 /** The raw form, as the dialog posts it. */
 export type SubmitEntryInput = {
   hackathonId: string;
@@ -142,6 +161,8 @@ export type SubmitEntryInput = {
   /** Slot order: global map first, then the note maps. Empty slots are "". */
   images: string[];
   slidesUrl: string;
+  /** QDIT-66. Optional; "" when the field was left empty. */
+  mindmapUrl: string;
 };
 
 /** Reads the dialog's fields out of `FormData`. Never throws. */
@@ -157,6 +178,7 @@ export function readSubmitForm(formData: FormData): SubmitEntryInput {
     memberIds: formData.getAll("memberIds").filter((v): v is string => typeof v === "string"),
     images: IMAGE_SLOTS.map((slot) => text(slot.name).trim()),
     slidesUrl: text("slidesUrl"),
+    mindmapUrl: text("mindmapUrl"),
   };
 }
 
@@ -177,6 +199,8 @@ export type SubmitEntry = {
   imagePaths: string[];
   /** Trimmed; `isSlidesUrl` holds. */
   slidesUrl: string;
+  /** Trimmed; "" for none, else `isDoqtriMindmapUrl` holds (QDIT-66). */
+  mindmapUrl: string;
 };
 
 function teamSizeMessage({ teamMin, teamMax }: TeamBounds): string {
@@ -211,10 +235,13 @@ const imagesSchema = z
 /**
  * The whole entry, with the hackathon's own team size. Field keys are the ones
  * the dialog shows errors under: `projectId`, `teamName`, `memberIds`,
- * `images`, `slidesUrl`. Every field is checked on its own, so one submit shows every
- * problem at once.
+ * `images`, `slidesUrl`, `mindmapUrl`. Every field is checked on its own, so
+ * one submit shows every problem at once.
+ *
+ * `mindmapOrigin` is `DOQTRI_ORIGIN` (server-only), called only when a
+ * Mindmap link was entered, so an empty field never depends on it.
  */
-export function submitEntrySchema(bounds: TeamBounds) {
+export function submitEntrySchema(bounds: TeamBounds, mindmapOrigin: () => string = () => doqtriOrigin()) {
   return submitTargetSchema
     .extend({
       teamName: z
@@ -237,6 +264,16 @@ export function submitEntrySchema(bounds: TeamBounds) {
           const problem = slidesUrlProblem(url);
           if (problem) ctx.addIssue({ code: "custom", message: problem });
         }),
+      mindmapUrl: z
+        .string()
+        .trim()
+        .superRefine((url, ctx) => {
+          if (url === "") return;
+          const problem = mindmapUrlProblem(url, mindmapOrigin());
+          if (problem) ctx.addIssue({ code: "custom", message: problem });
+        })
+        // A dialog loaded before QDIT-66 posts no such field.
+        .optional(),
     })
     .refine(
       (entry) =>
@@ -259,6 +296,7 @@ export function submitEntrySchema(bounds: TeamBounds) {
         memberIds: entry.memberIds,
         imagePaths: entry.images,
         slidesUrl: entry.slidesUrl,
+        mindmapUrl: entry.mindmapUrl ?? "",
       }),
     );
 }

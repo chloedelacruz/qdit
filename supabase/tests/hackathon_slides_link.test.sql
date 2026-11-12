@@ -4,8 +4,9 @@
 --
 -- Covers 20261112062735_hackathon_slides_link.sql (QDIT-63, WP-4.7, D-123):
 -- which links hackathon_slides_url_ok() accepts, the column's check and
--- grant, and that submit_hackathon_entry() now has exactly the six-argument
--- form with its old privileges. What the RPC does with the link (refusals,
+-- grant, and that submit_hackathon_entry() has exactly one form, with its
+-- old privileges (seven arguments since 20261112140000, QDIT-66, whose own
+-- test is hackathon_mindmap_link.test.sql). What the RPC does with the link (refusals,
 -- stored trimmed) is in hackathons.test.sql, beside the other submit checks.
 --
 -- Run with `supabase test db` against a local stack (`supabase start` first).
@@ -96,8 +97,8 @@ select results_eq(
   $$ select pg_catalog.pg_get_function_identity_arguments(p.oid)::text
        from pg_catalog.pg_proc p
       where p.pronamespace = 'public'::regnamespace and p.proname = 'submit_hackathon_entry' $$,
-  $$ values ('p_hackathon_id uuid, p_project_id uuid, p_team_name text, p_member_ids uuid[], p_image_paths text[], p_slides_url text'::text) $$,
-  'submit_hackathon_entry exists only in its six-argument form'
+  $$ values ('p_hackathon_id uuid, p_project_id uuid, p_team_name text, p_member_ids uuid[], p_image_paths text[], p_slides_url text, p_mindmap_url text'::text) $$,
+  'submit_hackathon_entry exists only in one form, p_slides_url sixth (seven arguments since 20261112140000, QDIT-66)'
 );
 
 select ok(
@@ -106,7 +107,7 @@ select ok(
           and not has_function_privilege('anon', p.oid, 'execute')
           and has_function_privilege('authenticated', p.oid, 'execute')
      from pg_catalog.pg_proc p
-    where p.oid = 'public.submit_hackathon_entry(uuid, uuid, text, uuid[], text[], text)'::regprocedure),
+    where p.oid = 'public.submit_hackathon_entry(uuid, uuid, text, uuid[], text[], text, text)'::regprocedure),
   'submit_hackathon_entry: security definer, empty search_path, authenticated only'
 );
 

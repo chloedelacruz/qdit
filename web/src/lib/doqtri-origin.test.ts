@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin, isDoqtriDocUrl, publicDocLink } from "./doqtri-origin";
+import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin, isDoqtriDocUrl, isDoqtriMindmapUrl, publicDocLink } from "./doqtri-origin";
 
 describe("doqtriOrigin", () => {
   it("defaults to https://www.doqtri.xyz when unset or empty", () => {
@@ -91,5 +91,36 @@ describe("publicDocLink", () => {
 
   it("throws on a misconfigured origin, as doqtriOrigin does", () => {
     expect(() => publicDocLink("d1", "https://www.doqtri.xyz/path")).toThrow(/DOQTRI_ORIGIN/);
+  });
+});
+
+describe("isDoqtriMindmapUrl (contract v1.4.0, QDIT-66)", () => {
+  const origin = "https://www.doqtri.xyz";
+  const token = "Ab3_-xYz0123456789AbCd";
+
+  it.each([`${origin}/m/${token}`, `${origin}/m/${"a".repeat(64)}`, `https://localhost:3000/m/${token}`])(
+    "accepts %s on its own origin",
+    (url) => {
+      expect(isDoqtriMindmapUrl(url, new URL(url).origin)).toBe(true);
+    },
+  );
+
+  it.each([
+    `http://www.doqtri.xyz/m/${token}`,
+    `https://www.doqtri.xyz.evil.example/m/${token}`,
+    `https://www.doqtri.xyz@evil.example/m/${token}`,
+    `https://www.doqtri.xyz:443/m/${token}`,
+    `https://WWW.doqtri.xyz/m/${token}`,
+    `${origin}/d/${token}`,
+    `${origin}/m/${"a".repeat(21)}`,
+    `${origin}/m/${"a".repeat(65)}`,
+    `${origin}/m/${token}/`,
+    `${origin}/m/${token}?x`,
+    `${origin}/m/${token}#x`,
+    `${origin}/m/${token} `,
+    `${origin}/m/${token}\n`,
+    "",
+  ])("refuses %j", (url) => {
+    expect(isDoqtriMindmapUrl(url, origin)).toBe(false);
   });
 });

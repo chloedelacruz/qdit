@@ -18,16 +18,20 @@ import {
  * in the migration verbatim, raised with the SQLSTATE the mapping expects,
  * so that rewording the SQL fails here instead of changing the answer.
  */
-const MIGRATION = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../../supabase/migrations/20261110100000_hackathons.sql",
-);
-const sql = readFileSync(MIGRATION, "utf8");
+const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), "../../../../supabase/migrations");
+/**
+ * Newest first, so `functionBody()` finds the definition in force:
+ * 20261112140000 (QDIT-66) replaced the push's body, and
+ * assert_hackathon_open() is still the one in 20261110100000.
+ */
+const sql = ["20261112140000_hackathon_mindmap_link.sql", "20261110100000_hackathons.sql"]
+  .map((file) => readFileSync(join(MIGRATIONS, file), "utf8"))
+  .join("\n");
 
 /** A SQL string literal for `text`, with `'` doubled. */
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 
-/** The body of one `create or replace function public.<name>(`, up to its closing `$$;`. */
+/** The body of the newest `create or replace function public.<name>(`, up to its closing `$$;`. */
 function functionBody(name: string): string {
   const start = sql.indexOf(`create or replace function public.${name}(`);
   expect(start, `${name} is defined in the migration`).toBeGreaterThanOrEqual(0);

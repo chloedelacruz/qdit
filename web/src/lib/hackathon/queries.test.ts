@@ -104,8 +104,14 @@ function scriptedDatabase(failing?: string) {
       hackathon_doqtri_snapshots: [
         {
           data: [
-            { id: SNAP_NEW, project_id: PROJECT, note_count: 12, received_at: "2026-11-20T06:04:00.000Z" },
-            { id: SNAP_OLD, project_id: PROJECT, note_count: 9, received_at: "2026-11-20T06:01:00.000Z" },
+            {
+              id: SNAP_NEW,
+              project_id: PROJECT,
+              note_count: 12,
+              received_at: "2026-11-20T06:04:00.000Z",
+              mindmap_url: "https://www.doqtri.xyz/m/NewestSendToken_abcdefg",
+            },
+            { id: SNAP_OLD, project_id: PROJECT, note_count: 9, received_at: "2026-11-20T06:01:00.000Z", mindmap_url: null },
           ],
           error: null,
         },
@@ -121,6 +127,7 @@ function scriptedDatabase(failing?: string) {
               submitted_at: "2026-11-20T06:02:00.000Z",
               image_paths: [MAP],
               slides_url: null,
+              mindmap_url: "https://www.doqtri.xyz/m/FirstVersionToken_abcde",
               doqtri_snapshot_id: SNAP_OLD,
             },
             {
@@ -130,6 +137,7 @@ function scriptedDatabase(failing?: string) {
               submitted_at: "2026-11-20T06:03:00.000Z",
               image_paths: [MAP],
               slides_url: "https://docs.google.com/presentation/d/owls/edit",
+              mindmap_url: null,
               doqtri_snapshot_id: SNAP_OLD,
             },
           ],
@@ -239,7 +247,13 @@ describe("participant hackathon queries", () => {
     expect(owned).toMatchObject({
       canSubmit: true,
       latePassUntil: null,
-      latestSnapshot: { id: SNAP_NEW, noteCount: 12, receivedAt: "2026-11-20T06:04:00.000Z" },
+      // The newest snapshot's link, which the submit dialog starts from (QDIT-66).
+      latestSnapshot: {
+        id: SNAP_NEW,
+        noteCount: 12,
+        receivedAt: "2026-11-20T06:04:00.000Z",
+        mindmapUrl: "https://www.doqtri.xyz/m/NewestSendToken_abcdefg",
+      },
       entry: {
         teamName: "Night Owls",
         versionCount: 2,
@@ -248,6 +262,8 @@ describe("participant hackathon queries", () => {
         images: [{ path: MAP, url: `https://storage.test/${MAP}?token=t` }],
         // The current version's, not the first's.
         slidesUrl: "https://docs.google.com/presentation/d/owls/edit",
+        // The current version's too: it has none, though version 1 had one.
+        mindmapUrl: null,
       },
     });
     expect(owned?.entry?.members.map((m) => m.name)).toEqual(["Ada Reyes", "Lin", "sam"]);

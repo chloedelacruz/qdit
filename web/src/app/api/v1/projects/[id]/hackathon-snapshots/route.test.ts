@@ -526,3 +526,81 @@ describe("POST /api/v1/projects/{id}/hackathon-snapshots: the body (400)", () =>
     });
   });
 });
+
+describe("POST /api/v1/projects/{id}/hackathon-snapshots: mindmap_url (v1.4.0, QDIT-66)", () => {
+  const TOKEN = "Ab3_-xYz0123456789AbCd";
+
+  afterEach(() => {
+    delete process.env.DOQTRI_ORIGIN;
+  });
+
+  it("stores a body with a link: the link travels in the payload, the arguments are unchanged", async () => {
+    const db = signedIn({ push: [pushed()] });
+    const body = snapshotBody({ mindmap_url: `https://www.doqtri.xyz/m/${TOKEN}` });
+    const raw = JSON.stringify(body);
+
+    const response = await postRaw(raw);
+
+    expect(response.status).toBe(201);
+    expect(pushRequest(db)?.args).toEqual({
+      p_hackathon_slug: "stellar-build-2026",
+      p_project_id: PROJECT,
+      p_snapshot_id: SNAPSHOT_ID,
+      p_workspace_id: WORKSPACE,
+      p_payload: body,
+      p_payload_sha256: createHash("sha256").update(raw, "utf8").digest("hex"),
+      p_note_count: 1,
+    });
+  });
+
+  it("follows DOQTRI_ORIGIN", async () => {
+    process.env.DOQTRI_ORIGIN = "https://staging.doqtri.xyz";
+    signedIn({ push: [pushed()] });
+    const response = await post(snapshotBody({ mindmap_url: `https://staging.doqtri.xyz/m/${TOKEN}` }));
+    expect(response.status).toBe(201);
+  });
+
+  it.each([
+    `http://www.doqtri.xyz/m/${TOKEN}`,
+    `https://other.example/m/${TOKEN}`,
+    `https://www.doqtri.xyz/x/${TOKEN}`,
+    "https://www.doqtri.xyz/m/short",
+  ])("refuses %s with 400 on mindmap_url and stores nothing", async (url) => {
+    const db = signedIn({ push: [pushed()] });
+
+    const response = await post(snapshotBody({ mindmap_url: url }));
+
+    expect(response.status).toBe(400);
+    const error = await errorOf(response);
+    expect(error.code).toBe("invalid_request");
+    expect(Object.keys(error.details.fields)).toEqual(["mindmap_url"]);
+    expect(pushRequest(db)).toBeUndefined();
+  });
+
+  it("does not read DOQTRI_ORIGIN for a body without a link, so a bad setting breaks only links", async () => {
+    process.env.DOQTRI_ORIGIN = "not an origin";
+    signedIn({ push: [pushed()] });
+    expect((await post(snapshotBody())).status).toBe(201);
+  });
+
+  it("answers the database's own refusal (its origin differs) as 400 on mindmap_url", async () => {
+    signedIn({ push: [dbError("22023", "must be a doqtri mindmap link", "mindmap_url")] });
+
+    const response = await post(snapshotBody({ mindmap_url: `https://www.doqtri.xyz/m/${TOKEN}` }));
+
+    expect(response.status).toBe(400);
+    expect((await errorOf(response)).details.fields).toEqual({ mindmap_url: "must be a doqtri mindmap link" });
+  });
+
+  it("answers a replay of the same bytes 200, and another link under the same snapshot_id 409", async () => {
+    signedIn({ push: [pushed({ replay: true })] });
+    const body = snapshotBody({ mindmap_url: `https://www.doqtri.xyz/m/${TOKEN}` });
+
+    expect((await post(body)).status).toBe(200);
+
+    signedIn({ push: [dbError("QD409", "snapshot_conflict")] });
+    const other = await post({ ...body, mindmap_url: `https://www.doqtri.xyz/m/${"Z".repeat(30)}` });
+    expect(other.status).toBe(409);
+    expect((await errorOf(other)).details).toEqual({ reason: "snapshot_conflict" });
+  });
+});

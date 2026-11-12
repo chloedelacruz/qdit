@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { MILESTONE_STATUS, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
+import { mindmapLink } from "@/lib/hackathon/mindmap-link";
 import { getStaffHackathon, getStaffRole, loadSubmissionView } from "@/lib/hackathon/staff-queries";
 import { formatManila, groupTasksByStatus, toPlainText } from "@/lib/hackathon/staff-view";
 import { ICON } from "@/lib/icons";
@@ -55,6 +56,8 @@ export default async function HackathonSubmissionPage({
   };
   const columns = groupTasksByStatus(qdit.tasks);
   const team = new Set(view.member_ids);
+  // The version's link, so it outlives the snapshot; checked against DOQTRI_ORIGIN again (QDIT-66).
+  const mindmapUrl = mindmapLink(view.mindmap_url);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -73,14 +76,26 @@ export default async function HackathonSubmissionPage({
           </span>
         }
         actions={
-          view.slides_url ? (
-            // Only a link hackathon_slides_url_ok() accepted reaches here: https, on a known host.
-            <Button asChild size="sm" variant="outline">
-              <a href={view.slides_url} target="_blank" rel="noreferrer noopener">
-                <ICON.external data-icon="inline-start" />
-                Open slides
-              </a>
-            </Button>
+          view.slides_url || mindmapUrl ? (
+            <>
+              {mindmapUrl ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href={mindmapUrl} target="_blank" rel="noopener noreferrer">
+                    <ICON.external data-icon="inline-start" />
+                    Open mindmap
+                  </a>
+                </Button>
+              ) : null}
+              {view.slides_url ? (
+                // Only a link hackathon_slides_url_ok() accepted reaches here: https, on a known host.
+                <Button asChild size="sm" variant="outline">
+                  <a href={view.slides_url} target="_blank" rel="noreferrer noopener">
+                    <ICON.external data-icon="inline-start" />
+                    Open slides
+                  </a>
+                </Button>
+              ) : null}
+            </>
           ) : null
         }
       />

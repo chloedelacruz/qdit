@@ -30,6 +30,7 @@ const HACKATHON = {
 };
 
 const DECK = "https://docs.google.com/presentation/d/owls/edit?usp=sharing";
+const MINDMAP = "https://www.doqtri.xyz/m/Ab3_-xYz0123456789AbCd";
 const signed = (path: string) => `https://xyz.supabase.co/storage/v1/object/sign/hackathon-mindmaps/${path}?token=t`;
 
 const call = (slug = "manila-26") =>
@@ -98,12 +99,12 @@ describe("GET /api/hackathons/[slug]/export/submissions", () => {
     const fake = setup();
     const response = await call();
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("Team name,Slides link,Global mindmap,Note map 1,Note map 2\r\n");
+    expect(await response.text()).toBe("Team name,Slides link,Global mindmap,Mindmap link,Note map 1,Note map 2\r\n");
     expect(fake.requests.some((r) => r.name === "hackathon_submission_versions")).toBe(false);
     expect(fake.createSignedUrls).not.toHaveBeenCalled();
   });
 
-  it("lists each current version by team name, with its link and 7-day signed images", async () => {
+  it("lists each current version by team name, with its links and 7-day signed images", async () => {
     const a1 = `${H}/p-a/one.png`;
     const a2 = `${H}/p-a/two.webp`;
     const b1 = `${H}/p-b/one.png`;
@@ -117,9 +118,16 @@ describe("GET /api/hackathons/[slug]/export/submissions", () => {
         { id: "s-x", current_version_id: null },
       ],
       versions: [
-        { id: "v-b", team_name: "beta", slides_url: null, image_paths: [b1] },
-        { id: "v-a2", team_name: "Alpha", slides_url: DECK, image_paths: [a1, a2] },
-        { id: "v-c", team_name: '=HYPERLINK("x")', slides_url: "https://1drv.ms/p/s!Abc", image_paths: [c1] },
+        { id: "v-b", team_name: "beta", slides_url: null, mindmap_url: null, image_paths: [b1] },
+        { id: "v-a2", team_name: "Alpha", slides_url: DECK, mindmap_url: MINDMAP, image_paths: [a1, a2] },
+        {
+          id: "v-c",
+          team_name: '=HYPERLINK("x")',
+          slides_url: "https://1drv.ms/p/s!Abc",
+          // Stored while the database had no doqtri_origin: not doqtri's, so not exported.
+          mindmap_url: "https://evil.example/m/Ab3_-xYz0123456789AbCd",
+          image_paths: [c1],
+        },
       ],
       unsignable: [a2],
     });
@@ -131,19 +139,23 @@ describe("GET /api/hackathons/[slug]/export/submissions", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
 
     expect((await response.text()).split("\r\n")).toEqual([
-      "Team name,Slides link,Global mindmap,Note map 1,Note map 2",
+      "Team name,Slides link,Global mindmap,Mindmap link,Note map 1,Note map 2",
       // A formula-looking team name is defused and quoted; it sorts first on "'=".
-      `"'=HYPERLINK(""x"")",https://1drv.ms/p/s!Abc,${signed(c1)},,`,
-      // A note map Storage could not sign leaves its cell empty.
-      `Alpha,${DECK},${signed(a1)},,`,
-      // A version from before QDIT-63 has no link.
-      `beta,,${signed(b1)},,`,
+      // A Mindmap link off DOQTRI_ORIGIN leaves its cell empty.
+      `"'=HYPERLINK(""x"")",https://1drv.ms/p/s!Abc,${signed(c1)},,,`,
+      // The Mindmap link sits after the global map; a note map Storage could
+      // not sign leaves its cell empty.
+      `Alpha,${DECK},${signed(a1)},${MINDMAP},,`,
+      // A version from before QDIT-63 (and QDIT-66) has no links.
+      `beta,,${signed(b1)},,,`,
       "",
     ]);
 
     // Only current versions, and only the columns the file needs.
     const versionRead = fake.requests.find((r) => r.name === "hackathon_submission_versions");
-    expect(versionRead?.calls).toContainEqual(["select", "id, team_name, slides_url, image_paths"]);
+    expect(versionRead?.calls).toContainEqual(["select", "id, team_name, slides_url, mindmap_url, image_paths"]);
+    // The link comes from the version, so a pruned snapshot changes nothing (QDIT-66).
+    expect(fake.requests.some((r) => r.name === "hackathon_doqtri_snapshots")).toBe(false);
     expect(versionRead?.calls).toContainEqual(["in", "id", ["v-b", "v-a2", "v-c"]]);
     expect(fake.requests.find((r) => r.name === "hackathon_submissions")?.calls).toContainEqual(["eq", "hackathon_id", H]);
 
@@ -158,7 +170,7 @@ describe("GET /api/hackathons/[slug]/export/submissions", () => {
   it("fails rather than send a file without its image links when signing fails", async () => {
     setup({
       submissions: [{ id: "s-a", current_version_id: "v-a" }],
-      versions: [{ id: "v-a", team_name: "Alpha", slides_url: DECK, image_paths: [`${H}/p-a/one.png`] }],
+      versions: [{ id: "v-a", team_name: "Alpha", slides_url: DECK, mindmap_url: null, image_paths: [`${H}/p-a/one.png`] }],
       signError: { message: "boom" },
     });
     await expect(call()).rejects.toThrow(/sign mindmap images/);

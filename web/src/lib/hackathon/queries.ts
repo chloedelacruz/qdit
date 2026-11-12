@@ -23,9 +23,10 @@ export const PAGE_COLUMNS = {
   project_members: "project_id, user_id, role",
   projects: "id, slug, name",
   hackathon_submissions: "id, project_id, team_name, current_version_id",
-  hackathon_submission_versions: "id, submission_id, version_no, submitted_at, image_paths, slides_url, doqtri_snapshot_id",
+  hackathon_submission_versions:
+    "id, submission_id, version_no, submitted_at, image_paths, slides_url, mindmap_url, doqtri_snapshot_id",
   hackathon_team_members: "submission_id, user_id",
-  hackathon_doqtri_snapshots: "id, project_id, note_count, received_at",
+  hackathon_doqtri_snapshots: "id, project_id, note_count, received_at, mindmap_url",
   hackathon_late_passes: "project_id, until",
   profiles: "id, display_name, username",
 } as const;
@@ -47,7 +48,13 @@ export type HackathonInfo = {
 
 export type Person = { id: string; name: string; username: string | null };
 
-export type DoqtriSnapshotInfo = { id: string; noteCount: number; receivedAt: string };
+export type DoqtriSnapshotInfo = {
+  id: string;
+  noteCount: number;
+  receivedAt: string;
+  /** The link doqtri sent with it (QDIT-66), which the submit dialog starts from; null for none. */
+  mindmapUrl: string | null;
+};
 
 export type EntryImage = { path: string; url: string | null };
 
@@ -66,6 +73,8 @@ export type MyEntry = {
   images: EntryImage[];
   /** The current version's Slides link; null on a version from before QDIT-63. */
   slidesUrl: string | null;
+  /** The current version's Mindmap link, as stored (QDIT-66); null for none. */
+  mindmapUrl: string | null;
 };
 
 export type MyProject = {
@@ -156,7 +165,9 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
       .select(PAGE_COLUMNS.hackathon_doqtri_snapshots)
       .eq("hackathon_id", hackathon.id)
       .in("project_id", projectIds)
-      .order("received_at", { ascending: false }),
+      // The order submit_hackathon_entry() picks the newest by.
+      .order("received_at", { ascending: false })
+      .order("id", { ascending: false }),
     supabase
       .from("hackathon_late_passes")
       .select(PAGE_COLUMNS.hackathon_late_passes)
@@ -231,6 +242,7 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
         id: row.id,
         noteCount: row.note_count,
         receivedAt: row.received_at,
+        mindmapUrl: row.mindmap_url ?? null,
       });
     }
   }
@@ -262,6 +274,7 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
         snapshotId: current?.doqtri_snapshot_id ?? null,
         images: (current?.image_paths ?? []).map((path) => ({ path, url: urls.get(path) ?? null })),
         slidesUrl: current?.slides_url ?? null,
+        mindmapUrl: current?.mindmap_url ?? null,
       };
     }
 

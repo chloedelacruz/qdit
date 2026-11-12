@@ -170,6 +170,63 @@ select has_column_privilege('authenticated', 'public.hackathon_submission_versio
 Entries submitted before it have no link. Their team adds one on its next resubmit; the
 staff submission page says "no slides link" and the export leaves the cell empty.
 
+### 1.9 Apply the Mindmap link migration, then deploy qdit, then let doqtri send links (mandatory order)
+
+`supabase/migrations/20261112140000_hackathon_mindmap_link.sql` (QDIT-66, contract v1.4.0)
+adds `mindmap_url` to `hackathon_doqtri_snapshots` and to `hackathon_submission_versions`,
+the internal `hackathon_mindmap_url_ok(text)` and `hackathon_mindmap_url_allowed(text)`,
+stores the snapshot body's `mindmap_url` in `push_doqtri_hackathon_snapshot` (same
+signature), and replaces `submit_hackathon_entry` with a seven-argument form whose
+`p_mindmap_url` is optional. doqtri's side is DOQ-53, which hosts the public page at
+`<doqtri origin>/m/<token>` and sends that URL with each Send.
+
+The order is fixed, and each step waits for the one before it:
+
+1. **Apply the migration.** It is safe with the live app: the old code calls
+   `submit_hackathon_entry` with six named arguments, which the new default covers, and the
+   old API route still refuses a body with `mindmap_url` before it reaches the database.
+   No submit is refused in the gap, so it can be applied during a window.
+2. **Deploy qdit (merge QDIT-66).** The new code calls `submit_hackathon_entry` with
+   `p_mindmap_url`; against the old function that is "function does not exist" on every
+   submit, so never merge before step 1.
+3. **Only then merge doqtri DOQ-53**, or turn on whatever makes doqtri send `mindmap_url`.
+   A qdit without QDIT-66 answers every snapshot that carries the field, `null` included,
+   with `400 invalid_request` (`"mindmap_url": "unknown field"`): teams could not Send at
+   all. The contract lets doqtri resend without the field on exactly that answer, but do not
+   rely on it during an event.
+
+Apply it with the Supabase CLI, as in 1.2, then check:
+
+```sql
+select pg_get_function_identity_arguments(p.oid), p.prosecdef, p.proconfig,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated
+  from pg_proc p
+ where p.pronamespace = 'public'::regnamespace and p.proname = 'submit_hackathon_entry';
+-- one row: …, p_slides_url text, p_mindmap_url text | t | {"search_path=\"\""} | f | t
+
+select has_column_privilege('authenticated', 'public.hackathon_submission_versions', 'mindmap_url', 'select'),
+       has_column_privilege('authenticated', 'public.hackathon_doqtri_snapshots', 'mindmap_url', 'select');
+-- t | t
+
+select doqtri_origin from public.integration_settings;
+-- https://www.doqtri.xyz in production
+```
+
+The last check matters: with `integration_settings.doqtri_origin` set, the database refuses
+a link off doqtri's origin even from a hand-written call; unset, it checks only the shape
+and the app's `DOQTRI_ORIGIN` check is the only origin check (as for `doc_url`, D-95). Set it
+as in `docs/integration/qdit-oauth-setup.md` if it is empty.
+
+What teams and staff see: the submit dialog's optional **Mindmap link** field fills itself
+from the newest snapshot's link ("Filled from your latest Send in doqtri"), and a team can
+paste another doqtri mindmap link or clear it. The link is stored on the submission version,
+so it survives the 90-day snapshot pruning. The team card and the staff submission page show
+**Open mindmap**, and Export submissions has a `Mindmap link` column. Images stay required;
+eligibility, the grader and the image columns are unchanged. Entries submitted before it, or
+by a team whose doqtri predates DOQ-53, have no link: the button is simply absent and the
+cell empty.
+
 ---
 
 ## 2. Merge order
@@ -191,6 +248,8 @@ Each PR targets `main`; wait for each deploy before the next.
    then merge the code.
 10. QDIT-63 Slides link and Export submissions. Apply its migration (1.8) first, then merge
     the code.
+11. QDIT-66 Mindmap link (contract v1.4.0). Apply its migration (1.9) first, then merge the
+    code, and only then merge doqtri DOQ-53.
 
 **doqtri**
 
@@ -201,6 +260,9 @@ Each PR targets `main`; wait for each deploy before the next.
    then qdit answers `404 not_found` on `GET /api/v1/hackathons` and the dialog falls back
    to the link field. It must not meet a qdit where QDIT-60's code is live without its
    migration (1.7), which answers 500 and leaves the dialog unable to send.
+5. DOQ-53 public mindmap page and `mindmap_url` in the snapshot (contract v1.4.0). Merge it
+   only after qdit QDIT-66 is deployed (1.9): an older qdit refuses any snapshot with the
+   field.
 
 qdit must be at #23 or later before doqtri #115 is used: before that, qdit answers 404 on
 the snapshot route.
@@ -301,8 +363,10 @@ in the order the leaderboard shows. Cells that a spreadsheet would read as formu
 prefixed with `'`. Anyone else, judges included, gets a 404. Before release it is a 409.
 
 **Export submissions** (QDIT-63, D-123), any time: `https://<qdit host>/api/hackathons/<slug>/export/submissions`
-as a hackathon admin. Columns: `Team name, Slides link, Global mindmap, Note map 1, Note map 2`,
-one row per entry by team name, formula-guarded the same way. The image cells are Supabase
+as a hackathon admin. Columns: `Team name, Slides link, Global mindmap, Mindmap link, Note map 1,
+Note map 2`, one row per entry by team name, formula-guarded the same way. `Mindmap link`
+(QDIT-66) is the doqtri page the team submitted, read from the version, so it is there after
+the snapshot is pruned; empty when the team sent none. The image cells are Supabase
 signed URLs valid for 7 days: anyone holding the file can open the images until then, so
 share it only with the organisers, and export again for fresh links. Nothing score-derived
 is in it. Anyone else gets a 404.

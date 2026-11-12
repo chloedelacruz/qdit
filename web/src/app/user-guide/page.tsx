@@ -638,7 +638,8 @@ const SECTIONS: Section[] = [
     lead: (
       <>
         Your team sends one submission. It holds your qdit project, your doqtri
-        notes, your mindmap images, and a link to your slides.
+        notes, your mindmap images, a link to your slides, and a link to your
+        mindmap in doqtri.
       </>
     ),
     warn: (
@@ -675,6 +676,11 @@ const SECTIONS: Section[] = [
       <>Attach the global mindmap image. Attach note maps if you have them.</>,
       <>Paste the link into <strong>Slides link</strong>.</>,
       <>
+        Check <strong>Mindmap link</strong>. It fills itself from your latest
+        Send in doqtri. You can paste another mindmap link from doqtri, or
+        leave it empty.
+      </>,
+      <>
         Click <strong>Submit</strong>. Your entry shows{" "}
         <strong>Received</strong> under My entry.
       </>,
@@ -683,7 +689,9 @@ const SECTIONS: Section[] = [
       <>
         You can submit again until the deadline. Click{" "}
         <strong>Update submission</strong>. The last submission counts. If you
-        send from doqtri again, submit again in qdit to include it. A person
+        send from doqtri again, submit again in qdit to include it, along with
+        its mindmap link. Click <strong>Open mindmap</strong> on your entry to
+        check the link the organisers will open. A person
         can be on one team only. Changes you haven&apos;t submitted are kept
         as a draft in this browser, so you can close the dialog and come back.
         Click <strong>Discard draft</strong> to start again from your last
@@ -733,7 +741,9 @@ const STAFF_SECTIONS: Section[] = [
       </>,
       <>
         Check each entry under <strong>Submissions</strong>. Point at a rule to
-        read why it passed or failed.
+        read why it passed or failed. Open an entry and click{" "}
+        <strong>Open mindmap</strong> to see the team&apos;s whole mindmap in
+        doqtri, when the team sent one.
       </>,
       <>
         To let a team submit late, click <strong>Late pass</strong>. Set the end
@@ -741,8 +751,8 @@ const STAFF_SECTIONS: Section[] = [
       </>,
       <>
         Click <strong>Export submissions</strong> for a file with each
-        team&apos;s name, slides link, and mindmap image links. It works before
-        and after release. The image links stop working after 7 days, so
+        team&apos;s name, slides link, mindmap image links, and doqtri mindmap
+        link. It works before and after release. The image links stop working after 7 days, so
         export again for a fresh file.
       </>,
       <>
