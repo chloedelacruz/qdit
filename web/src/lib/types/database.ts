@@ -1110,7 +1110,7 @@ export type Database = {
           doqtri_snapshot_id: string | null
           /** 1–3 `<hackathon>/<project>/<uuid>.<ext>` in hackathon-mindmaps. */
           image_paths: string[]
-          /** QDIT-63. The team's Slides link; null only on versions from before 20261112120000. */
+          /** QDIT-63. The team's Slides link; null only on versions from before migration 20261112062735. */
           slides_url: string | null
           submitted_by: string | null
           submitted_at: string

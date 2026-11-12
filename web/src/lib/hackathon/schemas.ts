@@ -103,7 +103,7 @@ export function uploadErrorMessage(message: string): string {
 export const SLIDES_URL_MAX = 2048;
 
 /**
- * `hackathon_slides_url_ok()` in 20261112120000_hackathon_slides_link.sql,
+ * `hackathon_slides_url_ok()` in 20261112062735_hackathon_slides_link.sql,
  * character for character (QDIT-63, D-123): https, then Google Slides, a deck
  * file on Google Drive, OneDrive or SharePoint, with the host followed by `/`
  * so a look-alike host never matches. Case-insensitive, as `~*` is there.

@@ -14,7 +14,7 @@ import type { ActionState } from "@/lib/actions";
  *   QD413  snapshot_too_large (payload_too_large is the doqtri push's, not
  *          this RPC's, and falls through to the generic retry message)
  *   22023  HINT names the field: team_name | member_ids | image_paths |
- *          slides_url (20261112120000_hackathon_slides_link.sql, QDIT-63)
+ *          slides_url (20261112062735_hackathon_slides_link.sql, QDIT-63)
  *
  * Field errors use the dialog's keys (`teamName`, `memberIds`, `images`,
  * `slidesUrl`).

@@ -138,9 +138,13 @@ listed; a team with a late pass sends by link, as before.
 
 ### 1.8 Apply the Slides link migration, before merging QDIT-63 (mandatory)
 
-`supabase/migrations/20261112120000_hackathon_slides_link.sql` (D-123) adds
+`supabase/migrations/20261112062735_hackathon_slides_link.sql` (D-123) adds
 `hackathon_submission_versions.slides_url`, the internal `hackathon_slides_url_ok(text)` and
 replaces `submit_hackathon_entry` with a six-argument form whose `p_slides_url` is required.
+
+**Applied to production on 12 Nov 2026** through the Supabase MCP, which stamped it
+`20261112062735`; the file was renamed to match (authored as `20261112120000`). The checks
+below passed.
 
 Apply it first, then merge the code. Between the two, the live app still calls the function
 with five named arguments: that resolves to the new function, which answers `22023 Add the

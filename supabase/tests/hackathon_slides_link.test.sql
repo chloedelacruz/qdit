@@ -2,7 +2,7 @@
 -- qdit — pgTAP
 -- supabase/tests/hackathon_slides_link.test.sql
 --
--- Covers 20261112120000_hackathon_slides_link.sql (QDIT-63, WP-4.7, D-123):
+-- Covers 20261112062735_hackathon_slides_link.sql (QDIT-63, WP-4.7, D-123):
 -- which links hackathon_slides_url_ok() accepts, the column's check and
 -- grant, and that submit_hackathon_entry() now has exactly the six-argument
 -- form with its old privileges. What the RPC does with the link (refusals,

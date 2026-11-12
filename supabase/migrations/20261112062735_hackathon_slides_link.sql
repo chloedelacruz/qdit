@@ -1,6 +1,12 @@
 -- ============================================================================
 -- qdit — Stellar Builder Task Hub
--- 20261112120000_hackathon_slides_link.sql
+-- 20261112062735_hackathon_slides_link.sql
+--
+-- Authored as 20261112120000. Applied to the hosted project through the
+-- Supabase MCP on 12 Nov 2026, which stamped it 20261112062735; the file was
+-- renamed to match the ledger (gaps.md section 2). It still sorts after every
+-- migration it depends on. SQL unchanged, so the two COMMENT ON strings below
+-- still name 20261112120000, as the hosted database has them.
 --
 -- QDIT-63 (WP-4.7, D-123): every hackathon submit carries the team's Slides
 -- link, so judges can open the deck and organisers can export it.
