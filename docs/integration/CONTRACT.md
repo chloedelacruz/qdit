@@ -1072,10 +1072,11 @@ Response `200`:
   workspace, hackathon or sender. qdit ignores unknown fields (section 3).
 
 Caching. doqtri sends `Cache-Control: private, max-age=<n>` with `n` from 0
-to 60, or `no-store`. qdit keeps each answer (`live` true or false) for at most 60 seconds,
-for less when `max-age` is smaller, and not at all on `no-store`, `no-cache`
-or `max-age=0`. A revoke or an expiry therefore reaches qdit's pages within
-60 seconds. qdit never caches an unknown status.
+to 60, or `no-store`. qdit keeps each answer (`live` true or false) for at
+most 60 seconds, for less when `max-age` is smaller, and not at all on
+`no-store`, `no-cache` or `max-age=0`. A revoke or an expiry therefore
+reaches qdit's pages within 60 seconds. qdit never caches an unknown
+status.
 
 Rate limits. doqtri limits the endpoint as it sees fit and answers `429`,
 with `Retry-After`, over its limit. One request carries up to 500 tokens, so
@@ -1154,9 +1155,9 @@ and `test-` ones included, whether or not doqtri sent it a snapshot. A
 hackathon's slug cannot change once a snapshot was sent to it.
 
 Both timestamps are UTC with milliseconds (section 4), the same bytes on
-every retry. `occurred_at` is when qdit wrote the event: a few milliseconds
-after `released_at`, or, for a hackathon released before v1.5.0, when qdit
-shipped it. qdit refuses every new snapshot for a hackathon once its grades
+every retry. `occurred_at` is when qdit wrote the event: just after
+`released_at`, or, for a hackathon released before v1.5.0, when qdit shipped
+it. qdit refuses every new snapshot for a hackathon once its grades
 are released (section 8, the window), so no link is sent for it after the
 event.
 
@@ -1670,8 +1671,9 @@ doqtri only ever sent its own URLs.
     order. doqtri expires that hackathon's mindmap links 24 hours after
     `released_at`, never later on a replay. A doqtri older than DOQ-54
     ignores the event (section 3), and a qdit older than v1.5.0 never calls
-    the status endpoint, so either side may ship first; links expire only
-    once both have.
+    the status endpoint, so either side may ship first without breaking the
+    other. doqtri ships first all the same: an event it ignored is not sent
+    again, so that hackathon's links would not expire.
 
 - v1.4.0 (2026-11-12): minor version for one new optional request field
   (WP-4.7, QDIT-66, DOQ-53). Every existing request and response stays as it

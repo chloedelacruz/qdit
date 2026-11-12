@@ -227,6 +227,71 @@ eligibility, the grader and the image columns are unchanged. Entries submitted b
 by a team whose doqtri predates DOQ-53, have no link: the button is simply absent and the
 cell empty.
 
+### 1.10 Mindmap link status and `hackathon.released`: doqtri DOQ-54, then qdit's code, then the migration (QDIT-67)
+
+QDIT-67 (contract v1.5.0) does two things:
+
+- qdit asks doqtri's public `POST <doqtri origin>/api/mindmap-links/status` whether each
+  mindmap link still works before it prefills, shows or exports it, and hides one that was
+  revoked or has expired;
+- `supabase/migrations/20261112150000_hackathon_released_event.sql` makes Release grades
+  queue one signed `hackathon.released` webhook to doqtri, through the same outbox
+  (`integration_events`), cron route and retries as `milestone.status_changed`. doqtri then
+  expires that hackathon's links 24 hours after `released_at`.
+
+The order, and why:
+
+1. **Deploy doqtri DOQ-54.** It adds the status endpoint, handles `hackathon.released` and
+   leaves hidden nodes out of new snapshots. A doqtri without it answers 2xx to an event it
+   does not know and drops it, so a `hackathon.released` that reaches it is spent and never
+   sent again: that hackathon's links would not expire.
+2. **Merge QDIT-67.** The code is safe on the old database: it still claims and sends
+   `milestone.status_changed` as before, and the status checks need only `DOQTRI_ORIGIN`.
+3. **Apply the migration.** Not before step 2: the delivery code before QDIT-67 does not
+   know the new event and would post a release row as a malformed milestone body. Applying
+   it also queues one event for every hackathon already released, with its original
+   `released_at`: their links expire 24 hours after that, at once if that is past.
+
+Apply it with the Supabase CLI, as in 1.2, then check:
+
+```sql
+select count(*) from public.integration_webhooks where link_source = 'doqtri';
+-- 1: doqtri's endpoint. 0 means release events have nowhere to go (WP-2.7 setup).
+
+select h.slug, e.released_at, e.occurred_at, e.attempts, e.delivered_at, e.dead_at, e.last_error
+  from public.integration_events e join public.hackathons h on h.id = e.hackathon_id
+ where e.event = 'hackathon.released'
+ order by e.occurred_at;
+-- one row per hackathon already released; delivered within a minute or two
+-- (pg_cron calls the delivery route every minute, 4.6)
+```
+
+After a release, the same query shows the new hackathon's row; `delivered_at` set means
+doqtri answered 2xx. A row that goes dead (`dead_at` set, 8 failed attempts over about
+22 hours) is not sent again by itself. Once doqtri is reachable, re-queue it. doqtri dedupes
+by `id`, so re-queueing an event it already processed changes nothing:
+
+```sql
+update public.integration_events
+   set attempts = 0, dead_at = null, last_error = null, next_attempt_at = now()
+ where event = 'hackathon.released'
+   and hackathon_id = (select id from public.hackathons where slug = '<slug>');
+```
+
+The event is queued even while doqtri's `integration_webhooks` row is `active = false`, and
+goes out once it is active again.
+
+What teams and staff see: a revoked or expired link is no longer prefilled in the submit
+dialog (the dialog falls back to the current version's link if that one still works, else
+leaves the field empty); a pasted dead link is refused with "This link was revoked or has
+expired."; the team card and the staff submission page show "Mindmap link revoked or
+expired" instead of **Open mindmap**; Export submissions has a `Mindmap link status` column.
+If doqtri is down or slow, a page waits at most 2 seconds and shows links as before (status
+Unknown). A status answer is reused for up to 60 seconds, so a revoke shows within a
+minute. Snapshots sent after DOQ-54 leave out nodes the sender hid in their doqtri style, so
+the staff label list and counts, and the AI review, no longer see them; snapshots sent
+before keep them. Scores, eligibility, the grader and the image requirement are unchanged.
+
 ---
 
 ## 2. Merge order
@@ -250,6 +315,9 @@ Each PR targets `main`; wait for each deploy before the next.
     the code.
 11. QDIT-66 Mindmap link (contract v1.4.0). Apply its migration (1.9) first, then merge the
     code, and only then merge doqtri DOQ-53.
+12. QDIT-67 mindmap link status and `hackathon.released` (contract v1.5.0). After doqtri
+    DOQ-54 is deployed: merge the code, then apply its migration (1.10). This one is the
+    other way round from the rest.
 
 **doqtri**
 
@@ -263,6 +331,8 @@ Each PR targets `main`; wait for each deploy before the next.
 5. DOQ-53 public mindmap page and `mindmap_url` in the snapshot (contract v1.4.0). Merge it
    only after qdit QDIT-66 is deployed (1.9): an older qdit refuses any snapshot with the
    field.
+6. DOQ-54 link expiry, status endpoint, hidden nodes (contract v1.5.0). Deploy it before
+   qdit QDIT-67 (1.10), so the first `hackathon.released` events find it.
 
 qdit must be at #23 or later before doqtri #115 is used: before that, qdit answers 404 on
 the snapshot route.
@@ -354,6 +424,9 @@ without their missing runs. Use it only for a job that cannot finish (4.5). Rele
 the top `finalist_count` (10) eligible entries by AI score, tie to the earlier submission,
 and stops all grading for the hackathon.
 
+Release also queues one `hackathon.released` webhook to doqtri (QDIT-67, 1.10): the teams'
+public mindmap links stop working 24 hours later.
+
 ### 4.3 Export the CSV
 
 After release: **Export results** on the admin page, or
@@ -363,10 +436,12 @@ in the order the leaderboard shows. Cells that a spreadsheet would read as formu
 prefixed with `'`. Anyone else, judges included, gets a 404. Before release it is a 409.
 
 **Export submissions** (QDIT-63, D-123), any time: `https://<qdit host>/api/hackathons/<slug>/export/submissions`
-as a hackathon admin. Columns: `Team name, Slides link, Global mindmap, Mindmap link, Note map 1,
-Note map 2`, one row per entry by team name, formula-guarded the same way. `Mindmap link`
-(QDIT-66) is the doqtri page the team submitted, read from the version, so it is there after
-the snapshot is pruned; empty when the team sent none. The image cells are Supabase
+as a hackathon admin. Columns: `Team name, Slides link, Global mindmap, Mindmap link,
+Mindmap link status, Note map 1, Note map 2`, one row per entry by team name,
+formula-guarded the same way. `Mindmap link` (QDIT-66) is the doqtri page the team
+submitted, read from the version, so it is there after the snapshot is pruned; empty when
+the team sent none. `Mindmap link status` (QDIT-67) is `Live`, `Revoked or expired`, or
+`Unknown` when doqtri did not answer within 2 seconds; empty without a link. The image cells are Supabase
 signed URLs valid for 7 days: anyone holding the file can open the images until then, so
 share it only with the organisers, and export again for fresh links. Nothing score-derived
 is in it. Anyone else gets a 404.
@@ -515,7 +590,9 @@ section 7.
   (a SQL delete on `storage.objects` is refused), then drop the hackathon tables and
   functions and the bucket. Write it as a new migration; do not hand-edit production.
 - **Release cannot be undone** (D-116). A release made by mistake stays released. The
-  leaderboard is still admin-only, and teams never see grades.
+  leaderboard is still admin-only, and teams never see grades. Its `hackathon.released`
+  event (1.10) reaches doqtri within a minute and the links expire 24 hours later; qdit has
+  no event that undoes it, so keeping the links is a doqtri-side fix.
 - **doqtri's `documents.created_at`**: harmless to keep. Reverting doqtri #114 does not need
   the column dropped.
 
