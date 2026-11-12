@@ -8,6 +8,7 @@ import {
   signatureHeader,
   webhookSignature,
   webhookTimestamp,
+  HACKATHON_RELEASED_EVENT,
   WEBHOOK_EVENT,
 } from "./signing";
 
@@ -56,6 +57,50 @@ describe("the contract's worked example", () => {
       .update(`${CONTRACT_TIMESTAMP}.${CONTRACT_BODY}`)
       .digest("hex");
     expect(webhookSignature(CONTRACT_SECRET, CONTRACT_TIMESTAMP, CONTRACT_BODY)).toBe(expected);
+  });
+});
+
+/** The same section's `hackathon.released` example (contract v1.5.0, QDIT-67). */
+const RELEASED_TIMESTAMP = "1795339805";
+const RELEASED_BODY =
+  '{"id":"5c1e9a7b-2d4f-4e8a-b6c3-9f0d1a2b3c4e","event":"hackathon.released","hackathon_slug":"stellar-build-2026","released_at":"2026-11-22T09:30:00.000Z","occurred_at":"2026-11-22T09:30:00.000Z"}';
+const RELEASED_SIGNATURE = "e9a1a9f192815ca44ae84f20bc7a66576142473510eb372846b6aa64222bfbfb";
+const RELEASED_ROW = {
+  id: "5c1e9a7b-2d4f-4e8a-b6c3-9f0d1a2b3c4e",
+  event: HACKATHON_RELEASED_EVENT,
+  project_id: null,
+  milestone_id: null,
+  status: null,
+  hackathon_slug: "stellar-build-2026",
+  released_at: "2026-11-22T17:30:00+08:00",
+  occurred_at: "2026-11-22T09:30:00+00:00",
+};
+
+describe("the contract's hackathon.released example", () => {
+  it("builds the 194-byte body byte for byte, in the contract's key order", () => {
+    const body = eventBody(RELEASED_ROW);
+    expect(body).toBe(RELEASED_BODY);
+    expect(Buffer.byteLength(body, "utf8")).toBe(194);
+    expect(Object.keys(JSON.parse(body))).toEqual(["id", "event", "hackathon_slug", "released_at", "occurred_at"]);
+  });
+
+  it("uses 1795339805 for 2026-11-22T09:30:05Z and signs it to the contract's signature", () => {
+    expect(webhookTimestamp(new Date("2026-11-22T09:30:05Z"))).toBe(RELEASED_TIMESTAMP);
+    expect(webhookSignature(CONTRACT_SECRET, RELEASED_TIMESTAMP, RELEASED_BODY)).toBe(RELEASED_SIGNATURE);
+    expect(signatureHeader([CONTRACT_SECRET], RELEASED_TIMESTAMP, eventBody(RELEASED_ROW))).toBe(
+      `sha256=${RELEASED_SIGNATURE}`,
+    );
+  });
+
+  it("refuses a release row without its slug or time, and an unknown type", () => {
+    expect(() => eventBody({ ...RELEASED_ROW, hackathon_slug: null })).toThrow(/without its hackathon/);
+    expect(() => eventBody({ ...RELEASED_ROW, released_at: null })).toThrow(/without its hackathon/);
+    expect(() => eventBody({ ...RELEASED_ROW, released_at: "soon" })).toThrow(/released_at/);
+    expect(() => eventBody({ ...RELEASED_ROW, event: "hackathon.closed" })).toThrow(/unknown type/);
+  });
+
+  it("refuses a milestone row without its milestone", () => {
+    expect(() => eventBody({ ...ROW, milestone_id: null })).toThrow(/without its milestone/);
   });
 });
 

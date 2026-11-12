@@ -10,8 +10,9 @@ import { eventBody, signatureHeader, webhookTimestamp } from "./signing";
  * Sends claimed outbox events (docs/integration/CONTRACT.md section 9).
  *
  * The database decides what may be sent: `claim_integration_events` returns
- * only the head of each (webhook, milestone) queue (D-25), counts the
- * attempt and leases the row. This module posts each claimed event once,
+ * only the head of each (webhook, milestone) queue (D-25), and any due
+ * `hackathon.released` event, each its own queue (v1.5.0, QDIT-67); it
+ * counts the attempt and leases the row. This module posts each claimed event once,
  * signed, and reports the outcome with the time of the next attempt from
  * `./backoff.ts`, or null when it was the last. It then claims again, so an
  * event released by its predecessor's delivery goes out in the same run.
@@ -106,7 +107,15 @@ export async function attemptDelivery(
     return { delivered: false, error: "signing secret could not be decrypted" };
   }
 
-  const body = eventBody(event);
+  let body: string;
+  try {
+    body = eventBody(event);
+  } catch (error) {
+    // The database's shape check rules this out; if it ever happens, the
+    // attempt fails and the event goes dead in time, rather than the run.
+    console.error(error instanceof Error ? error.message : `webhooks: event ${event.id} has no valid body`);
+    return { delivered: false, error: "event row does not fit its type" };
+  }
   const timestamp = webhookTimestamp((deps.now ?? (() => new Date()))());
 
   try {
@@ -152,7 +161,8 @@ export async function deliverDueEvents(deps: DeliveryDeps): Promise<DeliverySumm
     summary.claimed += events.length;
 
     // In parallel: the claim gives at most one event per milestone, so this
-    // never sends two events of one milestone at once.
+    // never sends two events of one milestone at once. Release events wait
+    // on nothing (one per hackathon).
     const outcomes = await Promise.all(
       events.map(async (event) => {
         const result = await attemptDelivery(event, { ...deps, now });

@@ -4,7 +4,7 @@ import type { ClaimedEvent, DeliveryOutcome, DeliveryReport, Outbox } from "@/li
  * An in-memory stand-in for the two delivery functions of
  * supabase/migrations/20261024130000_integration_webhooks.sql, with the same
  * rules: only the head of each (webhook, milestone) queue is claimable
- * (D-25), a claim counts the attempt and leases the row, a report lands only
+ * (D-25), a `hackathon.released` event is its own queue (QDIT-67), a claim counts the attempt and leases the row, a report lands only
  * with the claim's token, and the 8th failure is dead. The SQL itself is
  * covered by supabase/tests/integration_webhooks.test.sql; this lets the
  * delivery loop be tested against the same behaviour without a database.
@@ -13,9 +13,12 @@ import type { ClaimedEvent, DeliveryOutcome, DeliveryReport, Outbox } from "@/li
 export type FakeEvent = {
   id: string;
   webhook_id: string;
-  milestone_id: string;
-  project_id: string;
+  event: ClaimedEvent["event"];
+  milestone_id: string | null;
+  project_id: string | null;
   status: ClaimedEvent["status"];
+  hackathon_slug: string | null;
+  released_at: string | null;
   occurred_at: string;
   seq: number;
   attempts: number;
@@ -50,9 +53,29 @@ export function fakeOutbox(now: () => Date, webhooks: FakeWebhook[]) {
     event: Pick<FakeEvent, "id" | "milestone_id" | "status"> &
       Partial<Pick<FakeEvent, "webhook_id" | "project_id" | "occurred_at">>,
   ): FakeEvent {
+    return insert({
+      event: "milestone.status_changed",
+      project_id: "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34",
+      hackathon_slug: null,
+      released_at: null,
+      ...event,
+    });
+  }
+
+  /** A `hackathon.released` row, as the hackathons trigger writes it. */
+  function addRelease(
+    event: Pick<FakeEvent, "id" | "hackathon_slug" | "released_at"> &
+      Partial<Pick<FakeEvent, "webhook_id" | "occurred_at">>,
+  ): FakeEvent {
+    return insert({ event: "hackathon.released", milestone_id: null, project_id: null, status: null, ...event });
+  }
+
+  function insert(
+    event: Omit<FakeEvent, "webhook_id" | "occurred_at" | "seq" | "attempts" | "next_attempt_at" | "claim_token" | "delivered_at" | "dead_at" | "last_error"> &
+      Partial<Pick<FakeEvent, "webhook_id" | "occurred_at">>,
+  ): FakeEvent {
     const row: FakeEvent = {
       webhook_id: webhooks[0].id,
-      project_id: "3f6c2a1e-8b4d-4c7e-9a10-2d5b7e9f1c34",
       occurred_at: now().toISOString(),
       ...event,
       seq: ++seq,
@@ -79,7 +102,8 @@ export function fakeOutbox(now: () => Date, webhooks: FakeWebhook[]) {
 
       const heads = new Map<string, FakeEvent>();
       for (const e of events.filter(pending)) {
-        const key = `${e.webhook_id}/${e.milestone_id}`;
+        // A release event is its own queue, as coalesce(milestone_id, id) in the SQL.
+        const key = `${e.webhook_id}/${e.milestone_id ?? e.id}`;
         const head = heads.get(key);
         const earlier =
           !head ||
@@ -110,8 +134,10 @@ export function fakeOutbox(now: () => Date, webhooks: FakeWebhook[]) {
             webhook_id: e.webhook_id,
             milestone_id: e.milestone_id,
             project_id: e.project_id,
-            event: "milestone.status_changed" as const,
+            event: e.event,
             status: e.status,
+            hackathon_slug: e.hackathon_slug,
+            released_at: e.released_at,
             occurred_at: e.occurred_at,
             attempts: e.attempts,
             claim_token: token,
@@ -146,5 +172,5 @@ export function fakeOutbox(now: () => Date, webhooks: FakeWebhook[]) {
     },
   };
 
-  return { outbox, events, reports, add };
+  return { outbox, events, reports, add, addRelease };
 }
