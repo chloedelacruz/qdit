@@ -27,7 +27,7 @@ import type {
 export const MIN_SPECIFIED_CARDS = 5;
 /** Notes created inside the event window, from the editor. */
 export const MIN_EVENT_NOTES = 5;
-/** The largest connected group of event notes in the global mindmap. */
+/** The largest group of event notes connected by the global mindmap or `[[links]]`. */
 export const MIN_CONNECTED_NOTES = 5;
 
 /** QDIT-54: event notes anchored on DoqtriRegistry. */
@@ -155,17 +155,56 @@ class UnionFind {
 }
 
 /**
- * The largest group of `docIds` that the global mindmap connects.
+ * doqtri's `[[Title]]` and `[[Title|alias]]`, capturing Title only: the same
+ * pattern as doqtri's `lib/wikilinks.ts`, so qdit sees the links its Graph
+ * view draws.
+ */
+const WIKILINK = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+
+/** doqtri matches a link to a note's title ignoring case and surrounding space. */
+function linkKey(title: string): string {
+  return title.trim().toLowerCase();
+}
+
+/**
+ * Every `[[link]]` in `notes` that names another note in `notes`, as
+ * `[from, to]` doc id pairs. Links to a title no note has (doqtri's ghost
+ * nodes) are dropped, so two notes never join through a note that does not
+ * exist. When two notes share a title the later one wins, as in doqtri.
+ */
+export function noteLinks(
+  notes: readonly Pick<DoqtriSnapshotNote, "doc_id" | "title" | "markdown">[],
+): [string, string][] {
+  const idByTitle = new Map<string, string>();
+  for (const n of notes) idByTitle.set(linkKey(n.title), n.doc_id);
+
+  const pairs: [string, string][] = [];
+  for (const n of notes) {
+    if (typeof n.markdown !== "string") continue;
+    for (const match of n.markdown.matchAll(WIKILINK)) {
+      const to = idByTitle.get(linkKey(match[1]));
+      if (to !== undefined && to !== n.doc_id) pairs.push([n.doc_id, to]);
+    }
+  }
+  return pairs;
+}
+
+/**
+ * The largest group of `docIds` that the global mindmap or the notes' own
+ * `[[links]]` connect.
  *
  * Union-find over notes and map nodes together: a note joins every node whose
  * `doc_ids` name it, and a link joins its two nodes. Two notes are therefore
  * connected when they share a node, when a link joins nodes that hold them, or
- * transitively through any path in the map. Only `docIds` are counted (once
- * each); other notes and nodes may sit on the path. Returned in `docIds` order.
+ * transitively through any path in the map. A `[[link]]` from one note in
+ * `notes` to another joins the two notes directly (doqtri's Graph view), and
+ * mixes freely with map paths. Only `docIds` are counted (once each); other
+ * notes and nodes may sit on the path. Returned in `docIds` order.
  */
 export function largestConnectedNotes(
   graph: DoqtriGlobalMindmap,
   docIds: readonly string[],
+  notes: readonly Pick<DoqtriSnapshotNote, "doc_id" | "title" | "markdown">[] = [],
 ): string[] {
   const wanted = [...new Set(docIds)];
   if (wanted.length === 0) return [];
@@ -179,6 +218,7 @@ export function largestConnectedNotes(
     for (const d of n.doc_ids) uf.union(doc(d), node(n.id));
   }
   for (const l of graph.links) uf.union(node(l.source), node(l.target));
+  for (const [from, to] of noteLinks(notes)) uf.union(doc(from), doc(to));
 
   const groups = new Map<string, string[]>();
   for (const id of wanted) {
@@ -290,14 +330,15 @@ export function checkEligibility(input: EligibilityInput): EligibilityResult {
     const connected = largestConnectedNotes(
       doqtri.global_mindmap,
       notes.map((n) => n.doc_id),
+      uniqueNotes(doqtri.notes),
     ).length;
     const connectedPassed = connected >= MIN_CONNECTED_NOTES;
     rules.push({
       id: "notes_connected",
       passed: connectedPassed,
       reason: connectedPassed
-        ? `${plural(connected, "event note")} connected in the global mindmap (needs ${MIN_CONNECTED_NOTES})`
-        : `${connected} of ${MIN_CONNECTED_NOTES} event notes connected in the global mindmap`,
+        ? `${plural(connected, "event note")} connected by the global mindmap or [[links]] (needs ${MIN_CONNECTED_NOTES})`
+        : `${connected} of ${MIN_CONNECTED_NOTES} event notes connected by the global mindmap or [[links]]`,
     });
   }
 
