@@ -257,6 +257,7 @@ describe("loadSubmissionView", () => {
               qdit_snapshot: { project: { name: "P", slug: "p" }, tasks: [], members: [] },
               doqtri_snapshot_id: null,
               image_paths: ["h/p/a.png"],
+              mindmap_url: "https://www.doqtri.xyz/m/Ab3_-xYz0123456789AbCd",
               submitted_at: "2026-11-10T02:20:00Z",
             },
             error: null,
@@ -280,6 +281,12 @@ describe("loadSubmissionView", () => {
     expect(view?.images).toEqual([{ path: "h/p/a.png", label: "Global mindmap", url: "https://x/h/p/a.png" }]);
     expect(signed).toEqual([{ bucket: "hackathon-mindmaps", paths: ["h/p/a.png"], seconds: 300 }]);
     expect(SIGNED_URL_SECONDS).toBe(300);
+    // The version's own link (QDIT-66): no doqtri snapshot is attached, as after pruning.
+    expect(view?.mindmap_url).toBe("https://www.doqtri.xyz/m/Ab3_-xYz0123456789AbCd");
+    expect(fake.requests.find((r) => r.name === "hackathon_submission_versions")?.calls).toContainEqual([
+      "select",
+      "id, version_no, team_name, member_ids, qdit_snapshot, doqtri_snapshot_id, image_paths, slides_url, mindmap_url, submitted_at",
+    ]);
     for (const req of fake.requests) {
       const select = req.calls.find((c) => c[0] === "select");
       expect(select?.[1]).not.toMatch(/\*|eligibility|override/);
