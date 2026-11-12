@@ -237,13 +237,20 @@ describe("checkEligibility", () => {
       rule: "board_current",
       input: { snapshot: snapshot({ tasks: tasks(5, { updated_at: BEFORE }) }) },
       passed: false,
+      reason: "0 cards updated since the event opened",
     },
     {
-      name: "every card still in todo",
+      name: "every card still in todo passes (QDIT-68)",
       rule: "board_current",
       input: { snapshot: snapshot({ tasks: tasks(5, { status: "todo" }) }) },
+      passed: true,
+      reason: "5 cards updated since the event opened",
+    },
+    {
+      name: "cards in todo, none updated since the event opened, still fail",
+      rule: "board_current",
+      input: { snapshot: snapshot({ tasks: tasks(5, { status: "todo", updated_at: BEFORE }) }) },
       passed: false,
-      reason: "5 cards updated since the event opened, 0 out of todo",
     },
     {
       name: "an updated_at without an offset fails closed",
@@ -252,7 +259,7 @@ describe("checkEligibility", () => {
         snapshot: snapshot({ tasks: tasks(5, { updated_at: "2026-11-20T12:00:00" }) }),
       },
       passed: false,
-      reason: "0 cards updated since the event opened, 5 out of todo",
+      reason: "0 cards updated since the event opened",
     },
     {
       name: "a card updated exactly at opens_at counts",
