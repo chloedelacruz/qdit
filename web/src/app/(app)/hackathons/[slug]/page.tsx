@@ -20,6 +20,7 @@ import {
   type HackathonWindow,
 } from "@/lib/hackathon/window";
 import { ICON } from "@/lib/icons";
+import { getUser } from "@/lib/supabase/server";
 
 /**
  * The participant's hackathon page (WP-4.7, QDIT-47, D-115, D-116).
@@ -68,8 +69,9 @@ export default async function HackathonPage({
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   // "Submit a project" on the Hackathons index lands here with the dialog open.
   const autoOpen = query.submit === "1";
-  const page = await loadPage(slug);
-  if (!page) notFound();
+  const [page, user] = await Promise.all([loadPage(slug), getUser()]);
+  if (!page || !user) notFound();
+  const userId = user.id;
 
   const { hackathon, nowMs, projects } = page;
   const event: HackathonWindow = {
@@ -100,6 +102,7 @@ export default async function HackathonPage({
             teamName: p.entry.teamName,
             memberIds: p.entry.members.map((m) => m.id),
             images: p.entry.images,
+            submittedAt: p.entry.lastSubmittedAt,
           }
         : null,
     }));
@@ -129,6 +132,7 @@ export default async function HackathonPage({
         actions={
           adminProjects.length > 0 ? (
             <SubmitForm
+              userId={userId}
               hackathonId={hackathon.id}
               teamMin={hackathon.teamMin}
               teamMax={hackathon.teamMax}

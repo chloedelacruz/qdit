@@ -10,11 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { ActionState } from "@/lib/actions";
+import {
+  clearDraft,
+  draftStorage,
+  readDraft,
+  saveDraft,
+  usableDraft,
+  type DraftBase,
+} from "@/lib/hackathon/draft";
 import { checkHackathonEntry, submitHackathonEntry } from "@/lib/hackathon/actions";
 import { checkThenSubmit, SUBMIT_ANYWAY } from "@/lib/hackathon/check-then-submit";
 import { markEdited, noEdits, visibleFieldErrors } from "@/lib/hackathon/form-errors";
 import { acceptsUpload, formerMembersNote, rosterMembers } from "@/lib/hackathon/team";
-import { IMAGE_SLOTS, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
+import { IMAGE_SLOTS, MINDMAP_BUCKET, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
+import { createClient } from "@/lib/supabase/client";
 import { ICON } from "@/lib/icons";
 
 /** One project the caller may submit, as the page hands it over. */
@@ -29,8 +38,13 @@ export type SubmitProject = {
     teamName: string;
     memberIds: string[];
     images: { path: string; url: string | null }[];
+    /** When the current version was submitted; an older draft is dropped. */
+    submittedAt: string | null;
   } | null;
 };
+
+/** Long enough for a dialog left open while the team works; the server uses the same. */
+const SIGNED_PREVIEW_SECONDS = 600;
 
 const NO_DOQTRI =
   "No doqtri snapshot yet. In doqtri, open the global mindmap and use Send to qdit hackathon.";
@@ -43,6 +57,7 @@ const NO_DOQTRI =
  * (spec §Explainers and disabled controls).
  */
 export function SubmitForm({
+  userId,
   hackathonId,
   teamMin,
   teamMax,
@@ -51,6 +66,8 @@ export function SubmitForm({
   disabledReason,
   autoOpen = false,
 }: {
+  /** The signed-in user: drafts are kept per person (QDIT-62). */
+  userId: string;
   hackathonId: string;
   teamMin: number;
   teamMax: number;
@@ -75,9 +92,18 @@ export function SubmitForm({
       if (busySlots.current.size > 0) {
         return { error: "Wait for the images to finish uploading, then submit." };
       }
-      return checkThenSubmit(prev, formData, { check: checkHackathonEntry, submit: submitHackathonEntry });
+      const result = await checkThenSubmit(prev, formData, {
+        check: checkHackathonEntry,
+        submit: submitHackathonEntry,
+      });
+      // Submitted: the draft has done its job (QDIT-62).
+      const projectId = formData.get("projectId");
+      if (result.ok && typeof projectId === "string") {
+        clearDraft(draftStorage(), { userId, hackathonId, projectId });
+      }
+      return result;
     },
-    [],
+    [userId, hackathonId],
   );
 
   const trigger = (
@@ -125,7 +151,7 @@ export function SubmitForm({
       onOpenChange={onOpenChange}
       trigger={trigger}
       title={label}
-      description="Your qdit project, your latest doqtri snapshot and these images are saved together as one submission."
+      description="Your qdit project, your latest doqtri snapshot and these images are saved together as one submission. Changes you haven't submitted stay in this browser as a draft."
       submitLabel={(state) => (state.entryCheck ? "Check again" : "Submit")}
       successMessage="Submission received."
       action={action}
@@ -150,6 +176,7 @@ export function SubmitForm({
       {(state) => (
         <SubmitFields
           state={state}
+          userId={userId}
           hackathonId={hackathonId}
           teamMin={teamMin}
           teamMax={teamMax}
@@ -173,12 +200,60 @@ function initialSlots(project: SubmitProject | undefined): (SlotValue | null)[] 
   );
 }
 
+/** The submitted entry, as a draft is compared against it. */
+function draftBase(project: SubmitProject | undefined): DraftBase {
+  const entry = project?.entry;
+  if (!entry) return null;
+  return {
+    teamName: entry.teamName,
+    memberIds: entry.memberIds,
+    imagePaths: entry.images.map((image) => image.path),
+    submittedAt: entry.submittedAt,
+  };
+}
+
+/**
+ * What the fields start from for a project: its unsent draft when this
+ * browser holds one (QDIT-62), else its submitted entry, else empty.
+ * `toSign` lists the draft's image paths that still need a preview URL.
+ */
+function startFor(project: SubmitProject | undefined, userId: string, hackathonId: string) {
+  const fromEntry = {
+    teamName: project?.entry?.teamName ?? null,
+    team: startingTeam(project),
+    slots: initialSlots(project),
+    restored: false,
+    toSign: [] as string[],
+  };
+  if (!project) return fromEntry;
+
+  const draft = usableDraft(
+    readDraft(draftStorage(), { userId, hackathonId, projectId: project.id }),
+    draftBase(project),
+  );
+  if (!draft) return fromEntry;
+
+  // An image the entry already shows keeps its signed URL.
+  const signed = new Map((project.entry?.images ?? []).map((image) => [image.path, image.url]));
+  const slots = draft.imagePaths.map((path) =>
+    path ? { path, previewUrl: signed.get(path) ?? null } : null,
+  );
+  return {
+    teamName: draft.teamName,
+    team: rosterMembers(draft.memberIds, project.members),
+    slots,
+    restored: true,
+    toSign: draft.imagePaths.filter((path): path is string => path !== null && !signed.has(path)),
+  };
+}
+
 /**
  * The dialog's body. Mounted each time the dialog opens, so it starts from the
  * chosen project's current entry every time.
  */
 function SubmitFields({
   state,
+  userId,
   hackathonId,
   teamMin,
   teamMax,
@@ -186,6 +261,7 @@ function SubmitFields({
   onBusyChange,
 }: {
   state: ActionState;
+  userId: string;
   hackathonId: string;
   teamMin: number;
   teamMax: number;
@@ -197,10 +273,60 @@ function SubmitFields({
   );
   const project = projects.find((p) => p.id === projectId);
 
-  const [teamName, setTeamName] = useState(project?.entry?.teamName ?? "");
-  const [memberIds, setMemberIds] = useState<string[]>(() => startingTeam(project).kept);
-  const [removedMembers, setRemovedMembers] = useState(() => startingTeam(project).removed);
-  const [slots, setSlots] = useState(() => initialSlots(project));
+  // Read once per opening; every setter below starts from it.
+  const [start] = useState(() => startFor(project, userId, hackathonId));
+  const [teamName, setTeamName] = useState(start.teamName ?? "");
+  const [memberIds, setMemberIds] = useState<string[]>(start.team.kept);
+  const [removedMembers, setRemovedMembers] = useState(start.team.removed);
+  const [slots, setSlots] = useState(start.slots);
+  // Which project's fields came back from a draft, for the "Draft restored" line.
+  const [restoredFor, setRestoredFor] = useState<string | null>(start.restored ? projectId : null);
+  const [toSign, setToSign] = useState(start.toSign);
+
+  // Keep what the fields say as the project's draft, or drop the draft once
+  // they match the submitted entry again (QDIT-62). Paths only: a preview URL
+  // expires, and a blob: one dies with the page.
+  useEffect(() => {
+    if (!projectId) return;
+    saveDraft(
+      draftStorage(),
+      { userId, hackathonId, projectId },
+      { teamName, memberIds, imagePaths: slots.map((slot) => slot?.path ?? null) },
+      draftBase(project),
+    );
+  }, [userId, hackathonId, projectId, project, teamName, memberIds, slots]);
+
+  // A restored image needs a fresh preview URL. A path Storage refuses to sign
+  // (the object is gone, or it is not this project's) is dropped from its slot;
+  // a request that fails outright leaves the slot as "Attached".
+  useEffect(() => {
+    if (toSign.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await createClient()
+          .storage.from(MINDMAP_BUCKET)
+          .createSignedUrls(toSign, SIGNED_PREVIEW_SECONDS);
+        if (cancelled || error || !data) return;
+        const urls = new Map<string, string | null>();
+        for (const item of data) {
+          if (item.path) urls.set(item.path, item.error || !item.signedUrl ? null : item.signedUrl);
+        }
+        setSlots((current) =>
+          current.map((slot) => {
+            if (!slot || !urls.has(slot.path)) return slot;
+            const url = urls.get(slot.path);
+            return url ? { ...slot, previewUrl: url } : null;
+          }),
+        );
+      } catch {
+        // Offline or similar: the slot stays attached without a preview.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [toSign]);
 
   // Read when an upload finishes, which can be after the project changed or
   // the dialog closed (this component unmounts on close).
@@ -223,11 +349,26 @@ function SubmitFields({
     live.current.projectId = id;
     touched("projectId", "teamName", "memberIds", "images");
     // Images are stored under the project, so they never carry over.
-    setTeamName(next?.entry?.teamName ?? teamName);
-    const team = startingTeam(next);
+    const from = startFor(next, userId, hackathonId);
+    setTeamName(from.teamName ?? teamName);
+    setMemberIds(from.team.kept);
+    setRemovedMembers(from.team.removed);
+    setSlots(from.slots);
+    setRestoredFor(from.restored ? id : null);
+    setToSign(from.toSign);
+  }
+
+  /** Back to the submitted entry (or empty); the save effect then drops the draft. */
+  function discardDraft() {
+    touched("teamName", "memberIds", "images");
+    clearDraft(draftStorage(), { userId, hackathonId, projectId });
+    setTeamName(project?.entry?.teamName ?? "");
+    const team = startingTeam(project);
     setMemberIds(team.kept);
     setRemovedMembers(team.removed);
-    setSlots(initialSlots(next));
+    setSlots(initialSlots(project));
+    setRestoredFor(null);
+    setToSign([]);
   }
 
   function toggleMember(id: string, checked: boolean) {
@@ -263,6 +404,23 @@ function SubmitFields({
     >
       <div className="space-y-3.5">
         <input type="hidden" name="hackathonId" value={hackathonId} />
+
+        {restoredFor === projectId ? (
+          <div className="well flex items-center justify-between gap-2 rounded-lg border border-border py-1 pr-1 pl-2.5">
+            <p className="text-xs text-muted-foreground">
+              Draft restored from this browser. It is not submitted yet.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="shrink-0 pointer-coarse:h-9"
+              onClick={discardDraft}
+            >
+              Discard draft
+            </Button>
+          </div>
+        ) : null}
 
         <Field id="hackathon-project" label="Team project" error={errors.projectId}>
           {projects.length === 1 ? (
