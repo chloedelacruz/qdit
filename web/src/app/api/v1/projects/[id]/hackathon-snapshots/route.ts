@@ -10,6 +10,7 @@ import {
   validateHackathonSnapshot,
 } from "@/lib/api/hackathon-snapshot-body";
 import { NO_PROJECT, pushError } from "@/lib/api/hackathon-snapshot-errors";
+import { doqtriOrigin } from "@/lib/doqtri-origin";
 import { recordChainCheck } from "@/lib/hackathon/chain-check";
 import type { Json } from "@/lib/types/database";
 
@@ -36,7 +37,9 @@ export const maxDuration = 60;
  *   2. the project: not a member (or a malformed id) is 404;
  *   3. the role: below admin is 403 (`requireRole`, as RLS sees it);
  *   4. the body: content type and size (2 MiB, `body`), then shape and
- *      limits (`@/lib/api/hackathon-snapshot-body`), 400;
+ *      limits (`@/lib/api/hackathon-snapshot-body`), 400; the optional
+ *      `mindmap_url` against `DOQTRI_ORIGIN` (v1.4.0, QDIT-66), which the
+ *      database stores from the payload in its own column;
  *   5-8. replay or `snapshot_conflict`, the hackathon (404), the cap and
  *      the window: all inside `push_doqtri_hackathon_snapshot()`, which also
  *      repeats 1 to 3 itself, since a hand-written PostgREST call skips
@@ -72,7 +75,7 @@ export const POST = apiRoute<{ id: string }>(async ({ request, auth, params }) =
   await requireRole(auth, projectId, "admin", NO_PROJECT);
 
   const { body, bytes } = await readJsonBody(request, MAX_SNAPSHOT_BODY_BYTES);
-  const checked = validateHackathonSnapshot(body);
+  const checked = validateHackathonSnapshot(body, { doqtriOrigin: () => doqtriOrigin() });
   if (!checked.ok) {
     throw invalidRequest("Some fields are missing or invalid. See details.fields.", checked.fields);
   }

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { doqtriOrigin, isDoqtriMindmapUrl } from "@/lib/doqtri-origin";
+
 import { isObject, type JsonObject } from "./body";
 
 /**
@@ -16,6 +18,10 @@ import { isObject, type JsonObject } from "./body";
  *   - every field is present (nullable ones as `null`), and any other field
  *     is refused, at every level except inside a note's `mindmap`, which is
  *     stored as sent and whose inner shape qdit does not check;
+ *   - except `mindmap_url` (v1.4.0, QDIT-66), the one field that may be left
+ *     out, because doqtri builds before DOQ-53 do not send it. Left out or
+ *     `null` is no link; a string must be exactly `DOQTRI_ORIGIN` + `/m/` +
+ *     a 22 to 64 character token (`isDoqtriMindmapUrl`);
  *   - `mindmap` is measured as the UTF-8 length of `JSON.stringify(mindmap)`
  *     (no whitespace), not as it was sent.
  *
@@ -34,7 +40,8 @@ import { isObject, type JsonObject } from "./body";
  * stores) that parsed object; the idempotency hash is over the raw bytes
  * (`./body.ts`).
  *
- * Pure: no Next, no Supabase.
+ * Pure: no Next, no Supabase. `DOQTRI_ORIGIN` is read only through
+ * `options.doqtriOrigin`, and only when a body sends `mindmap_url`.
  */
 
 /** Section 4: the one body over 64 KiB (D-118). */
@@ -85,6 +92,16 @@ export type HackathonSnapshot = {
   generated_at: string;
   notes: SnapshotNote[];
   global_mindmap: { nodes: SnapshotNode[]; links: SnapshotLink[] };
+  /** v1.4.0 (QDIT-66): doqtri's public mindmap page. Optional; may be left out. */
+  mindmap_url?: string | null;
+};
+
+export type SnapshotOptions = {
+  /**
+   * `DOQTRI_ORIGIN`, for `mindmap_url`. A function, called only when a link
+   * was sent, so a body without one never depends on the setting.
+   */
+  doqtriOrigin: () => string;
 };
 
 export type SnapshotValidation =
@@ -98,7 +115,7 @@ export type SnapshotValidation =
     }
   | { ok: false; fields: Record<string, string> };
 
-const TOP_KEYS = ["hackathon_slug", "snapshot_id", "workspace_id", "generated_at", "notes", "global_mindmap"];
+const TOP_KEYS = ["hackathon_slug", "snapshot_id", "workspace_id", "generated_at", "notes", "global_mindmap", "mindmap_url"];
 const NOTE_KEYS = ["doc_id", "title", "markdown", "mindmap", "created_at", "updated_at", "version", "source"];
 const MAP_KEYS = ["nodes", "links"];
 const NODE_KEYS = ["id", "label", "kind", "depth", "doc_ids"];
@@ -353,8 +370,21 @@ function checkMindmap(
   });
 }
 
+/** `mindmap_url`: left out, `null`, or a doqtri mindmap link. */
+function checkMindmapUrl(problems: Problems, value: unknown, options: SnapshotOptions): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "string") return problems.add("mindmap_url", "must be a string or null");
+  const origin = options.doqtriOrigin();
+  if (!isDoqtriMindmapUrl(value, origin)) {
+    problems.add("mindmap_url", `must be ${origin}/m/ followed by a token of 22 to 64 characters of A-Z, a-z, 0-9, _ and -`);
+  }
+}
+
 /** Checks a parsed body against the contract; every problem at once. */
-export function validateHackathonSnapshot(body: JsonObject): SnapshotValidation {
+export function validateHackathonSnapshot(
+  body: JsonObject,
+  options: SnapshotOptions = { doqtriOrigin: () => doqtriOrigin() },
+): SnapshotValidation {
   const problems = new Problems();
   problems.unknown(body, TOP_KEYS, "");
 
@@ -385,6 +415,7 @@ export function validateHackathonSnapshot(body: JsonObject): SnapshotValidation 
   }
 
   checkMindmap(problems, body.global_mindmap, docIds, notes ? notes.length : null);
+  checkMindmapUrl(problems, body.mindmap_url, options);
 
   if (problems.any) return { ok: false, fields: problems.fields };
 

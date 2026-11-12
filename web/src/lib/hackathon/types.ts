@@ -221,6 +221,8 @@ export interface DoqtriSnapshotV1 {
   generated_at: string;
   notes: DoqtriSnapshotNote[];
   global_mindmap: DoqtriGlobalMindmap;
+  /** Contract v1.4.0 (QDIT-66): doqtri's public mindmap page; left out or null when none. */
+  mindmap_url?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */

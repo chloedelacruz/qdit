@@ -84,3 +84,20 @@ export function publicDocLink(
   if ((value ?? "").trim() === "") return null;
   return `${doqtriOrigin(value)}/d/${encodeURIComponent(docId)}`;
 }
+
+/** The token of a doqtri mindmap link: 22 to 64 of `A-Z a-z 0-9 _ -` (contract v1.4.0). */
+const MINDMAP_TOKEN = /^[A-Za-z0-9_-]{22,64}$/;
+
+/**
+ * True when `url` is exactly a doqtri public mindmap page:
+ * `origin` + `/m/` + a token (contract v1.4.0, section 8, QDIT-66). Nothing
+ * may follow the token: no `/`, query or fragment. `origin` is
+ * `doqtriOrigin()`, so the scheme is https and the host is written the way
+ * doqtri writes its own URLs (lower case, no default port, no userinfo).
+ * `hackathon_mindmap_url_allowed()` in 20261112140000_hackathon_mindmap_link.sql
+ * applies the same rule against `integration_settings.doqtri_origin`.
+ */
+export function isDoqtriMindmapUrl(url: string, origin: string): boolean {
+  const prefix = `${origin}/m/`;
+  return url.startsWith(prefix) && MINDMAP_TOKEN.test(url.slice(prefix.length));
+}

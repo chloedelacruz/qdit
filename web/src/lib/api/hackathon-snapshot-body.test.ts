@@ -461,3 +461,64 @@ describe("validateHackathonSnapshot: review hardening", () => {
     expect(result.ok && result.snapshot.hackathon_slug).toBe("stellar-build-2026");
   });
 });
+
+describe("validateHackathonSnapshot: mindmap_url (v1.4.0, QDIT-66)", () => {
+  const ORIGIN = "https://www.doqtri.xyz";
+  const TOKEN = "Ab3_-xYz0123456789AbCd"; // 22 characters, the shortest
+  const options = { doqtriOrigin: () => ORIGIN };
+  const withLink = (mindmap_url: unknown) => validateHackathonSnapshot(snapshotBody({ mindmap_url }), options);
+
+  it("accepts a body that leaves it out, without reading DOQTRI_ORIGIN", () => {
+    const doqtriOrigin = () => {
+      throw new Error("DOQTRI_ORIGIN is not read for a body without a link");
+    };
+    expect(validateHackathonSnapshot(snapshotBody(), { doqtriOrigin }).ok).toBe(true);
+    expect(validateHackathonSnapshot(snapshotBody({ mindmap_url: null }), { doqtriOrigin }).ok).toBe(true);
+  });
+
+  it.each([TOKEN, "a".repeat(64), "-".repeat(30), "Z_9".repeat(10)])("accepts %s as the token", (token) => {
+    const result = withLink(`${ORIGIN}/m/${token}`);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.snapshot.mindmap_url).toBe(`${ORIGIN}/m/${token}`);
+  });
+
+  it("follows the configured origin", () => {
+    const staging = { doqtriOrigin: () => "https://staging.doqtri.xyz" };
+    expect(validateHackathonSnapshot(snapshotBody({ mindmap_url: `https://staging.doqtri.xyz/m/${TOKEN}` }), staging).ok).toBe(true);
+    expect(validateHackathonSnapshot(snapshotBody({ mindmap_url: `${ORIGIN}/m/${TOKEN}` }), staging).ok).toBe(false);
+  });
+
+  it.each([
+    ["http", `http://www.doqtri.xyz/m/${TOKEN}`],
+    ["another host", `https://other.example/m/${TOKEN}`],
+    ["a look-alike host", `https://www.doqtri.xyz.evil.example/m/${TOKEN}`],
+    ["userinfo", `https://www.doqtri.xyz@evil.example/m/${TOKEN}`],
+    ["an explicit port", `https://www.doqtri.xyz:443/m/${TOKEN}`],
+    ["an upper-case host", `https://WWW.DOQTRI.XYZ/m/${TOKEN}`],
+    ["a doc page", `${ORIGIN}/d/${TOKEN}`],
+    ["no token", `${ORIGIN}/m/`],
+    ["a 21-character token", `${ORIGIN}/m/${"a".repeat(21)}`],
+    ["a 65-character token", `${ORIGIN}/m/${"a".repeat(65)}`],
+    ["a dot in the token", `${ORIGIN}/m/${TOKEN}.x`],
+    ["a trailing slash", `${ORIGIN}/m/${TOKEN}/`],
+    ["a query", `${ORIGIN}/m/${TOKEN}?x=1`],
+    ["a fragment", `${ORIGIN}/m/${TOKEN}#x`],
+    ["surrounding whitespace", ` ${ORIGIN}/m/${TOKEN}`],
+    ["an empty string", ""],
+  ])("refuses %s on mindmap_url", (_, url) => {
+    expect(fieldsOf(withLink(url))).toEqual({
+      mindmap_url: `must be ${ORIGIN}/m/ followed by a token of 22 to 64 characters of A-Z, a-z, 0-9, _ and -`,
+    });
+  });
+
+  it.each([42, true, {}, [`${ORIGIN}/m/${TOKEN}`]])("refuses %j as not a string", (value) => {
+    expect(fieldsOf(withLink(value))).toEqual({ mindmap_url: "must be a string or null" });
+  });
+
+  it("reports it beside the body's other problems", () => {
+    const fields = fieldsOf(
+      validateHackathonSnapshot(snapshotBody({ mindmap_url: "nope", hackathon_slug: "Bad Slug" }), options),
+    );
+    expect(Object.keys(fields).sort()).toEqual(["hackathon_slug", "mindmap_url"]);
+  });
+});
