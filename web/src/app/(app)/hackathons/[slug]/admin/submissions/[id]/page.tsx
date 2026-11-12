@@ -7,7 +7,8 @@ import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { MILESTONE_STATUS, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
-import { mindmapLink } from "@/lib/hackathon/mindmap-link";
+import { MINDMAP_LINK_DEAD, mindmapLinkView } from "@/lib/hackathon/mindmap-link";
+import { checkMindmapLinks, statusOf } from "@/lib/hackathon/mindmap-link-status";
 import { getStaffHackathon, getStaffRole, loadSubmissionView } from "@/lib/hackathon/staff-queries";
 import { formatManila, groupTasksByStatus, toPlainText } from "@/lib/hackathon/staff-view";
 import { ICON } from "@/lib/icons";
@@ -56,8 +57,11 @@ export default async function HackathonSubmissionPage({
   };
   const columns = groupTasksByStatus(qdit.tasks);
   const team = new Set(view.member_ids);
-  // The version's link, so it outlives the snapshot; checked against DOQTRI_ORIGIN again (QDIT-66).
-  const mindmapUrl = mindmapLink(view.mindmap_url);
+  // The version's link, so it outlives the snapshot; checked against DOQTRI_ORIGIN again (QDIT-66),
+  // and shown as a link only while doqtri does not say it is dead (QDIT-67, one call, at most 2 s).
+  const statuses = await checkMindmapLinks([view.mindmap_url]);
+  const mindmap = mindmapLinkView(view.mindmap_url, statusOf(statuses, view.mindmap_url));
+  const mindmapUrl = mindmap.kind === "link" ? mindmap.url : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -76,8 +80,11 @@ export default async function HackathonSubmissionPage({
           </span>
         }
         actions={
-          view.slides_url || mindmapUrl ? (
+          view.slides_url || mindmap.kind !== "none" ? (
             <>
+              {mindmap.kind === "dead" ? (
+                <span className="self-center text-xs text-muted-foreground">{MINDMAP_LINK_DEAD}</span>
+              ) : null}
               {mindmapUrl ? (
                 <Button asChild size="sm" variant="outline">
                   <a href={mindmapUrl} target="_blank" rel="noopener noreferrer">

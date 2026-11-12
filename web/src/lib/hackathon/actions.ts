@@ -5,6 +5,8 @@ import { after } from "next/server";
 
 import type { ActionState } from "@/lib/actions";
 import { checkEntry } from "@/lib/hackathon/entry-check";
+import { MINDMAP_LINK_DEAD_ERROR } from "@/lib/hackathon/mindmap-link";
+import { checkMindmapLinks } from "@/lib/hackathon/mindmap-link-status";
 import { runGradingFor } from "@/lib/hackathon/grading-worker";
 import {
   readSubmitForm,
@@ -100,6 +102,17 @@ async function validateEntry(formData: FormData): Promise<ValidatedEntry> {
     teamMax: hackathon.team_max,
   }).safeParse(input);
   if (!parsed.success) return { ok: false, state: { fieldErrors: fieldErrorsOf(parsed.error) } };
+
+  // A Mindmap link doqtri says is revoked or expired is refused before
+  // anything is submitted (QDIT-67). Unknown (doqtri slow or down, at most
+  // 2 s) lets it through, as before.
+  const link = parsed.data.mindmapUrl;
+  if (link !== "") {
+    const statuses = await checkMindmapLinks([link]);
+    if (statuses.get(link) === "dead") {
+      return { ok: false, state: { fieldErrors: { mindmapUrl: MINDMAP_LINK_DEAD_ERROR } } };
+    }
+  }
 
   return { ok: true, supabase, hackathon, entry: parsed.data };
 }

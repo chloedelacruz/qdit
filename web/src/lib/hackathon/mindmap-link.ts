@@ -27,3 +27,41 @@ export function mindmapLink(
   }
   return isDoqtriMindmapUrl(url, origin) ? url : null;
 }
+
+/**
+ * Whether doqtri still serves a link (QDIT-67, contract v1.5.0): `dead`
+ * when it answered `live: false` (revoked, expired or never issued),
+ * `unknown` when it did not answer. Unknown is treated as live everywhere.
+ * `lib/hackathon/mindmap-link-status.ts` asks.
+ */
+export type MindmapLinkStatus = "live" | "dead" | "unknown";
+
+/** Shown in place of Open mindmap for a dead link, on the team card and the staff page. */
+export const MINDMAP_LINK_DEAD = "Mindmap link revoked or expired";
+
+/** The submit dialog's field error for a typed or pasted dead link. */
+export const MINDMAP_LINK_DEAD_ERROR = "This link was revoked or has expired.";
+
+/** The export's Mindmap link status cells. */
+export const MINDMAP_LINK_STATUS_LABEL: Record<MindmapLinkStatus, string> = {
+  live: "Live",
+  dead: "Revoked or expired",
+  unknown: "Unknown",
+};
+
+/**
+ * What the team card and the staff page show for a stored link: nothing
+ * when there is none (or `mindmapLink` drops it), the dead line when doqtri
+ * says it is dead, and Open mindmap otherwise, unknown included.
+ */
+export type MindmapLinkView = { kind: "none" } | { kind: "dead" } | { kind: "link"; url: string };
+
+export function mindmapLinkView(
+  url: string | null | undefined,
+  status: MindmapLinkStatus,
+  value: string | undefined = process.env.DOQTRI_ORIGIN,
+): MindmapLinkView {
+  const link = mindmapLink(url, value);
+  if (!link) return { kind: "none" };
+  return status === "dead" ? { kind: "dead" } : { kind: "link", url: link };
+}

@@ -12,7 +12,13 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
 import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin } from "@/lib/doqtri-origin";
-import { mindmapLink } from "@/lib/hackathon/mindmap-link";
+import { prefillableMindmapUrl } from "@/lib/hackathon/draft";
+import {
+  MINDMAP_LINK_DEAD,
+  mindmapLinkView,
+  type MindmapLinkStatus,
+} from "@/lib/hackathon/mindmap-link";
+import { checkMindmapLinks, statusOf } from "@/lib/hackathon/mindmap-link-status";
 import { getHackathonPage, type MyEntry, type MyProject } from "@/lib/hackathon/queries";
 import {
   canSubmitIn,
@@ -101,25 +107,36 @@ export default async function HackathonPage({
   const latePassUntil = activePasses.sort().at(-1) ?? null;
   const shownState = state === "closed" && latePassUntil ? "late" : state;
 
+  // Every Mindmap link on the page, in one status call to doqtri (QDIT-67):
+  // the snapshot links the dialog may start from and the entries' links.
+  // At most 2 s; whatever doqtri does not answer is unknown, shown as live.
+  const linkStatuses = await checkMindmapLinks(
+    projects.flatMap((p) => [p.latestSnapshot?.mindmapUrl, p.entry?.mindmapUrl]),
+  );
+
   const submittable: SubmitProject[] = adminProjects
     .filter((p) => canSubmitIn(windowState(event, nowMs, p.latePassUntil)))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      members: p.members,
-      doqtriStatus: snapshotLine(p),
-      snapshotMindmapUrl: p.latestSnapshot?.mindmapUrl ?? null,
-      entry: p.entry
-        ? {
-            teamName: p.entry.teamName,
-            memberIds: p.entry.members.map((m) => m.id),
-            images: p.entry.images,
-            slidesUrl: p.entry.slidesUrl,
-            mindmapUrl: p.entry.mindmapUrl,
-            submittedAt: p.entry.lastSubmittedAt,
-          }
-        : null,
-    }));
+    .map((p) => {
+      const snapshotUrl = p.latestSnapshot?.mindmapUrl ?? null;
+      return {
+        id: p.id,
+        name: p.name,
+        members: p.members,
+        doqtriStatus: snapshotLine(p),
+        // A dead link is never prefilled: the snapshot's, then the version's (QDIT-67).
+        snapshotMindmapUrl: prefillableMindmapUrl(snapshotUrl, statusOf(linkStatuses, snapshotUrl)),
+        entry: p.entry
+          ? {
+              teamName: p.entry.teamName,
+              memberIds: p.entry.members.map((m) => m.id),
+              images: p.entry.images,
+              slidesUrl: p.entry.slidesUrl,
+              mindmapUrl: prefillableMindmapUrl(p.entry.mindmapUrl, statusOf(linkStatuses, p.entry.mindmapUrl)),
+              submittedAt: p.entry.lastSubmittedAt,
+            }
+          : null,
+      };
+    });
 
   const label = adminProjects.some((p) => p.entry) ? "Update submission" : "Add submission to hackathon";
 
@@ -197,7 +214,12 @@ export default async function HackathonPage({
         empty="No submission yet."
       >
         {entries.map(({ project, entry }) => (
-          <EntryCard key={entry.submissionId} project={project} entry={entry} />
+          <EntryCard
+            key={entry.submissionId}
+            project={project}
+            entry={entry}
+            linkStatus={statusOf(linkStatuses, entry.mindmapUrl)}
+          />
         ))}
       </Section>
 
@@ -213,12 +235,21 @@ export default async function HackathonPage({
   );
 }
 
-function EntryCard({ project, entry }: { project: MyProject; entry: MyEntry }) {
+function EntryCard({
+  project,
+  entry,
+  linkStatus,
+}: {
+  project: MyProject;
+  entry: MyEntry;
+  linkStatus: MindmapLinkStatus;
+}) {
   const latest = project.latestSnapshot;
   const notes = latest ? `${latest.noteCount} ${latest.noteCount === 1 ? "note" : "notes"}` : null;
   const included = latest !== null && entry.snapshotId === latest.id;
-  // The version's link, checked against DOQTRI_ORIGIN again (QDIT-66).
-  const mindmapUrl = mindmapLink(entry.mindmapUrl);
+  // The version's link, checked against DOQTRI_ORIGIN again (QDIT-66), and
+  // shown only while doqtri does not say it is dead (QDIT-67).
+  const mindmap = mindmapLinkView(entry.mindmapUrl, linkStatus);
 
   return (
     <article className="space-y-3 border-t border-border p-3 first:border-t-0 sm:p-4">
@@ -274,19 +305,23 @@ function EntryCard({ project, entry }: { project: MyProject; entry: MyEntry }) {
           )}
         </dd>
 
-        {mindmapUrl ? (
+        {mindmap.kind !== "none" ? (
           <>
             <dt className="text-xs text-muted-foreground sm:text-sm">Mindmap</dt>
             <dd className="min-w-0">
-              <a
-                href={mindmapUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="focus-ring inline-flex items-center gap-1 underline underline-offset-2"
-              >
-                Open mindmap
-                <ICON.external className="size-3.5" aria-hidden />
-              </a>
+              {mindmap.kind === "link" ? (
+                <a
+                  href={mindmap.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="focus-ring inline-flex items-center gap-1 underline underline-offset-2"
+                >
+                  Open mindmap
+                  <ICON.external className="size-3.5" aria-hidden />
+                </a>
+              ) : (
+                <span className="text-muted-foreground">{MINDMAP_LINK_DEAD}</span>
+              )}
             </dd>
           </>
         ) : null}

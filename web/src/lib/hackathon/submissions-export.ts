@@ -1,7 +1,8 @@
 import "server-only";
 
 import { csvField } from "@/lib/hackathon/leaderboard";
-import { mindmapLink } from "@/lib/hackathon/mindmap-link";
+import { mindmapLink, MINDMAP_LINK_STATUS_LABEL } from "@/lib/hackathon/mindmap-link";
+import { checkMindmapLinks, statusOf } from "@/lib/hackathon/mindmap-link-status";
 import { MINDMAP_BUCKET, MAX_IMAGES } from "@/lib/hackathon/schemas";
 import { StaffQueryError, type Db } from "@/lib/hackathon/staff-queries";
 
@@ -11,7 +12,9 @@ import { StaffQueryError, type Db } from "@/lib/hackathon/staff-queries";
  * One row per entry: its team name, Slides link, mindmap images and Mindmap
  * link (QDIT-66, after the global mindmap image), as the current version
  * froze them. The link is read from the version, not the snapshot, so it is
- * still there after the snapshot is pruned. Nothing the organisers decide about an entry
+ * still there after the snapshot is pruned. Mindmap link status (QDIT-67)
+ * says whether doqtri still serves it, from one status call for the whole
+ * file: Live, Revoked or expired, or Unknown when doqtri did not answer. Nothing the organisers decide about an entry
  * (eligibility, an override, a grade) is selected, so the export is the same
  * before and after release and never touches the sealed grades (D-116).
  *
@@ -29,6 +32,7 @@ export const SUBMISSIONS_CSV_HEADER = [
   "Slides link",
   "Global mindmap",
   "Mindmap link",
+  "Mindmap link status",
   "Note map 1",
   "Note map 2",
 ] as const;
@@ -41,6 +45,8 @@ export interface SubmissionExportRow {
   images: string[];
   /** The version's doqtri mindmap link; "" for none (QDIT-66). */
   mindmap_url: string;
+  /** Live, Revoked or expired, or Unknown (QDIT-67); "" when there is no link. */
+  mindmap_url_status: string;
 }
 
 /** Header plus one line per row, CRLF line endings, trailing CRLF, every cell formula-guarded. */
@@ -48,7 +54,11 @@ export function submissionsCsv(rows: readonly SubmissionExportRow[]): string {
   const lines = [SUBMISSIONS_CSV_HEADER.join(",")];
   for (const row of rows) {
     const [global, ...notes] = Array.from({ length: MAX_IMAGES }, (_, i) => row.images[i] ?? "");
-    lines.push([row.team_name, row.slides_url, global, row.mindmap_url, ...notes].map(csvField).join(","));
+    lines.push(
+      [row.team_name, row.slides_url, global, row.mindmap_url, row.mindmap_url_status, ...notes]
+        .map(csvField)
+        .join(","),
+    );
   }
   return lines.join("\r\n") + "\r\n";
 }
@@ -99,13 +109,18 @@ export async function loadSubmissionsExport(db: Db, hackathonId: string): Promis
     }
   }
 
+  // Checked against DOQTRI_ORIGIN again, as the pages do.
+  const links = versions.map((v) => mindmapLink(v.mindmap_url));
+  // One status call for every row (QDIT-67): never one per entry.
+  const statuses = await checkMindmapLinks(links);
+
   return versions
-    .map((v) => ({
+    .map((v, i) => ({
       team_name: v.team_name,
       slides_url: v.slides_url ?? "",
       images: (Array.isArray(v.image_paths) ? v.image_paths : []).map((path) => urls.get(path) ?? ""),
-      // Checked against DOQTRI_ORIGIN again, as the pages do.
-      mindmap_url: mindmapLink(v.mindmap_url) ?? "",
+      mindmap_url: links[i] ?? "",
+      mindmap_url_status: links[i] ? MINDMAP_LINK_STATUS_LABEL[statusOf(statuses, links[i])] : "",
     }))
     .sort(
       (a, b) =>

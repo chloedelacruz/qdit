@@ -1,4 +1,5 @@
 import { IMAGE_SLOTS, isMindmapPathFor, SLIDES_URL_MAX, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
+import type { MindmapLinkStatus } from "@/lib/hackathon/mindmap-link";
 
 /**
  * The submit dialog's unsent draft (WP-4.7, QDIT-62).
@@ -86,10 +87,22 @@ export function baseFields(base: DraftBase): DraftFields {
 /**
  * What an untouched Mindmap link field shows (QDIT-66): the link of the
  * project's newest doqtri snapshot for this hackathon; without one, the
- * current version's link; else empty.
+ * current version's link; else empty. The page passes both through
+ * `prefillableMindmapUrl` first (QDIT-67), so a dead snapshot link falls
+ * back to the version's link while that is live, and a dead version link
+ * leaves the field empty.
  */
 export function startingMindmapUrl(snapshotLink: string | null, base: DraftBase): string {
   return snapshotLink || base?.mindmapUrl || "";
+}
+
+/**
+ * A stored link the dialog may start from (QDIT-67): the link itself unless
+ * doqtri says it is dead. Unknown counts as live, so a doqtri that does not
+ * answer prefills as before.
+ */
+export function prefillableMindmapUrl(url: string | null, status: MindmapLinkStatus): string | null {
+  return url && status !== "dead" ? url : null;
 }
 
 /**

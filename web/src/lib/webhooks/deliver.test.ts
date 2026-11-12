@@ -47,15 +47,17 @@ function setup(hooks: FakeWebhook[] = [webhook()]) {
 
   const fetchFake = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
     const body = String(init?.body);
-    const parsed = JSON.parse(body) as { id: string; milestone_id: string };
-    if (inFlight.has(parsed.milestone_id)) concurrentSameMilestone = true;
-    inFlight.add(parsed.milestone_id);
-    sent.push({ id: parsed.id, milestone: parsed.milestone_id, headers: new Headers(init?.headers), body });
+    const parsed = JSON.parse(body) as { id: string; milestone_id?: string };
+    // A release event has no milestone: it is keyed by its own id.
+    const queue = parsed.milestone_id ?? parsed.id;
+    if (inFlight.has(queue)) concurrentSameMilestone = true;
+    inFlight.add(queue);
+    sent.push({ id: parsed.id, milestone: queue, headers: new Headers(init?.headers), body });
     try {
       await new Promise((resolve) => setTimeout(resolve, 1));
       return await answer(parsed);
     } finally {
-      inFlight.delete(parsed.milestone_id);
+      inFlight.delete(queue);
     }
   });
 
@@ -150,6 +152,8 @@ describe("one delivery", () => {
       project_id: "p",
       event: "milestone.status_changed" as const,
       status: "submitted" as const,
+      hackathon_slug: null,
+      released_at: null,
       occurred_at: "2026-10-24T12:00:00Z",
       attempts: 1,
       claim_token: "t",
@@ -289,6 +293,92 @@ describe("per-milestone order (D-25)", () => {
     const summary = await deliverDueEvents(t.deps());
 
     expect(summary).toMatchObject({ delivered: 1, retrying: 1 });
+  });
+});
+
+describe("hackathon.released (contract v1.5.0, QDIT-67)", () => {
+  const H = "5c1e9a7b-2d4f-4e8a-b6c3-9f0d1a2b3c4e";
+
+  it("posts the release body signed per the contract, and records it delivered", async () => {
+    const t = setup();
+    t.addRelease({
+      id: H,
+      hackathon_slug: "stellar-build-2026",
+      released_at: "2026-11-22T09:30:00+00:00",
+      occurred_at: "2026-11-22T09:30:00.000+00:00",
+    });
+
+    const summary = await deliverDueEvents(t.deps());
+
+    expect(summary).toEqual({ claimed: 1, delivered: 1, retrying: 0, dead: 0, stale: 0 });
+    const [{ headers, body }] = t.sent;
+    expect(t.fetchFake.mock.calls[0][0]).toBe(URL);
+    expect(headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(headers.get("x-qdit-signature")).toBe(
+      `sha256=${webhookSignature(SECRET, headers.get("x-qdit-timestamp")!, body)}`,
+    );
+    expect(body).toBe(
+      '{"id":"5c1e9a7b-2d4f-4e8a-b6c3-9f0d1a2b3c4e","event":"hackathon.released","hackathon_slug":"stellar-build-2026","released_at":"2026-11-22T09:30:00.000Z","occurred_at":"2026-11-22T09:30:00.000Z"}',
+    );
+    expect(t.events[0].delivered_at).not.toBeNull();
+  });
+
+  it("is retried on the same schedule with the same id and body bytes", async () => {
+    const t = setup();
+    t.addRelease({ id: H, hackathon_slug: "h1", released_at: "2026-10-24T11:00:00Z" });
+    t.respond(() => new Response(null, { status: 503 }));
+
+    expect(await deliverDueEvents(t.deps())).toMatchObject({ claimed: 1, retrying: 1 });
+    t.advance(RETRY_DELAYS_MS[0]);
+    t.respond(() => new Response(null, { status: 200 }));
+    expect(await deliverDueEvents(t.deps())).toMatchObject({ claimed: 1, delivered: 1 });
+
+    expect(t.sent.map((s) => s.id)).toEqual([H, H]);
+    expect(t.sent[0].body).toBe(t.sent[1].body);
+    expect(t.sent[0].headers.get("x-qdit-timestamp")).not.toBe(t.sent[1].headers.get("x-qdit-timestamp"));
+  });
+
+  it("goes dead after its 8th failed attempt, like a milestone event", async () => {
+    const t = setup();
+    t.addRelease({ id: H, hackathon_slug: "h1", released_at: "2026-10-24T11:00:00Z" });
+    t.respond(() => new Response(null, { status: 500 }));
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await deliverDueEvents(t.deps());
+      t.advance(13 * 60 * 60 * 1000);
+    }
+    expect(t.events[0].attempts).toBe(MAX_ATTEMPTS);
+    expect(t.events[0].dead_at).not.toBeNull();
+  });
+
+  it("waits for no milestone queue, and holds none up", async () => {
+    const t = setup();
+    t.add({ id: E(1), milestone_id: M1, status: "submitted" });
+    t.add({ id: E(2), milestone_id: M1, status: "approved" });
+    t.addRelease({ id: H, hackathon_slug: "h1", released_at: "2026-10-24T11:00:00Z" });
+    t.addRelease({ id: E(9), hackathon_slug: "h2", released_at: "2026-10-24T11:00:00Z" });
+    // The milestone's head keeps failing.
+    t.respond(({ id }) => new Response(null, { status: id === E(1) ? 503 : 200 }));
+
+    const summary = await deliverDueEvents(t.deps());
+
+    expect(summary).toMatchObject({ delivered: 2, retrying: 1 });
+    expect(t.sent.map((s) => s.id).sort()).toEqual([E(1), E(9), H].sort());
+    // E(2) still waits behind E(1) (D-25).
+    expect(t.events[1].attempts).toBe(0);
+  });
+
+  it("fails the attempt, not the run, for a row that does not fit its type", async () => {
+    const t = setup();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    t.addRelease({ id: H, hackathon_slug: null, released_at: "2026-10-24T11:00:00Z" });
+    t.add({ id: E(1), milestone_id: M1, status: "submitted" });
+
+    const summary = await deliverDueEvents(t.deps());
+
+    expect(summary).toMatchObject({ claimed: 2, delivered: 1, retrying: 1 });
+    expect(t.sent.map((s) => s.id)).toEqual([E(1)]);
+    expect(t.events[0].last_error).toBe("event row does not fit its type");
+    expect(log).toHaveBeenCalled();
   });
 });
 

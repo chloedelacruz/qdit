@@ -852,11 +852,16 @@ export type Database = {
           id: string
           seq: number
           webhook_id: string
-          milestone_id: string
-          project_id: string
-          event: 'milestone.status_changed'
-          status: Database['public']['Enums']['milestone_status']
-          cause: 'status_changed' | 'anchor_recorded'
+          /** Null exactly for `hackathon.released` (integration_events_shape). */
+          milestone_id: string | null
+          project_id: string | null
+          event: 'milestone.status_changed' | 'hackathon.released'
+          status: Database['public']['Enums']['milestone_status'] | null
+          cause: 'status_changed' | 'anchor_recorded' | 'hackathon_released'
+          /** `hackathon.released` only (QDIT-67); null otherwise. */
+          hackathon_id: string | null
+          hackathon_slug: string | null
+          released_at: string | null
           occurred_at: string
           attempts: number
           next_attempt_at: string
@@ -1492,10 +1497,14 @@ export type Database = {
         Returns: {
           id: string
           webhook_id: string
-          milestone_id: string
-          project_id: string
-          event: 'milestone.status_changed'
-          status: Database['public']['Enums']['milestone_status']
+          /** Null exactly for `hackathon.released`. */
+          milestone_id: string | null
+          project_id: string | null
+          event: 'milestone.status_changed' | 'hackathon.released'
+          status: Database['public']['Enums']['milestone_status'] | null
+          /** `hackathon.released` only (QDIT-67, contract v1.5.0); null otherwise. */
+          hackathon_slug: string | null
+          released_at: string | null
           occurred_at: string
           /** Including the attempt this claim is for. */
           attempts: number
