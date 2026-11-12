@@ -638,7 +638,7 @@ const SECTIONS: Section[] = [
     lead: (
       <>
         Your team sends one submission. It holds your qdit project, your doqtri
-        notes, and your mindmap images.
+        notes, your mindmap images, and a link to your slides.
       </>
     ),
     warn: (
@@ -662,12 +662,18 @@ const SECTIONS: Section[] = [
         Save an image of your global mindmap. You can add up to two note maps
         too. Use PNG, JPEG, or WebP, up to 5 MB each.
       </>,
+      <>
+        Make your slides in Google Slides or PowerPoint (OneDrive or
+        SharePoint). Click <strong>Share</strong>. Set access to{" "}
+        <strong>Anyone with the link can view</strong>. Copy the link.
+      </>,
       <>Open the hackathon page from the link you were given.</>,
       <>
         Click <strong>Add submission to hackathon</strong>.
       </>,
       <>Choose your team project. Type the team name. Tick each team member.</>,
       <>Attach the global mindmap image. Attach note maps if you have them.</>,
+      <>Paste the link into <strong>Slides link</strong>.</>,
       <>
         Click <strong>Submit</strong>. Your entry shows{" "}
         <strong>Received</strong> under My entry.
@@ -734,6 +740,12 @@ const STAFF_SECTIONS: Section[] = [
         time in Manila time.
       </>,
       <>
+        Click <strong>Export submissions</strong> for a file with each
+        team&apos;s name, slides link, and mindmap image links. It works before
+        and after release. The image links stop working after 7 days, so
+        export again for a fresh file.
+      </>,
+      <>
         After closing time, wait until the review shows nothing pending or
         running.
       </>,
@@ -746,7 +758,7 @@ const STAFF_SECTIONS: Section[] = [
         <strong>Save pitch order</strong>.
       </>,
       <>
-        Click <strong>Export CSV</strong> to download the results for your
+        Click <strong>Export results</strong> to download the results for your
         slides.
       </>,
       <>

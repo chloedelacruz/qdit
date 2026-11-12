@@ -30,7 +30,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(257);
+select plan(262);
 
 
 -- ----------------------------------------------------------------------------
@@ -239,6 +239,12 @@ $$;
 create function pg_temp.sub(p_version text) returns uuid
 language sql security definer as $$
   select submission_id from public.hackathon_submission_versions where id = current_setting(p_version)::uuid;
+$$;
+
+-- A Slides link submit_hackathon_entry() accepts (QDIT-63, D-123).
+create function pg_temp.slides() returns text
+language sql as $$
+  select 'https://docs.google.com/presentation/d/1hkDeckId_-0/edit?usp=sharing'::text;
 $$;
 
 grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
@@ -623,6 +629,39 @@ select throws_ok(
   'no image is refused'
 );
 
+-- QDIT-63 (D-123): the Slides link is checked after everything above.
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001',
+            'Team', array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
+            array[%L]) $$, pg_temp.img(1, 1, 1)),
+  '22023', 'Add the link to your slides.',
+  'slides: the five-argument call (no link) is refused'
+);
+
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001',
+            'Team', array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
+            array[%L], '   ') $$, pg_temp.img(1, 1, 1)),
+  '22023', 'Add the link to your slides.',
+  'slides: a blank link is refused'
+);
+
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001',
+            'Team', array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
+            array[%L], 'http://docs.google.com/presentation/d/abc/edit') $$, pg_temp.img(1, 1, 1)),
+  '22023', 'Use an https Google Slides or PowerPoint (OneDrive or SharePoint) link.',
+  'slides: a plain-http link is refused'
+);
+
+select throws_ok(
+  format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001',
+            'Team', array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
+            array[%L], 'https://docs.google.com.example.com/presentation/d/abc') $$, pg_temp.img(1, 1, 1)),
+  '22023', 'Use an https Google Slides or PowerPoint (OneDrive or SharePoint) link.',
+  'slides: a look-alike host is refused'
+);
+
 -- P2 enters first, with u05, who is also in P1.
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000006');
 
@@ -630,7 +669,7 @@ select ok(
   set_config('hk.p2v1', public.submit_hackathon_entry(
     'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000002', 'Team Two',
     array['a7000000-0000-4000-8000-000000000006', 'a7000000-0000-4000-8000-000000000007', 'a7000000-0000-4000-8000-000000000005']::uuid[],
-    array[pg_temp.img(1, 2, 3)])::text, true) is not null,
+    array[pg_temp.img(1, 2, 3)], pg_temp.slides())::text, true) is not null,
   'P2''s owner submits in the window'
 );
 
@@ -648,7 +687,7 @@ select ok(
   set_config('hk.p1v1', public.submit_hackathon_entry(
     'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', '  Team One  ',
     array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
-    array[pg_temp.img(1, 1, 1)])::text, true) is not null,
+    array[pg_temp.img(1, 1, 1)], '  ' || pg_temp.slides() || ' ')::text, true) is not null,
   'a project admin (not the owner) submits in the window'
 );
 
@@ -662,6 +701,12 @@ select results_eq(
              array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
              true) $$,
   'version 1: trimmed team name, current, sorted members, no doqtri snapshot yet'
+);
+
+select is(
+  (select v.slides_url from public.hackathon_submission_versions v where v.id = current_setting('hk.p1v1')::uuid),
+  pg_temp.slides(),
+  'version 1: the Slides link is stored trimmed'
 );
 
 select results_eq(
@@ -982,7 +1027,7 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000001');
 select ok(
   set_config('hk.p1h2', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000002', 'b7000000-0000-4000-8000-000000000001', 'Late team',
     array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003']::uuid[],
-    array[pg_temp.img(2, 1, 7)])::text, true) is not null,
+    array[pg_temp.img(2, 1, 7)], pg_temp.slides())::text, true) is not null,
   'submit: a late pass lets a closed hackathon take the project''s entry'
 );
 
@@ -1076,7 +1121,7 @@ select ok(
     'c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'Team One',
     array['a7000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000003',
           'a7000000-0000-4000-8000-000000000004']::uuid[],
-    array[pg_temp.img(1, 1, 1), pg_temp.img(1, 1, 2, 'webp')])::text, true) is not null,
+    array[pg_temp.img(1, 1, 1), pg_temp.img(1, 1, 2, 'webp')], pg_temp.slides())::text, true) is not null,
   'the owner resubmits with a fourth member (a viewer still counts) and a second image'
 );
 
@@ -1130,14 +1175,14 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000010');
 select ok(
   set_config('hk.p3v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000003', 'Team Three',
     array['a7000000-0000-4000-8000-000000000010', 'a7000000-0000-4000-8000-000000000011', 'a7000000-0000-4000-8000-000000000012']::uuid[],
-    array[pg_temp.img(1, 3, 4)])::text, true) is not null,
+    array[pg_temp.img(1, 3, 4)], pg_temp.slides())::text, true) is not null,
   'P3 submits'
 );
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000013');
 select ok(
   set_config('hk.p4v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000004', 'Team Four',
     array['a7000000-0000-4000-8000-000000000013', 'a7000000-0000-4000-8000-000000000014', 'a7000000-0000-4000-8000-000000000015']::uuid[],
-    array[pg_temp.img(1, 4, 5)])::text, true) is not null,
+    array[pg_temp.img(1, 4, 5)], pg_temp.slides())::text, true) is not null,
   'P4 submits'
 );
 select pg_temp.as_session('a7000000-0000-4000-8000-000000000016');
@@ -1151,7 +1196,7 @@ select throws_ok(
 select ok(
   set_config('hk.p5v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000005', 'Team Five',
     array['a7000000-0000-4000-8000-000000000016', 'a7000000-0000-4000-8000-000000000017', 'a7000000-0000-4000-8000-000000000018']::uuid[],
-    array[pg_temp.img(1, 5, 6)])::text, true) is not null,
+    array[pg_temp.img(1, 5, 6)], pg_temp.slides())::text, true) is not null,
   'P5 submits'
 );
 
@@ -1279,7 +1324,7 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000024');
 select ok(
   set_config('hk.p6v1', public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000008', 'b7000000-0000-4000-8000-000000000006', 'Team Six',
     array['a7000000-0000-4000-8000-000000000024', 'a7000000-0000-4000-8000-000000000025', 'a7000000-0000-4000-8000-000000000026']::uuid[],
-    array[pg_temp.img(8, 6, 60)])::text, true) is not null,
+    array[pg_temp.img(8, 6, 60)], pg_temp.slides())::text, true) is not null,
   'size: an 8 MB project still submits, rebuilt with smaller clips'
 );
 
@@ -1304,7 +1349,7 @@ select pg_temp.as_session('a7000000-0000-4000-8000-000000000024');
 select throws_ok(
   format($$ select public.submit_hackathon_entry('c7000000-0000-4000-8000-000000000008', 'b7000000-0000-4000-8000-000000000006', 'Team Six',
             array['a7000000-0000-4000-8000-000000000024', 'a7000000-0000-4000-8000-000000000025', 'a7000000-0000-4000-8000-000000000026']::uuid[],
-            array[%L]) $$, pg_temp.img(8, 6, 60)),
+            array[%L], %L) $$, pg_temp.img(8, 6, 60), pg_temp.slides()),
   'QD413', 'snapshot_too_large',
   'size: still over 2 MB with text at 300 characters is QD413'
 );

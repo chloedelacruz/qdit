@@ -1,4 +1,4 @@
-import { IMAGE_SLOTS, isMindmapPathFor, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
+import { IMAGE_SLOTS, isMindmapPathFor, SLIDES_URL_MAX, TEAM_NAME_MAX } from "@/lib/hackathon/schemas";
 
 /**
  * The submit dialog's unsent draft (WP-4.7, QDIT-62).
@@ -21,6 +21,8 @@ export type DraftFields = {
   teamName: string;
   memberIds: string[];
   imagePaths: (string | null)[];
+  /** As typed (QDIT-63). A draft saved before the field existed reads as "". */
+  slidesUrl: string;
 };
 
 export type EntryDraft = DraftFields & {
@@ -33,6 +35,8 @@ export type DraftBase = {
   teamName: string;
   memberIds: readonly string[];
   imagePaths: readonly string[];
+  /** Null on a version from before QDIT-63. */
+  slidesUrl: string | null;
   /** When the current version was submitted, ISO. */
   submittedAt: string | null;
 } | null;
@@ -61,6 +65,7 @@ export function baseFields(base: DraftBase): DraftFields {
     teamName: base?.teamName ?? "",
     memberIds: [...(base?.memberIds ?? [])],
     imagePaths: IMAGE_SLOTS.map((_, index) => base?.imagePaths[index] ?? null),
+    slidesUrl: base?.slidesUrl ?? "",
   };
 }
 
@@ -68,11 +73,13 @@ export function baseFields(base: DraftBase): DraftFields {
  * Whether the fields say the same as the base, so there is nothing to keep.
  * Member order does not matter; the slot an image sits in does. The team name
  * is compared trimmed, as the submit stores it, so a stray space typed before
- * submitting does not bring a draft back afterwards.
+ * submitting does not bring a draft back afterwards. The Slides link is
+ * compared trimmed for the same reason.
  */
 export function sameAsBase(fields: DraftFields, base: DraftBase): boolean {
   const start = baseFields(base);
   if (fields.teamName.trim() !== start.teamName.trim()) return false;
+  if (fields.slidesUrl.trim() !== start.slidesUrl.trim()) return false;
   const members = new Set(fields.memberIds);
   if (members.size !== new Set(start.memberIds).size) return false;
   if (!start.memberIds.every((id) => members.has(id))) return false;
@@ -93,11 +100,12 @@ export function parseDraft(raw: string | null, hackathonId: string, projectId: s
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { teamName, memberIds, imagePaths, savedAt } = value as Record<string, unknown>;
+  const { teamName, memberIds, imagePaths, slidesUrl, savedAt } = value as Record<string, unknown>;
   if (typeof teamName !== "string") return null;
   if (!Array.isArray(memberIds) || !memberIds.every((id) => typeof id === "string")) return null;
   if (!Array.isArray(imagePaths)) return null;
   if (typeof savedAt !== "number" || !Number.isFinite(savedAt)) return null;
+  if (slidesUrl !== undefined && typeof slidesUrl !== "string") return null;
 
   return {
     teamName: teamName.slice(0, TEAM_NAME_MAX),
@@ -106,6 +114,9 @@ export function parseDraft(raw: string | null, hackathonId: string, projectId: s
       const path: unknown = imagePaths[index];
       return typeof path === "string" && isMindmapPathFor(path, hackathonId, projectId) ? path : null;
     }),
+    // Kept as typed, so a half-pasted link comes back to be finished; capped
+    // a little over the limit so the field still shows why it is too long.
+    slidesUrl: (typeof slidesUrl === "string" ? slidesUrl : "").slice(0, SLIDES_URL_MAX + 1),
     savedAt,
   };
 }
@@ -158,6 +169,7 @@ export function saveDraft(
       teamName: fields.teamName,
       memberIds: fields.memberIds,
       imagePaths: IMAGE_SLOTS.map((_, index) => fields.imagePaths[index] ?? null),
+      slidesUrl: fields.slidesUrl,
       savedAt: now,
     };
     storage.setItem(key, JSON.stringify(draft));

@@ -38,6 +38,8 @@ export type SubmitProject = {
     teamName: string;
     memberIds: string[];
     images: { path: string; url: string | null }[];
+    /** The submitted Slides link; null on a version from before QDIT-63. */
+    slidesUrl: string | null;
     /** When the current version was submitted; an older draft is dropped. */
     submittedAt: string | null;
   } | null;
@@ -151,7 +153,7 @@ export function SubmitForm({
       onOpenChange={onOpenChange}
       trigger={trigger}
       title={label}
-      description="Your qdit project, your latest doqtri snapshot and these images are saved together as one submission. Changes you haven't submitted stay in this browser as a draft."
+      description="Your qdit project, your latest doqtri snapshot, these images and your slides link are saved together as one submission. Changes you haven't submitted stay in this browser as a draft."
       submitLabel={(state) => (state.entryCheck ? "Check again" : "Submit")}
       successMessage="Submission received."
       action={action}
@@ -208,6 +210,7 @@ function draftBase(project: SubmitProject | undefined): DraftBase {
     teamName: entry.teamName,
     memberIds: entry.memberIds,
     imagePaths: entry.images.map((image) => image.path),
+    slidesUrl: entry.slidesUrl,
     submittedAt: entry.submittedAt,
   };
 }
@@ -220,6 +223,7 @@ function draftBase(project: SubmitProject | undefined): DraftBase {
 function startFor(project: SubmitProject | undefined, userId: string, hackathonId: string) {
   const fromEntry = {
     teamName: project?.entry?.teamName ?? null,
+    slidesUrl: project?.entry?.slidesUrl ?? "",
     team: startingTeam(project),
     slots: initialSlots(project),
     restored: false,
@@ -240,6 +244,7 @@ function startFor(project: SubmitProject | undefined, userId: string, hackathonI
   );
   return {
     teamName: draft.teamName,
+    slidesUrl: draft.slidesUrl,
     team: rosterMembers(draft.memberIds, project.members),
     slots,
     restored: true,
@@ -276,6 +281,7 @@ function SubmitFields({
   // Read once per opening; every setter below starts from it.
   const [start] = useState(() => startFor(project, userId, hackathonId));
   const [teamName, setTeamName] = useState(start.teamName ?? "");
+  const [slidesUrl, setSlidesUrl] = useState(start.slidesUrl);
   const [memberIds, setMemberIds] = useState<string[]>(start.team.kept);
   const [removedMembers, setRemovedMembers] = useState(start.team.removed);
   const [slots, setSlots] = useState(start.slots);
@@ -291,10 +297,10 @@ function SubmitFields({
     saveDraft(
       draftStorage(),
       { userId, hackathonId, projectId },
-      { teamName, memberIds, imagePaths: slots.map((slot) => slot?.path ?? null) },
+      { teamName, memberIds, imagePaths: slots.map((slot) => slot?.path ?? null), slidesUrl },
       draftBase(project),
     );
-  }, [userId, hackathonId, projectId, project, teamName, memberIds, slots]);
+  }, [userId, hackathonId, projectId, project, teamName, memberIds, slots, slidesUrl]);
 
   // A restored image needs a fresh preview URL. A path Storage refuses to sign
   // (the object is gone, or it is not this project's) is dropped from its slot;
@@ -347,10 +353,12 @@ function SubmitFields({
     const next = projects.find((p) => p.id === id);
     setProjectId(id);
     live.current.projectId = id;
-    touched("projectId", "teamName", "memberIds", "images");
+    touched("projectId", "teamName", "memberIds", "images", "slidesUrl");
     // Images are stored under the project, so they never carry over.
     const from = startFor(next, userId, hackathonId);
     setTeamName(from.teamName ?? teamName);
+    // Like the team name: a link typed before switching is kept for a new entry.
+    setSlidesUrl(next?.entry || from.restored ? from.slidesUrl : slidesUrl);
     setMemberIds(from.team.kept);
     setRemovedMembers(from.team.removed);
     setSlots(from.slots);
@@ -360,9 +368,10 @@ function SubmitFields({
 
   /** Back to the submitted entry (or empty); the save effect then drops the draft. */
   function discardDraft() {
-    touched("teamName", "memberIds", "images");
+    touched("teamName", "memberIds", "images", "slidesUrl");
     clearDraft(draftStorage(), { userId, hackathonId, projectId });
     setTeamName(project?.entry?.teamName ?? "");
+    setSlidesUrl(project?.entry?.slidesUrl ?? "");
     const team = startingTeam(project);
     setMemberIds(team.kept);
     setRemovedMembers(team.removed);
@@ -541,6 +550,33 @@ function SubmitFields({
           </div>
           {errors.images ? <p className="text-xs text-destructive">{errors.images}</p> : null}
         </fieldset>
+
+        <Field id="hackathon-slides-url" label="Slides link" error={errors.slidesUrl}>
+          <Input
+            id="hackathon-slides-url"
+            name="slidesUrl"
+            type="url"
+            inputMode="url"
+            value={slidesUrl}
+            onChange={(event) => {
+              touched("slidesUrl");
+              setSlidesUrl(event.target.value);
+            }}
+            // No maxLength: a cut-off link could still look valid. The schema says it is too long.
+            placeholder="https://docs.google.com/presentation/d/…"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={errors.slidesUrl ? true : undefined}
+            aria-describedby={
+              errors.slidesUrl ? "hackathon-slides-url-error hackathon-slides-url-hint" : "hackathon-slides-url-hint"
+            }
+          />
+          <p id="hackathon-slides-url-hint" className="text-xs text-muted-foreground">
+            Google Slides or PowerPoint (OneDrive or SharePoint). Set sharing to{" "}
+            <span className="font-medium text-foreground">Anyone with the link can view</span>, or the
+            organisers can&apos;t open it.
+          </p>
+        </Field>
 
         {/* The checklist says which doqtri snapshot it read, so this line would repeat it. */}
         {check ? null : (

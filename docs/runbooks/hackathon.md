@@ -136,6 +136,36 @@ The list holds what the Hackathons index and the banner show to everyone: not hi
 `/hackathons/manage` also takes a hackathon out of doqtri's list. A closed hackathon is never
 listed; a team with a late pass sends by link, as before.
 
+### 1.8 Apply the Slides link migration, before merging QDIT-63 (mandatory)
+
+`supabase/migrations/20261112120000_hackathon_slides_link.sql` (D-123) adds
+`hackathon_submission_versions.slides_url`, the internal `hackathon_slides_url_ok(text)` and
+replaces `submit_hackathon_entry` with a six-argument form whose `p_slides_url` is required.
+
+Apply it first, then merge the code. Between the two, the live app still calls the function
+with five named arguments: that resolves to the new function, which answers `22023 Add the
+link to your slides.` and the dialog shows it as a form error. **Teams cannot submit in that
+gap**, so do not apply it during an open submission window unless the merge follows at once.
+The other order is worse: new code against the old function fails every submit with
+"function does not exist".
+
+Apply it with the Supabase CLI, as in 1.2, then check:
+
+```sql
+select pg_get_function_identity_arguments(p.oid), p.prosecdef, p.proconfig,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated
+  from pg_proc p
+ where p.pronamespace = 'public'::regnamespace and p.proname = 'submit_hackathon_entry';
+-- one row: …, p_image_paths text[], p_slides_url text | t | {"search_path=\"\""} | f | t
+
+select has_column_privilege('authenticated', 'public.hackathon_submission_versions', 'slides_url', 'select');
+-- t
+```
+
+Entries submitted before it have no link. Their team adds one on its next resubmit; the
+staff submission page says "no slides link" and the export leaves the cell empty.
+
 ---
 
 ## 2. Merge order
@@ -155,6 +185,8 @@ Each PR targets `main`; wait for each deploy before the next.
    also the integration branch, with every lane above merged into it.
 9. QDIT-60 `GET /api/v1/hackathons` (contract v1.3.0). Apply its migration (1.7) first,
    then merge the code.
+10. QDIT-63 Slides link and Export submissions. Apply its migration (1.8) first, then merge
+    the code.
 
 **doqtri**
 
@@ -258,11 +290,18 @@ and stops all grading for the hackathon.
 
 ### 4.3 Export the CSV
 
-After release: **Export CSV** on the admin page, or
+After release: **Export results** on the admin page, or
 `https://<qdit host>/api/hackathons/<slug>/export` while signed in as a hackathon admin.
 Columns: `rank, team_name, project_slug, eligible, ai_total, human_mean, finalist, flags`,
 in the order the leaderboard shows. Cells that a spreadsheet would read as formulas are
 prefixed with `'`. Anyone else, judges included, gets a 404. Before release it is a 409.
+
+**Export submissions** (QDIT-63, D-123), any time: `https://<qdit host>/api/hackathons/<slug>/export/submissions`
+as a hackathon admin. Columns: `Team name, Slides link, Global mindmap, Note map 1, Note map 2`,
+one row per entry by team name, formula-guarded the same way. The image cells are Supabase
+signed URLs valid for 7 days: anyone holding the file can open the images until then, so
+share it only with the organisers, and export again for fresh links. Nothing score-derived
+is in it. Anyone else gets a 404.
 
 ### 4.4 Read grading status
 

@@ -102,6 +102,7 @@ export default async function HackathonPage({
             teamName: p.entry.teamName,
             memberIds: p.entry.members.map((m) => m.id),
             images: p.entry.images,
+            slidesUrl: p.entry.slidesUrl,
             submittedAt: p.entry.lastSubmittedAt,
           }
         : null,
@@ -237,6 +238,24 @@ function EntryCard({ project, entry }: { project: MyProject; entry: MyEntry }) {
             {" "}
             · {entry.versionCount} {entry.versionCount === 1 ? "version" : "versions"}
           </span>
+        </dd>
+
+        <dt className="text-xs text-muted-foreground sm:text-sm">Slides</dt>
+        <dd className="min-w-0">
+          {entry.slidesUrl ? (
+            <a
+              href={entry.slidesUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="focus-ring block truncate underline underline-offset-2"
+            >
+              {entry.slidesUrl}
+            </a>
+          ) : (
+            <span className="text-muted-foreground">
+              Not in this submission yet. Update the submission to add the link.
+            </span>
+          )}
         </dd>
 
         <dt className="text-xs text-muted-foreground sm:text-sm">doqtri snapshot</dt>

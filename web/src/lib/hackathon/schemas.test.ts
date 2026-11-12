@@ -5,7 +5,9 @@ import {
   isMindmapPathFor,
   MAX_IMAGE_BYTES,
   mindmapPath,
+  isSlidesUrl,
   readSubmitForm,
+  SLIDES_URL_MAX,
   submitEntrySchema,
   TEAM_NAME_MAX,
   uploadErrorMessage,
@@ -34,6 +36,7 @@ function entry(overrides: Partial<Record<string, unknown>> = {}) {
     teamName: "Night Owls",
     memberIds: PEOPLE.slice(0, 3),
     images: [image(1), "", ""],
+    slidesUrl: "https://docs.google.com/presentation/d/owls/edit",
     ...overrides,
   };
 }
@@ -136,8 +139,8 @@ describe("submitEntrySchema: images", () => {
   });
 
   it("reports every field at once", () => {
-    const errors = errorsOf(entry({ teamName: "", memberIds: [], images: [] }));
-    expect(Object.keys(errors).sort()).toEqual(["images", "memberIds", "teamName"]);
+    const errors = errorsOf(entry({ teamName: "", memberIds: [], images: [], slidesUrl: "" }));
+    expect(Object.keys(errors).sort()).toEqual(["images", "memberIds", "slidesUrl", "teamName"]);
   });
 });
 
@@ -150,6 +153,7 @@ describe("readSubmitForm", () => {
     for (const id of PEOPLE.slice(0, 3)) form.append("memberIds", id);
     form.set("image_global", image(1));
     form.set("image_note_2", image(3));
+    form.set("slidesUrl", " https://1drv.ms/p/s!Abc ");
 
     expect(readSubmitForm(form)).toEqual({
       hackathonId: HACKATHON,
@@ -157,7 +161,52 @@ describe("readSubmitForm", () => {
       teamName: "Night Owls",
       memberIds: PEOPLE.slice(0, 3),
       images: [image(1), "", image(3)],
+      slidesUrl: " https://1drv.ms/p/s!Abc ",
     });
+  });
+
+  it("reads a missing link as empty", () => {
+    expect(readSubmitForm(new FormData()).slidesUrl).toBe("");
+  });
+});
+
+describe("submitEntrySchema: Slides link (QDIT-63)", () => {
+  it.each([
+    "https://docs.google.com/presentation/d/1Nxqlqy11bYYONGM-ABCw0T56_NII05L4/edit?usp=sharing",
+    "https://docs.google.com/presentation/u/1/d/abc/view",
+    "https://docs.google.com/presentation/d/e/2PACX-1vQabc/pub?start=false",
+    "https://DOCS.Google.com/presentation/d/abc/edit",
+    "https://drive.google.com/file/d/1BdpwiyGm-_FyzfV2ttr0is/view?usp=sharing",
+    "https://onedrive.live.com/edit?id=ABC123&resid=ABC123!101",
+    "https://1drv.ms/p/s!AbCdEfGh",
+    "https://contoso.sharepoint.com/:p:/s/team/EabCdEf?e=xyz",
+    "https://contoso-my.sharepoint.com/personal/a_b/Documents/deck.pptx",
+  ])("accepts %s, as hackathon_slides_url_ok() does", (url) => {
+    expect(isSlidesUrl(url)).toBe(true);
+    expect(schema.parse(entry({ slidesUrl: url })).slidesUrl).toBe(url);
+  });
+
+  it("stores the link trimmed", () => {
+    const url = "https://docs.google.com/presentation/d/abc/edit";
+    expect(schema.parse(entry({ slidesUrl: `  ${url}\n` })).slidesUrl).toBe(url);
+  });
+
+  it.each([
+    ["", "Add the link to your slides."],
+    ["   ", "Add the link to your slides."],
+    ["http://docs.google.com/presentation/d/abc/edit", "Use the https:// link your slides app gives you."],
+    ["docs.google.com/presentation/d/abc/edit", "Use the https:// link your slides app gives you."],
+    ["https://docs.google.com/document/d/abc/edit", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://docs.google.com/presentation/", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://docs.google.com.example.com/presentation/d/abc", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://contoso.sharepoint.com@example.com/deck", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://drive.google.com/drive/folders/abc", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://example.com/deck.pptx", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    ["https://docs.google.com/presentation/d/abc/edit x", "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link."],
+    [`https://docs.google.com/presentation/d/abc/${"a".repeat(SLIDES_URL_MAX)}`, `Keep the link to ${SLIDES_URL_MAX} characters.`],
+  ])("refuses %j", (url, message) => {
+    expect(errorsOf(entry({ slidesUrl: url })).slidesUrl).toBe(message);
+    expect(isSlidesUrl(url.trim())).toBe(false);
   });
 });
 

@@ -66,6 +66,7 @@ function form(overrides: Record<string, string | string[]> = {}) {
     teamName: "Night Owls",
     memberIds: PEOPLE,
     image_global: GLOBAL_MAP,
+    slidesUrl: " https://docs.google.com/presentation/d/owls/edit ",
     ...overrides,
   };
   const data = new FormData();
@@ -176,6 +177,8 @@ describe("submitHackathonEntry", () => {
       p_team_name: "Night Owls",
       p_member_ids: PEOPLE,
       p_image_paths: [GLOBAL_MAP],
+      // Trimmed by the schema, as the RPC stores it.
+      p_slides_url: "https://docs.google.com/presentation/d/owls/edit",
     });
     expect(revalidatePath).toHaveBeenCalledWith("/hackathons/bootcamp-nov");
 
@@ -209,11 +212,15 @@ describe("submitHackathonEntry", () => {
     getUser.mockResolvedValue({ id: PEOPLE[0] });
     const db = database({ data: VERSION, error: null });
 
-    const result = await submitHackathonEntry({}, form({ memberIds: PEOPLE.slice(0, 2), image_global: "" }));
+    const result = await submitHackathonEntry(
+      {},
+      form({ memberIds: PEOPLE.slice(0, 2), image_global: "", slidesUrl: "https://example.com/deck" }),
+    );
 
     expect(result.fieldErrors).toEqual({
       memberIds: "Choose 3 to 4 team members.",
       images: "Attach the global mindmap image.",
+      slidesUrl: "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link.",
     });
     expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
     expect(afterCallbacks).toHaveLength(0);
@@ -363,6 +370,12 @@ describe("submitErrorState: every code submit_hackathon_entry raises", () => {
     expect(
       submitErrorState({ code: "22023", message: "Attach 1 to 3 different mindmap images.", hint: "image_paths" }),
     ).toEqual({ fieldErrors: { images: "Attach 1 to 3 different mindmap images." } });
+  });
+
+  it("22023 with HINT slides_url", () => {
+    expect(
+      submitErrorState({ code: "22023", message: "Add the link to your slides.", hint: "slides_url" }),
+    ).toEqual({ fieldErrors: { slidesUrl: "Add the link to your slides." } });
   });
 
   it("anything else asks for a retry", () => {

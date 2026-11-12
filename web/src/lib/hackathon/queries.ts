@@ -23,7 +23,7 @@ export const PAGE_COLUMNS = {
   project_members: "project_id, user_id, role",
   projects: "id, slug, name",
   hackathon_submissions: "id, project_id, team_name, current_version_id",
-  hackathon_submission_versions: "id, submission_id, version_no, submitted_at, image_paths, doqtri_snapshot_id",
+  hackathon_submission_versions: "id, submission_id, version_no, submitted_at, image_paths, slides_url, doqtri_snapshot_id",
   hackathon_team_members: "submission_id, user_id",
   hackathon_doqtri_snapshots: "id, project_id, note_count, received_at",
   hackathon_late_passes: "project_id, until",
@@ -64,6 +64,8 @@ export type MyEntry = {
   snapshotId: string | null;
   /** The current version's images, the global map first. */
   images: EntryImage[];
+  /** The current version's Slides link; null on a version from before QDIT-63. */
+  slidesUrl: string | null;
 };
 
 export type MyProject = {
@@ -259,6 +261,7 @@ export async function getHackathonPage(slug: string): Promise<HackathonPage | nu
         lastSubmittedAt: current?.submitted_at ?? null,
         snapshotId: current?.doqtri_snapshot_id ?? null,
         images: (current?.image_paths ?? []).map((path) => ({ path, url: urls.get(path) ?? null })),
+        slidesUrl: current?.slides_url ?? null,
       };
     }
 

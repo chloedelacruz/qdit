@@ -339,6 +339,8 @@ export interface SubmissionView {
   doqtri: DoqtriSnapshotView | null;
   doqtri_received_at: string | null;
   images: SubmissionImage[];
+  /** The team's Slides link; null on a version from before QDIT-63. */
+  slides_url: string | null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -368,7 +370,7 @@ export async function loadSubmissionView(
 
   const { data: ver, error: verError } = await db
     .from("hackathon_submission_versions")
-    .select("id, version_no, team_name, member_ids, qdit_snapshot, doqtri_snapshot_id, image_paths, submitted_at")
+    .select("id, version_no, team_name, member_ids, qdit_snapshot, doqtri_snapshot_id, image_paths, slides_url, submitted_at")
     .eq("id", submission.current_version_id)
     .maybeSingle();
   if (verError) throw new StaffQueryError("read version", verError.code);
@@ -380,6 +382,7 @@ export async function loadSubmissionView(
     qdit_snapshot: unknown;
     doqtri_snapshot_id: string | null;
     image_paths: string[];
+    slides_url: string | null;
     submitted_at: string;
   } | null;
   if (!version) return null;
@@ -421,6 +424,7 @@ export async function loadSubmissionView(
       label: i === 0 ? "Global mindmap" : `Note map ${i}`,
       url: urls.get(path) ?? null,
     })),
+    slides_url: version.slides_url ?? null,
   };
 }
 
