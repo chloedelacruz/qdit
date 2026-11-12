@@ -11,6 +11,8 @@ import { SubmitForm, type SubmitProject } from "@/components/hackathon/submit-fo
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
+import { DEFAULT_DOQTRI_ORIGIN, doqtriOrigin } from "@/lib/doqtri-origin";
+import { mindmapLink } from "@/lib/hackathon/mindmap-link";
 import { getHackathonPage, type MyEntry, type MyProject } from "@/lib/hackathon/queries";
 import {
   canSubmitIn,
@@ -46,6 +48,15 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const page = await loadPage((await params).slug);
   return { title: page?.hackathon.name ?? "Hackathon" };
+}
+
+/** `DOQTRI_ORIGIN` for the Mindmap link's placeholder; the default when misconfigured (the server still checks). */
+function placeholderOrigin(): string {
+  try {
+    return doqtriOrigin();
+  } catch {
+    return DEFAULT_DOQTRI_ORIGIN;
+  }
 }
 
 function snapshotLine(project: MyProject): string | null {
@@ -97,12 +108,14 @@ export default async function HackathonPage({
       name: p.name,
       members: p.members,
       doqtriStatus: snapshotLine(p),
+      snapshotMindmapUrl: p.latestSnapshot?.mindmapUrl ?? null,
       entry: p.entry
         ? {
             teamName: p.entry.teamName,
             memberIds: p.entry.members.map((m) => m.id),
             images: p.entry.images,
             slidesUrl: p.entry.slidesUrl,
+            mindmapUrl: p.entry.mindmapUrl,
             submittedAt: p.entry.lastSubmittedAt,
           }
         : null,
@@ -141,6 +154,7 @@ export default async function HackathonPage({
               label={label}
               disabledReason={disabledReason}
               autoOpen={autoOpen}
+              doqtriOrigin={placeholderOrigin()}
             />
           ) : null
         }
@@ -203,6 +217,8 @@ function EntryCard({ project, entry }: { project: MyProject; entry: MyEntry }) {
   const latest = project.latestSnapshot;
   const notes = latest ? `${latest.noteCount} ${latest.noteCount === 1 ? "note" : "notes"}` : null;
   const included = latest !== null && entry.snapshotId === latest.id;
+  // The version's link, checked against DOQTRI_ORIGIN again (QDIT-66).
+  const mindmapUrl = mindmapLink(entry.mindmapUrl);
 
   return (
     <article className="space-y-3 border-t border-border p-3 first:border-t-0 sm:p-4">
@@ -257,6 +273,23 @@ function EntryCard({ project, entry }: { project: MyProject; entry: MyEntry }) {
             </span>
           )}
         </dd>
+
+        {mindmapUrl ? (
+          <>
+            <dt className="text-xs text-muted-foreground sm:text-sm">Mindmap</dt>
+            <dd className="min-w-0">
+              <a
+                href={mindmapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus-ring inline-flex items-center gap-1 underline underline-offset-2"
+              >
+                Open mindmap
+                <ICON.external className="size-3.5" aria-hidden />
+              </a>
+            </dd>
+          </>
+        ) : null}
 
         <dt className="text-xs text-muted-foreground sm:text-sm">doqtri snapshot</dt>
         <dd>

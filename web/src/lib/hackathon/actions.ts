@@ -52,6 +52,8 @@ export async function submitHackathonEntry(
     p_member_ids: entry.memberIds,
     p_image_paths: entry.imagePaths,
     p_slides_url: entry.slidesUrl,
+    // "" is no link (QDIT-66); the function stores null for it.
+    p_mindmap_url: entry.mindmapUrl,
   });
 
   if (error) return submitErrorState(error);

@@ -49,6 +49,7 @@ const PEOPLE = [
   "33333333-3333-4333-8333-333333333333",
 ];
 const GLOBAL_MAP = mindmapPath(HACKATHON, PROJECT, "aaaaaaaa-aaaa-4aaa-8aaa-000000000001", "png");
+const MINDMAP = "https://www.doqtri.xyz/m/Ab3_-xYz0123456789AbCd";
 
 const HACKATHON_ROW = {
   id: HACKATHON,
@@ -179,6 +180,8 @@ describe("submitHackathonEntry", () => {
       p_image_paths: [GLOBAL_MAP],
       // Trimmed by the schema, as the RPC stores it.
       p_slides_url: "https://docs.google.com/presentation/d/owls/edit",
+      // Left empty: no link (QDIT-66).
+      p_mindmap_url: "",
     });
     expect(revalidatePath).toHaveBeenCalledWith("/hackathons/bootcamp-nov");
 
@@ -189,6 +192,29 @@ describe("submitHackathonEntry", () => {
     expect(runGradingFor).toHaveBeenCalledWith(VERSION, undefined, { budgetMs: 200_000 });
     // Well inside the page's maxDuration of 300 s.
     expect(runGradingFor.mock.calls[0][2].budgetMs).toBeLessThanOrEqual(200_000);
+  });
+
+  it("sends the Mindmap link trimmed (QDIT-66)", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = database({ data: VERSION, error: null });
+
+    const result = await submitHackathonEntry({}, form({ mindmapUrl: ` ${MINDMAP} ` }));
+
+    expect(result).toEqual({ ok: true });
+    expect(db.requests.find((r) => r.kind === "rpc")?.args).toMatchObject({ p_mindmap_url: MINDMAP });
+  });
+
+  it("refuses a Mindmap link off DOQTRI_ORIGIN before calling the RPC, and nothing is submitted", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = database({ data: VERSION, error: null });
+
+    const result = await submitHackathonEntry({}, form({ mindmapUrl: "https://evil.example/m/Ab3_-xYz0123456789AbCd" }));
+
+    expect(result.fieldErrors).toEqual({
+      mindmapUrl: "Use a doqtri mindmap link: https://www.doqtri.xyz/m/ followed by its code, with nothing after it.",
+    });
+    expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
+    expect(afterCallbacks).toHaveLength(0);
   });
 
   it("swallows a follow-up failure and logs only the version id", async () => {
@@ -376,6 +402,13 @@ describe("submitErrorState: every code submit_hackathon_entry raises", () => {
     expect(
       submitErrorState({ code: "22023", message: "Add the link to your slides.", hint: "slides_url" }),
     ).toEqual({ fieldErrors: { slidesUrl: "Add the link to your slides." } });
+  });
+
+  it("22023 with HINT mindmap_url (QDIT-66)", () => {
+    const message = "Use the mindmap link doqtri gives you: it starts with the doqtri address and /m/.";
+    expect(submitErrorState({ code: "22023", message, hint: "mindmap_url" })).toEqual({
+      fieldErrors: { mindmapUrl: message },
+    });
   });
 
   it("anything else asks for a retry", () => {

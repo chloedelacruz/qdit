@@ -6,6 +6,7 @@ import {
   MAX_IMAGE_BYTES,
   mindmapPath,
   isSlidesUrl,
+  mindmapUrlProblem,
   readSubmitForm,
   SLIDES_URL_MAX,
   submitEntrySchema,
@@ -162,6 +163,7 @@ describe("readSubmitForm", () => {
       memberIds: PEOPLE.slice(0, 3),
       images: [image(1), "", image(3)],
       slidesUrl: " https://1drv.ms/p/s!Abc ",
+      mindmapUrl: "",
     });
   });
 
@@ -207,6 +209,60 @@ describe("submitEntrySchema: Slides link (QDIT-63)", () => {
   ])("refuses %j", (url, message) => {
     expect(errorsOf(entry({ slidesUrl: url })).slidesUrl).toBe(message);
     expect(isSlidesUrl(url.trim())).toBe(false);
+  });
+});
+
+describe("submitEntrySchema: Mindmap link (QDIT-66)", () => {
+  const ORIGIN = "https://www.doqtri.xyz";
+  const TOKEN = "Ab3_-xYz0123456789AbCd";
+  const LINK = `${ORIGIN}/m/${TOKEN}`;
+  const OFF = `Use a doqtri mindmap link: ${ORIGIN}/m/ followed by its code, with nothing after it.`;
+
+  it("is optional: empty, blank or not posted at all is no link", () => {
+    expect(schema.parse(entry({ mindmapUrl: "" })).mindmapUrl).toBe("");
+    expect(schema.parse(entry({ mindmapUrl: "  " })).mindmapUrl).toBe("");
+    expect(schema.parse(entry()).mindmapUrl).toBe("");
+  });
+
+  it("does not read DOQTRI_ORIGIN while the field is empty", () => {
+    const strict = submitEntrySchema({ teamMin: 3, teamMax: 4 }, () => {
+      throw new Error("not read");
+    });
+    expect(strict.parse(entry({ mindmapUrl: "" })).mindmapUrl).toBe("");
+  });
+
+  it("accepts a doqtri mindmap link, trimmed", () => {
+    expect(schema.parse(entry({ mindmapUrl: ` ${LINK}\n` })).mindmapUrl).toBe(LINK);
+    expect(schema.parse(entry({ mindmapUrl: `${ORIGIN}/m/${"z".repeat(64)}` })).mindmapUrl).toBe(`${ORIGIN}/m/${"z".repeat(64)}`);
+  });
+
+  it("follows the configured origin", () => {
+    const staging = submitEntrySchema({ teamMin: 3, teamMax: 4 }, () => "https://staging.doqtri.xyz");
+    expect(staging.parse(entry({ mindmapUrl: `https://staging.doqtri.xyz/m/${TOKEN}` })).mindmapUrl).toBe(
+      `https://staging.doqtri.xyz/m/${TOKEN}`,
+    );
+    expect(staging.safeParse(entry({ mindmapUrl: LINK })).success).toBe(false);
+  });
+
+  it.each([
+    [`http://www.doqtri.xyz/m/${TOKEN}`, "Use the https:// link doqtri gives you."],
+    [`www.doqtri.xyz/m/${TOKEN}`, "Use the https:// link doqtri gives you."],
+    [`https://other.example/m/${TOKEN}`, OFF],
+    [`https://www.doqtri.xyz.evil.example/m/${TOKEN}`, OFF],
+    [`${ORIGIN}/d/${TOKEN}`, OFF],
+    [`${ORIGIN}/m/short`, OFF],
+    [`${ORIGIN}/m/${"a".repeat(65)}`, OFF],
+    [`${LINK}/`, OFF],
+    [`${LINK}?x=1`, OFF],
+    [`${LINK}#x`, OFF],
+  ])("refuses %j with a field error", (url, message) => {
+    expect(errorsOf(entry({ mindmapUrl: url })).mindmapUrl).toBe(message);
+    expect(mindmapUrlProblem(url.trim(), ORIGIN)).toBe(message);
+  });
+
+  it("reports a bad link beside the other fields' problems", () => {
+    const errors = errorsOf(entry({ teamName: "", mindmapUrl: "nope" }));
+    expect(Object.keys(errors).sort()).toEqual(["mindmapUrl", "teamName"]);
   });
 });
 

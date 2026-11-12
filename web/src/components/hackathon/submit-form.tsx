@@ -10,11 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { ActionState } from "@/lib/actions";
+import { DEFAULT_DOQTRI_ORIGIN } from "@/lib/doqtri-origin";
 import {
   clearDraft,
   draftStorage,
   readDraft,
   saveDraft,
+  startingMindmapUrl,
+  typedMindmapUrl,
   usableDraft,
   type DraftBase,
 } from "@/lib/hackathon/draft";
@@ -33,6 +36,8 @@ export type SubmitProject = {
   members: { id: string; name: string; username: string | null }[];
   /** A short line about the latest doqtri snapshot, already worded by the page. */
   doqtriStatus: string | null;
+  /** The newest doqtri snapshot's mindmap link (QDIT-66), which the Mindmap link field starts from. */
+  snapshotMindmapUrl: string | null;
   /** What the entry holds now, to start from on an update. */
   entry: {
     teamName: string;
@@ -40,6 +45,8 @@ export type SubmitProject = {
     images: { path: string; url: string | null }[];
     /** The submitted Slides link; null on a version from before QDIT-63. */
     slidesUrl: string | null;
+    /** The submitted Mindmap link; null for none (QDIT-66). */
+    mindmapUrl: string | null;
     /** When the current version was submitted; an older draft is dropped. */
     submittedAt: string | null;
   } | null;
@@ -50,6 +57,9 @@ const SIGNED_PREVIEW_SECONDS = 600;
 
 const NO_DOQTRI =
   "No doqtri snapshot yet. In doqtri, open the global mindmap and use Send to qdit hackathon.";
+
+/** The Mindmap link's hint while it shows the newest snapshot's link (QDIT-66). */
+export const MINDMAP_FROM_SNAPSHOT_HINT = "Filled from your latest Send in doqtri";
 
 /**
  * "Add submission to hackathon" (WP-4.7, QDIT-47, D-115).
@@ -67,6 +77,7 @@ export function SubmitForm({
   label,
   disabledReason,
   autoOpen = false,
+  doqtriOrigin = DEFAULT_DOQTRI_ORIGIN,
 }: {
   /** The signed-in user: drafts are kept per person (QDIT-62). */
   userId: string;
@@ -80,6 +91,8 @@ export function SubmitForm({
   disabledReason: string | null;
   /** Open on arrival: `?submit=1`, from the Hackathons index (QDIT-50). */
   autoOpen?: boolean;
+  /** `DOQTRI_ORIGIN`, for the Mindmap link's placeholder only; the server checks the link. */
+  doqtriOrigin?: string;
 }) {
   // Which slots are mid-upload. A ref, because the action reads it at submit
   // time and must not see the value from the render that created it.
@@ -153,7 +166,7 @@ export function SubmitForm({
       onOpenChange={onOpenChange}
       trigger={trigger}
       title={label}
-      description="Your qdit project, your latest doqtri snapshot, these images and your slides link are saved together as one submission. Changes you haven't submitted stay in this browser as a draft."
+      description="Your qdit project, your latest doqtri snapshot, these images and your links are saved together as one submission. Changes you haven't submitted stay in this browser as a draft."
       submitLabel={(state) => (state.entryCheck ? "Check again" : "Submit")}
       successMessage="Submission received."
       action={action}
@@ -184,6 +197,7 @@ export function SubmitForm({
           teamMax={teamMax}
           projects={projects}
           onBusyChange={onBusyChange}
+          doqtriOrigin={doqtriOrigin}
         />
       )}
     </FormDialog>
@@ -211,8 +225,14 @@ function draftBase(project: SubmitProject | undefined): DraftBase {
     memberIds: entry.memberIds,
     imagePaths: entry.images.map((image) => image.path),
     slidesUrl: entry.slidesUrl,
+    mindmapUrl: entry.mindmapUrl,
     submittedAt: entry.submittedAt,
   };
+}
+
+/** What the Mindmap link field shows while the team has not typed one (QDIT-66). */
+function mindmapStart(project: SubmitProject | undefined): string {
+  return startingMindmapUrl(project?.snapshotMindmapUrl ?? null, draftBase(project));
 }
 
 /**
@@ -224,6 +244,7 @@ function startFor(project: SubmitProject | undefined, userId: string, hackathonI
   const fromEntry = {
     teamName: project?.entry?.teamName ?? null,
     slidesUrl: project?.entry?.slidesUrl ?? "",
+    mindmapUrl: mindmapStart(project),
     team: startingTeam(project),
     slots: initialSlots(project),
     restored: false,
@@ -245,6 +266,8 @@ function startFor(project: SubmitProject | undefined, userId: string, hackathonI
   return {
     teamName: draft.teamName,
     slidesUrl: draft.slidesUrl,
+    // Untouched in the draft: the newest snapshot's link, as of this opening.
+    mindmapUrl: draft.mindmapUrl ?? mindmapStart(project),
     team: rosterMembers(draft.memberIds, project.members),
     slots,
     restored: true,
@@ -264,6 +287,7 @@ function SubmitFields({
   teamMax,
   projects,
   onBusyChange,
+  doqtriOrigin,
 }: {
   state: ActionState;
   userId: string;
@@ -272,6 +296,7 @@ function SubmitFields({
   teamMax: number;
   projects: SubmitProject[];
   onBusyChange: (slot: string, busy: boolean) => void;
+  doqtriOrigin: string;
 }) {
   const [projectId, setProjectId] = useState(
     () => (projects.find((p) => p.entry) ?? projects[0])?.id ?? "",
@@ -282,6 +307,7 @@ function SubmitFields({
   const [start] = useState(() => startFor(project, userId, hackathonId));
   const [teamName, setTeamName] = useState(start.teamName ?? "");
   const [slidesUrl, setSlidesUrl] = useState(start.slidesUrl);
+  const [mindmapUrl, setMindmapUrl] = useState(start.mindmapUrl);
   const [memberIds, setMemberIds] = useState<string[]>(start.team.kept);
   const [removedMembers, setRemovedMembers] = useState(start.team.removed);
   const [slots, setSlots] = useState(start.slots);
@@ -292,15 +318,26 @@ function SubmitFields({
   // Keep what the fields say as the project's draft, or drop the draft once
   // they match the submitted entry again (QDIT-62). Paths only: a preview URL
   // expires, and a blob: one dies with the page.
+  // The Mindmap link is kept only when typed (QDIT-66): one that says what
+  // the field shows by itself stays untouched, so the next opening follows
+  // the newest snapshot again.
+  const mindmapStarting = mindmapStart(project);
+  const mindmapTyped = typedMindmapUrl(mindmapUrl, mindmapStarting);
   useEffect(() => {
     if (!projectId) return;
     saveDraft(
       draftStorage(),
       { userId, hackathonId, projectId },
-      { teamName, memberIds, imagePaths: slots.map((slot) => slot?.path ?? null), slidesUrl },
+      {
+        teamName,
+        memberIds,
+        imagePaths: slots.map((slot) => slot?.path ?? null),
+        slidesUrl,
+        mindmapUrl: mindmapTyped,
+      },
       draftBase(project),
     );
-  }, [userId, hackathonId, projectId, project, teamName, memberIds, slots, slidesUrl]);
+  }, [userId, hackathonId, projectId, project, teamName, memberIds, slots, slidesUrl, mindmapTyped]);
 
   // A restored image needs a fresh preview URL. A path Storage refuses to sign
   // (the object is gone, or it is not this project's) is dropped from its slot;
@@ -353,12 +390,14 @@ function SubmitFields({
     const next = projects.find((p) => p.id === id);
     setProjectId(id);
     live.current.projectId = id;
-    touched("projectId", "teamName", "memberIds", "images", "slidesUrl");
+    touched("projectId", "teamName", "memberIds", "images", "slidesUrl", "mindmapUrl");
     // Images are stored under the project, so they never carry over.
     const from = startFor(next, userId, hackathonId);
     setTeamName(from.teamName ?? teamName);
     // Like the team name: a link typed before switching is kept for a new entry.
     setSlidesUrl(next?.entry || from.restored ? from.slidesUrl : slidesUrl);
+    // Unlike the Slides link, never carried over: it names this project's map.
+    setMindmapUrl(from.mindmapUrl);
     setMemberIds(from.team.kept);
     setRemovedMembers(from.team.removed);
     setSlots(from.slots);
@@ -368,10 +407,11 @@ function SubmitFields({
 
   /** Back to the submitted entry (or empty); the save effect then drops the draft. */
   function discardDraft() {
-    touched("teamName", "memberIds", "images", "slidesUrl");
+    touched("teamName", "memberIds", "images", "slidesUrl", "mindmapUrl");
     clearDraft(draftStorage(), { userId, hackathonId, projectId });
     setTeamName(project?.entry?.teamName ?? "");
     setSlidesUrl(project?.entry?.slidesUrl ?? "");
+    setMindmapUrl(mindmapStart(project));
     const team = startingTeam(project);
     setMemberIds(team.kept);
     setRemovedMembers(team.removed);
@@ -575,6 +615,34 @@ function SubmitFields({
             Google Slides or PowerPoint (OneDrive or SharePoint). Set sharing to{" "}
             <span className="font-medium text-foreground">Anyone with the link can view</span>, or the
             organisers can&apos;t open it.
+          </p>
+        </Field>
+
+        <Field id="hackathon-mindmap-url" label="Mindmap link" optional error={errors.mindmapUrl}>
+          <Input
+            id="hackathon-mindmap-url"
+            name="mindmapUrl"
+            type="url"
+            inputMode="url"
+            value={mindmapUrl}
+            onChange={(event) => {
+              touched("mindmapUrl");
+              setMindmapUrl(event.target.value);
+            }}
+            placeholder={`${doqtriOrigin}/m/…`}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={errors.mindmapUrl ? true : undefined}
+            aria-describedby={
+              errors.mindmapUrl
+                ? "hackathon-mindmap-url-error hackathon-mindmap-url-hint"
+                : "hackathon-mindmap-url-hint"
+            }
+          />
+          <p id="hackathon-mindmap-url-hint" className="text-xs text-muted-foreground">
+            {mindmapTyped === null && project?.snapshotMindmapUrl
+              ? MINDMAP_FROM_SNAPSHOT_HINT
+              : "Send to qdit hackathon in doqtri fills this in. You can also paste the mindmap link doqtri gives you."}
           </p>
         </Field>
 

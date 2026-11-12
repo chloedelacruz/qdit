@@ -8,6 +8,8 @@ import {
   readDraft,
   sameAsBase,
   saveDraft,
+  startingMindmapUrl,
+  typedMindmapUrl,
   usableDraft,
   type DraftBase,
 } from "./draft";
@@ -25,12 +27,15 @@ const GLOBAL = mindmapPath(HACKATHON, PROJECT, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa
 const NOTE = mindmapPath(HACKATHON, PROJECT, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "webp");
 const FOREIGN = mindmapPath(HACKATHON, OTHER, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "png");
 const DECK = "https://docs.google.com/presentation/d/owls-deck/edit";
+const MAP_V1 = "https://www.doqtri.xyz/m/Version1Token_abcdefgh";
+const MAP_SENT = "https://www.doqtri.xyz/m/LatestSendToken_abcdefg";
 
 const ENTRY: DraftBase = {
   teamName: "Night Owls",
   memberIds: [ADA, LIN],
   imagePaths: [GLOBAL],
   slidesUrl: DECK,
+  mindmapUrl: MAP_V1,
   submittedAt: "2026-11-12T02:00:00.000Z",
 };
 const SUBMITTED_MS = Date.parse("2026-11-12T02:00:00.000Z");
@@ -72,11 +77,18 @@ describe("baseFields and sameAsBase", () => {
       memberIds: [ADA, LIN],
       imagePaths: [GLOBAL, null, null],
       slidesUrl: DECK,
+      mindmapUrl: null,
     });
   });
 
   it("start empty without an entry", () => {
-    expect(baseFields(null)).toEqual({ teamName: "", memberIds: [], imagePaths: [null, null, null], slidesUrl: "" });
+    expect(baseFields(null)).toEqual({
+      teamName: "",
+      memberIds: [],
+      imagePaths: [null, null, null],
+      slidesUrl: "",
+      mindmapUrl: null,
+    });
   });
 
   it("start with an empty link for a version from before the link existed", () => {
@@ -108,12 +120,20 @@ describe("parseDraft", () => {
   const stored = (value: unknown) => JSON.stringify(value);
 
   it("reads a well-formed draft", () => {
-    const raw = stored({ teamName: "Owls", memberIds: [ADA], imagePaths: [GLOBAL, null, NOTE], slidesUrl: DECK, savedAt: 5 });
+    const raw = stored({
+      teamName: "Owls",
+      memberIds: [ADA],
+      imagePaths: [GLOBAL, null, NOTE],
+      slidesUrl: DECK,
+      mindmapUrl: MAP_V1,
+      savedAt: 5,
+    });
     expect(parseDraft(raw, HACKATHON, PROJECT)).toEqual({
       teamName: "Owls",
       memberIds: [ADA],
       imagePaths: [GLOBAL, null, NOTE],
       slidesUrl: DECK,
+      mindmapUrl: MAP_V1,
       savedAt: 5,
     });
   });
@@ -137,6 +157,7 @@ describe("parseDraft", () => {
     expect(parseDraft(stored({ teamName: "", memberIds: [1], imagePaths: [], savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
     expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [] }), HACKATHON, PROJECT)).toBeNull();
     expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [], slidesUrl: 3, savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
+    expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [], mindmapUrl: 3, savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
   });
 
   it("drops an image path for another project and pads the slots", () => {
@@ -153,7 +174,14 @@ describe("parseDraft", () => {
 });
 
 describe("usableDraft", () => {
-  const draft = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], slidesUrl: DECK, savedAt: SUBMITTED_MS + 1 };
+  const draft = {
+    teamName: "Owls v2",
+    memberIds: [ADA],
+    imagePaths: [GLOBAL, NOTE, null],
+    slidesUrl: DECK,
+    mindmapUrl: null,
+    savedAt: SUBMITTED_MS + 1,
+  };
 
   it("keeps a draft saved after the current version", () => {
     expect(usableDraft(draft, ENTRY)).toBe(draft);
@@ -173,7 +201,7 @@ describe("usableDraft", () => {
 });
 
 describe("saveDraft, readDraft and clearDraft", () => {
-  const changed = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], slidesUrl: DECK };
+  const changed = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], slidesUrl: DECK, mindmapUrl: null };
 
   it("round-trips a changed draft", () => {
     const storage = memoryStorage();
@@ -208,5 +236,74 @@ describe("saveDraft, readDraft and clearDraft", () => {
     expect(readDraft(broken, IDS)).toBeNull();
     expect(readDraft(null, IDS)).toBeNull();
     expect(() => saveDraft(null, IDS, changed, ENTRY)).not.toThrow();
+  });
+});
+
+describe("the Mindmap link (QDIT-66)", () => {
+  const stored = (value: unknown) => JSON.stringify(value);
+
+  it("starts from the newest snapshot's link, then the version's, else empty", () => {
+    expect(startingMindmapUrl(MAP_SENT, ENTRY)).toBe(MAP_SENT);
+    expect(startingMindmapUrl(null, ENTRY)).toBe(MAP_V1);
+    expect(startingMindmapUrl(null, { ...ENTRY!, mindmapUrl: null })).toBe("");
+    expect(startingMindmapUrl(null, null)).toBe("");
+    expect(startingMindmapUrl(MAP_SENT, null)).toBe(MAP_SENT);
+  });
+
+  it("is untouched (null) while it says what the field shows by itself, compared trimmed", () => {
+    expect(typedMindmapUrl(MAP_SENT, MAP_SENT)).toBeNull();
+    expect(typedMindmapUrl(` ${MAP_SENT} `, MAP_SENT)).toBeNull();
+    expect(typedMindmapUrl("", "")).toBeNull();
+  });
+
+  it("is kept as typed once the team changes it, cleared included", () => {
+    expect(typedMindmapUrl(MAP_V1, MAP_SENT)).toBe(MAP_V1);
+    expect(typedMindmapUrl("https://www.doqtri.xyz/m/half", MAP_SENT)).toBe("https://www.doqtri.xyz/m/half");
+    expect(typedMindmapUrl("", MAP_SENT)).toBe("");
+  });
+
+  it("an untouched field is never a change; a typed one always is", () => {
+    expect(sameAsBase({ ...baseFields(ENTRY), mindmapUrl: null }, ENTRY)).toBe(true);
+    expect(sameAsBase({ ...baseFields(ENTRY), mindmapUrl: MAP_V1 }, ENTRY)).toBe(false);
+    expect(sameAsBase({ ...baseFields(ENTRY), mindmapUrl: "" }, ENTRY)).toBe(false);
+  });
+
+  it("a draft saved untouched follows a Send in doqtri made after it", () => {
+    const storage = memoryStorage();
+    // The team changed the team name; the Mindmap link was left as filled.
+    saveDraft(storage, IDS, { ...baseFields(ENTRY), teamName: "Owls v2", mindmapUrl: null }, ENTRY, SUBMITTED_MS + 1);
+    const draft = usableDraft(readDraft(storage, IDS), ENTRY);
+    expect(draft?.mindmapUrl).toBeNull();
+    // Opened again after a new Send: the field shows the new snapshot's link.
+    expect(draft?.mindmapUrl ?? startingMindmapUrl(MAP_SENT, ENTRY)).toBe(MAP_SENT);
+  });
+
+  it("a typed link is kept by the draft over a newer snapshot's", () => {
+    const storage = memoryStorage();
+    const typed = typedMindmapUrl(MAP_V1, startingMindmapUrl(MAP_SENT, ENTRY));
+    saveDraft(storage, IDS, { ...baseFields(ENTRY), mindmapUrl: typed }, ENTRY, SUBMITTED_MS + 1);
+    const draft = usableDraft(readDraft(storage, IDS), ENTRY);
+    expect(draft?.mindmapUrl ?? startingMindmapUrl(MAP_SENT, ENTRY)).toBe(MAP_V1);
+  });
+
+  it("an untouched link alone keeps no draft", () => {
+    const storage = memoryStorage();
+    saveDraft(storage, IDS, { ...baseFields(ENTRY), mindmapUrl: null }, ENTRY, SUBMITTED_MS + 1);
+    expect(storage.length).toBe(0);
+  });
+
+  it("reads a draft from before the field as untouched, and caps a long one", () => {
+    expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [], savedAt: 1 }), HACKATHON, PROJECT)?.mindmapUrl).toBeNull();
+    expect(
+      parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [], mindmapUrl: null, savedAt: 1 }), HACKATHON, PROJECT)
+        ?.mindmapUrl,
+    ).toBeNull();
+    expect(
+      parseDraft(
+        stored({ teamName: "", memberIds: [], imagePaths: [], mindmapUrl: "x".repeat(SLIDES_URL_MAX + 50), savedAt: 1 }),
+        HACKATHON,
+        PROJECT,
+      )?.mindmapUrl,
+    ).toHaveLength(SLIDES_URL_MAX + 1);
   });
 });
