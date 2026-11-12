@@ -120,6 +120,7 @@ function scriptedDatabase(failing?: string) {
               version_no: 1,
               submitted_at: "2026-11-20T06:02:00.000Z",
               image_paths: [MAP],
+              slides_url: null,
               doqtri_snapshot_id: SNAP_OLD,
             },
             {
@@ -128,6 +129,7 @@ function scriptedDatabase(failing?: string) {
               version_no: 2,
               submitted_at: "2026-11-20T06:03:00.000Z",
               image_paths: [MAP],
+              slides_url: "https://docs.google.com/presentation/d/owls/edit",
               doqtri_snapshot_id: SNAP_OLD,
             },
           ],
@@ -244,6 +246,8 @@ describe("participant hackathon queries", () => {
         lastSubmittedAt: "2026-11-20T06:03:00.000Z",
         snapshotId: SNAP_OLD,
         images: [{ path: MAP, url: `https://storage.test/${MAP}?token=t` }],
+        // The current version's, not the first's.
+        slidesUrl: "https://docs.google.com/presentation/d/owls/edit",
       },
     });
     expect(owned?.entry?.members.map((m) => m.name)).toEqual(["Ada Reyes", "Lin", "sam"]);

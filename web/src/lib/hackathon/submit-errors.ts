@@ -13,9 +13,11 @@ import type { ActionState } from "@/lib/actions";
  *          naming the people for the last two
  *   QD413  snapshot_too_large (payload_too_large is the doqtri push's, not
  *          this RPC's, and falls through to the generic retry message)
- *   22023  HINT names the field: team_name | member_ids | image_paths
+ *   22023  HINT names the field: team_name | member_ids | image_paths |
+ *          slides_url (20261112062735_hackathon_slides_link.sql, QDIT-63)
  *
- * Field errors use the dialog's keys (`teamName`, `memberIds`, `images`).
+ * Field errors use the dialog's keys (`teamName`, `memberIds`, `images`,
+ * `slidesUrl`).
  * Kept out of `actions.ts`, whose "use server" exports must all be actions.
  */
 
@@ -30,6 +32,7 @@ const HINT_FIELD: Record<string, string> = {
   team_name: "teamName",
   member_ids: "memberIds",
   image_paths: "images",
+  slides_url: "slidesUrl",
 };
 
 /** The usernames after the colon in an RPC detail ("...: ada, lin."), or []. */

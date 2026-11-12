@@ -11,7 +11,7 @@ import {
   usableDraft,
   type DraftBase,
 } from "./draft";
-import { mindmapPath, TEAM_NAME_MAX } from "./schemas";
+import { mindmapPath, SLIDES_URL_MAX, TEAM_NAME_MAX } from "./schemas";
 
 const USER = "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f";
 const ADA = "11111111-1111-4111-8111-111111111111";
@@ -24,11 +24,13 @@ const IDS = { userId: USER, hackathonId: HACKATHON, projectId: PROJECT };
 const GLOBAL = mindmapPath(HACKATHON, PROJECT, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "png");
 const NOTE = mindmapPath(HACKATHON, PROJECT, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "webp");
 const FOREIGN = mindmapPath(HACKATHON, OTHER, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "png");
+const DECK = "https://docs.google.com/presentation/d/owls-deck/edit";
 
 const ENTRY: DraftBase = {
   teamName: "Night Owls",
   memberIds: [ADA, LIN],
   imagePaths: [GLOBAL],
+  slidesUrl: DECK,
   submittedAt: "2026-11-12T02:00:00.000Z",
 };
 const SUBMITTED_MS = Date.parse("2026-11-12T02:00:00.000Z");
@@ -65,26 +67,40 @@ describe("draftKey", () => {
 
 describe("baseFields and sameAsBase", () => {
   it("start from the submitted entry, one image entry per slot", () => {
-    expect(baseFields(ENTRY)).toEqual({ teamName: "Night Owls", memberIds: [ADA, LIN], imagePaths: [GLOBAL, null, null] });
+    expect(baseFields(ENTRY)).toEqual({
+      teamName: "Night Owls",
+      memberIds: [ADA, LIN],
+      imagePaths: [GLOBAL, null, null],
+      slidesUrl: DECK,
+    });
   });
 
   it("start empty without an entry", () => {
-    expect(baseFields(null)).toEqual({ teamName: "", memberIds: [], imagePaths: [null, null, null] });
+    expect(baseFields(null)).toEqual({ teamName: "", memberIds: [], imagePaths: [null, null, null], slidesUrl: "" });
+  });
+
+  it("start with an empty link for a version from before the link existed", () => {
+    expect(baseFields({ ...ENTRY!, slidesUrl: null }).slidesUrl).toBe("");
   });
 
   it("ignore member order but not image slots", () => {
-    expect(sameAsBase({ teamName: "Night Owls", memberIds: [LIN, ADA], imagePaths: [GLOBAL, null, null] }, ENTRY)).toBe(true);
-    expect(sameAsBase({ teamName: "Night Owls", memberIds: [ADA, LIN], imagePaths: [null, GLOBAL, null] }, ENTRY)).toBe(false);
+    expect(sameAsBase({ ...baseFields(ENTRY), memberIds: [LIN, ADA] }, ENTRY)).toBe(true);
+    expect(sameAsBase({ ...baseFields(ENTRY), imagePaths: [null, GLOBAL, null] }, ENTRY)).toBe(false);
   });
 
   it("compare the team name as the submit stores it, trimmed", () => {
     expect(sameAsBase({ ...baseFields(ENTRY), teamName: " Night Owls " }, ENTRY)).toBe(true);
   });
 
+  it("compare the Slides link trimmed too", () => {
+    expect(sameAsBase({ ...baseFields(ENTRY), slidesUrl: ` ${DECK} ` }, ENTRY)).toBe(true);
+  });
+
   it("see any changed field", () => {
     expect(sameAsBase({ ...baseFields(ENTRY), teamName: "Night Owls 2" }, ENTRY)).toBe(false);
     expect(sameAsBase({ ...baseFields(ENTRY), memberIds: [ADA] }, ENTRY)).toBe(false);
     expect(sameAsBase({ ...baseFields(ENTRY), imagePaths: [GLOBAL, NOTE, null] }, ENTRY)).toBe(false);
+    expect(sameAsBase({ ...baseFields(ENTRY), slidesUrl: `${DECK}?slide=2` }, ENTRY)).toBe(false);
   });
 });
 
@@ -92,13 +108,25 @@ describe("parseDraft", () => {
   const stored = (value: unknown) => JSON.stringify(value);
 
   it("reads a well-formed draft", () => {
-    const raw = stored({ teamName: "Owls", memberIds: [ADA], imagePaths: [GLOBAL, null, NOTE], savedAt: 5 });
+    const raw = stored({ teamName: "Owls", memberIds: [ADA], imagePaths: [GLOBAL, null, NOTE], slidesUrl: DECK, savedAt: 5 });
     expect(parseDraft(raw, HACKATHON, PROJECT)).toEqual({
       teamName: "Owls",
       memberIds: [ADA],
       imagePaths: [GLOBAL, null, NOTE],
+      slidesUrl: DECK,
       savedAt: 5,
     });
+  });
+
+  it("reads a draft saved before the Slides link existed with an empty link", () => {
+    const raw = stored({ teamName: "Owls", memberIds: [], imagePaths: [], savedAt: 5 });
+    expect(parseDraft(raw, HACKATHON, PROJECT)?.slidesUrl).toBe("");
+  });
+
+  it("keeps a half-typed link as typed, capped just past the limit", () => {
+    const raw = (slidesUrl: string) => stored({ teamName: "", memberIds: [], imagePaths: [], slidesUrl, savedAt: 1 });
+    expect(parseDraft(raw("https://docs.goo"), HACKATHON, PROJECT)?.slidesUrl).toBe("https://docs.goo");
+    expect(parseDraft(raw("x".repeat(SLIDES_URL_MAX + 50)), HACKATHON, PROJECT)?.slidesUrl).toHaveLength(SLIDES_URL_MAX + 1);
   });
 
   it("treats anything malformed as no draft", () => {
@@ -108,6 +136,7 @@ describe("parseDraft", () => {
     expect(parseDraft(stored({ teamName: 1, memberIds: [], imagePaths: [], savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
     expect(parseDraft(stored({ teamName: "", memberIds: [1], imagePaths: [], savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
     expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [] }), HACKATHON, PROJECT)).toBeNull();
+    expect(parseDraft(stored({ teamName: "", memberIds: [], imagePaths: [], slidesUrl: 3, savedAt: 1 }), HACKATHON, PROJECT)).toBeNull();
   });
 
   it("drops an image path for another project and pads the slots", () => {
@@ -124,7 +153,7 @@ describe("parseDraft", () => {
 });
 
 describe("usableDraft", () => {
-  const draft = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], savedAt: SUBMITTED_MS + 1 };
+  const draft = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], slidesUrl: DECK, savedAt: SUBMITTED_MS + 1 };
 
   it("keeps a draft saved after the current version", () => {
     expect(usableDraft(draft, ENTRY)).toBe(draft);
@@ -144,7 +173,7 @@ describe("usableDraft", () => {
 });
 
 describe("saveDraft, readDraft and clearDraft", () => {
-  const changed = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null] };
+  const changed = { teamName: "Owls v2", memberIds: [ADA], imagePaths: [GLOBAL, NOTE, null], slidesUrl: DECK };
 
   it("round-trips a changed draft", () => {
     const storage = memoryStorage();

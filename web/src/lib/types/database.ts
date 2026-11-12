@@ -1110,6 +1110,8 @@ export type Database = {
           doqtri_snapshot_id: string | null
           /** 1–3 `<hackathon>/<project>/<uuid>.<ext>` in hackathon-mindmaps. */
           image_paths: string[]
+          /** QDIT-63. The team's Slides link; null only on versions from before migration 20261112062735. */
+          slides_url: string | null
           submitted_by: string | null
           submitted_at: string
           /** Not granted to clients. `{eligible: boolean, rules: [...]}`; null until the grader runs. */
@@ -1649,6 +1651,8 @@ export type Database = {
           p_team_name: string
           p_member_ids: string[]
           p_image_paths: string[]
+          /** QDIT-63. Required: null or blank is 22023, hint `slides_url`. */
+          p_slides_url?: string
         }
         Returns: string
       }

@@ -51,6 +51,7 @@ export async function submitHackathonEntry(
     p_team_name: entry.teamName,
     p_member_ids: entry.memberIds,
     p_image_paths: entry.imagePaths,
+    p_slides_url: entry.slidesUrl,
   });
 
   if (error) return submitErrorState(error);

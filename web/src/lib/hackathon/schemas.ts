@@ -99,6 +99,40 @@ export function uploadErrorMessage(message: string): string {
   return "The upload did not finish. Try again.";
 }
 
+/** `hackathon_submission_versions.slides_url`: at most this many characters. */
+export const SLIDES_URL_MAX = 2048;
+
+/**
+ * `hackathon_slides_url_ok()` in 20261112062735_hackathon_slides_link.sql,
+ * character for character (QDIT-63, D-123): https, then Google Slides, a deck
+ * file on Google Drive, OneDrive or SharePoint, with the host followed by `/`
+ * so a look-alike host never matches. Case-insensitive, as `~*` is there.
+ */
+const SLIDES_URL = new RegExp(
+  "^https://(" +
+    "docs\\.google\\.com/presentation/(u/[0-9]+/)?d/[A-Za-z0-9_-]+" +
+    "|drive\\.google\\.com/file/d/[A-Za-z0-9_-]+" +
+    "|onedrive\\.live\\.com/" +
+    "|1drv\\.ms/" +
+    "|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.sharepoint\\.com/" +
+    ")[^\\s\\p{Cc}]*$",
+  "iu",
+);
+
+/** True when the database will take `url` (already trimmed) as a Slides link. */
+export function isSlidesUrl(url: string): boolean {
+  return url.length <= SLIDES_URL_MAX && SLIDES_URL.test(url);
+}
+
+/** The field's error for a trimmed link, or null when it is fine. Shared by the schema and the dialog. */
+export function slidesUrlProblem(url: string): string | null {
+  if (url === "") return "Add the link to your slides.";
+  if (url.length > SLIDES_URL_MAX) return `Keep the link to ${SLIDES_URL_MAX} characters.`;
+  if (!/^https:\/\//i.test(url)) return "Use the https:// link your slides app gives you.";
+  if (!SLIDES_URL.test(url)) return "Use a Google Slides or PowerPoint (OneDrive or SharePoint) link.";
+  return null;
+}
+
 /** The raw form, as the dialog posts it. */
 export type SubmitEntryInput = {
   hackathonId: string;
@@ -107,6 +141,7 @@ export type SubmitEntryInput = {
   memberIds: string[];
   /** Slot order: global map first, then the note maps. Empty slots are "". */
   images: string[];
+  slidesUrl: string;
 };
 
 /** Reads the dialog's fields out of `FormData`. Never throws. */
@@ -121,6 +156,7 @@ export function readSubmitForm(formData: FormData): SubmitEntryInput {
     teamName: text("teamName"),
     memberIds: formData.getAll("memberIds").filter((v): v is string => typeof v === "string"),
     images: IMAGE_SLOTS.map((slot) => text(slot.name).trim()),
+    slidesUrl: text("slidesUrl"),
   };
 }
 
@@ -139,6 +175,8 @@ export type SubmitEntry = {
   memberIds: string[];
   /** 1 to 3 paths, the global map first. */
   imagePaths: string[];
+  /** Trimmed; `isSlidesUrl` holds. */
+  slidesUrl: string;
 };
 
 function teamSizeMessage({ teamMin, teamMax }: TeamBounds): string {
@@ -173,7 +211,7 @@ const imagesSchema = z
 /**
  * The whole entry, with the hackathon's own team size. Field keys are the ones
  * the dialog shows errors under: `projectId`, `teamName`, `memberIds`,
- * `images`. Every field is checked on its own, so one submit shows every
+ * `images`, `slidesUrl`. Every field is checked on its own, so one submit shows every
  * problem at once.
  */
 export function submitEntrySchema(bounds: TeamBounds) {
@@ -192,6 +230,13 @@ export function submitEntrySchema(bounds: TeamBounds) {
           teamSizeMessage(bounds),
         ),
       images: imagesSchema,
+      slidesUrl: z
+        .string()
+        .trim()
+        .superRefine((url, ctx) => {
+          const problem = slidesUrlProblem(url);
+          if (problem) ctx.addIssue({ code: "custom", message: problem });
+        }),
     })
     .refine(
       (entry) =>
@@ -213,6 +258,7 @@ export function submitEntrySchema(bounds: TeamBounds) {
         teamName: entry.teamName,
         memberIds: entry.memberIds,
         imagePaths: entry.images,
+        slidesUrl: entry.slidesUrl,
       }),
     );
 }

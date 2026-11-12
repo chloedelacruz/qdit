@@ -25,7 +25,9 @@ export const metadata: Metadata = { title: "Hackathon admin" };
  * an unknown slug. Before release the page shows entries, eligibility, job
  * states, staff and the Release panel, and nothing score-derived: the
  * leaderboard RPC is not even called (loadAdminConsole). After release it
- * adds the ranked leaderboard, the pitch order and the CSV export.
+ * adds the ranked leaderboard, the pitch order and the results CSV.
+ * Export submissions (team, Slides link, mindmap images; QDIT-63) is there
+ * throughout.
  */
 export default async function HackathonAdminPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -69,11 +71,18 @@ export default async function HackathonAdminPage({ params }: { params: Promise<{
             <Button asChild size="sm" variant="outline">
               <Link href={`/hackathons/${slug}/judge`}>Judging</Link>
             </Button>
+            {/* Not score-derived, so it is here before release too (QDIT-63, D-123). */}
+            <Button asChild size="sm" variant={released ? "outline" : "default"}>
+              <a href={`/api/hackathons/${slug}/export/submissions`} download>
+                <ICON.download data-icon="inline-start" />
+                Export submissions
+              </a>
+            </Button>
             {released ? (
               <Button asChild size="sm">
                 <a href={`/api/hackathons/${slug}/export`} download>
                   <ICON.download data-icon="inline-start" />
-                  Export CSV
+                  Export results
                 </a>
               </Button>
             ) : null}

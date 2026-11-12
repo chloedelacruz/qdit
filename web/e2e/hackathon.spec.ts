@@ -53,6 +53,8 @@ const versions: string[] = [];
 
 const teamName = () => `e2e team ${fx.runId}`;
 const teamNameV2 = () => `e2e team ${fx.runId} v2`;
+// QDIT-63: any link the database accepts; nobody opens it in the run.
+const SLIDES_URL = "https://docs.google.com/presentation/d/e2e-qdit-deck/edit?usp=sharing";
 const hackathonUrl = () => `/hackathons/${fx.slug}`;
 
 /** Words the participant page must never show (D-116). */
@@ -149,6 +151,11 @@ test("the team's project admin submits with a mindmap image, then resubmits", as
   // Exact: "Not attached." contains the same words.
   await expect(dialog.getByText("Attached.", { exact: true })).toHaveCount(1);
 
+  // The Slides link is required (QDIT-63): refused while empty, then filled.
+  await dialog.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(dialog.getByText("Add the link to your slides.")).toBeVisible();
+  await dialog.getByLabel("Slides link").fill(SLIDES_URL);
+
   await dialog.getByRole("button", { name: "Submit", exact: true }).click();
   await expect(page.getByText("Submission received.")).toBeVisible();
   await expect(dialog).toBeHidden();
@@ -157,6 +164,7 @@ test("the team's project admin submits with a mindmap image, then resubmits", as
   await expect(entry.getByText("Received", { exact: true })).toBeVisible();
   await expect(entry).toContainText("1 version");
   await expect(entry.getByRole("img", { name: "Global mindmap" })).toBeVisible();
+  await expect(entry.getByRole("link", { name: SLIDES_URL })).toHaveAttribute("href", SLIDES_URL);
 
   // The image went to the private bucket under this hackathon's prefix.
   expect(await storagePaths(svc!, fx.hackathonId)).toHaveLength(1);
@@ -164,6 +172,7 @@ test("the team's project admin submits with a mindmap image, then resubmits", as
   // Resubmit: the saved team and image come back, the new name is kept.
   await page.getByRole("button", { name: "Update submission", exact: true }).click();
   await expect(dialog.getByLabel("Team name")).toHaveValue(teamName());
+  await expect(dialog.getByLabel("Slides link")).toHaveValue(SLIDES_URL);
   await dialog.getByLabel("Team name").fill(teamNameV2());
   await dialog.getByRole("button", { name: "Submit", exact: true }).click();
   await expect(page.getByText("Submission received.").first()).toBeVisible();
@@ -197,12 +206,25 @@ test("the admin console is sealed before release", async ({ browser }) => {
   await expect(page.getByText("Grades are sealed until release.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Leaderboard" })).toHaveCount(0);
   await expect(page.getByText("AI /100")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Export results" })).toHaveCount(0);
   // Release waits for the close.
   await expect(page.getByRole("button", { name: "Release grades", exact: true })).toBeDisabled();
 
   const csv = await page.request.get(`/api/hackathons/${fx.slug}/export`);
   expect(csv.status()).toBe(409);
+
+  // Export submissions is not score-derived, so it works before release (QDIT-63).
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Export submissions" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(`${fx.slug}-submissions.csv`);
+  const [header, ...lines] = (await readFile((await download.path())!, "utf8")).trimEnd().split("\r\n");
+  expect(header).toBe("Team name,Slides link,Global mindmap,Note map 1,Note map 2");
+  expect(lines).toHaveLength(1);
+  const [team, slides, globalMap, note1, note2] = lines[0].split(",");
+  expect([team, slides, note1, note2]).toEqual([teamNameV2(), SLIDES_URL, "", ""]);
+  expect(globalMap).toMatch(/^https:\/\/.+\/storage\/v1\/object\/sign\/hackathon-mindmaps\//);
 
   // The database refuses the leaderboard to the admin too, before release.
   const token = await tokenFor(svc!, publishableKey, fx.admin);
@@ -216,11 +238,13 @@ test("judge and team are kept out of the consoles before release", async ({ brow
   await judge.goto(`${hackathonUrl()}/judge`);
   await expect(judge.getByText("Finals open after release.")).toBeVisible();
   expect((await judge.request.get(`/api/hackathons/${fx.slug}/export`)).status()).toBe(404);
+  expect((await judge.request.get(`/api/hackathons/${fx.slug}/export/submissions`)).status()).toBe(404);
 
   const team = await signIn(browser, fx.lead);
   await expectHackathonNotFound(team, `${hackathonUrl()}/admin`);
   await expectHackathonNotFound(team, `${hackathonUrl()}/judge`);
   expect((await team.request.get(`/api/hackathons/${fx.slug}/export`)).status()).toBe(404);
+  expect((await team.request.get(`/api/hackathons/${fx.slug}/export/submissions`)).status()).toBe(404);
 });
 
 test("a closed window refuses a submission", async ({ browser }) => {
@@ -377,7 +401,7 @@ test("the CSV download matches the screen", async ({ browser }) => {
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("link", { name: "Export CSV" }).click(),
+    page.getByRole("link", { name: "Export results" }).click(),
   ]);
   expect(download.suggestedFilename()).toBe(`${fx.slug}-results.csv`);
   const csv = await readFile((await download.path())!, "utf8");

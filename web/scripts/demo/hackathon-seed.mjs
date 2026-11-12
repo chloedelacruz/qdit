@@ -606,6 +606,8 @@ async function submitAll() {
             p_team_name: team.teamName,
             p_member_ids: team.members.map((m) => m.id),
             p_image_paths: [team.imagePath],
+            // QDIT-63: required; nobody opens it.
+            p_slides_url: `https://docs.google.com/presentation/d/demo-team-${team.n}/edit`,
           },
           tokens[i],
         );

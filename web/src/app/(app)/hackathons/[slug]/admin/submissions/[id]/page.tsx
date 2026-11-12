@@ -5,6 +5,7 @@ import { StaffPlainText } from "@/components/hackathon/staff-plain-text";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
 import { MILESTONE_STATUS, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
 import { getStaffHackathon, getStaffRole, loadSubmissionView } from "@/lib/hackathon/staff-queries";
 import { formatManila, groupTasksByStatus, toPlainText } from "@/lib/hackathon/staff-view";
@@ -68,7 +69,19 @@ export default async function HackathonSubmissionPage({
           <span className="text-xs text-muted-foreground">
             Version {view.version_no} · submitted {formatManila(view.submitted_at)} · project {qdit.project.slug}
             {qdit.truncated ? " · snapshot truncated" : ""}
+            {view.slides_url ? "" : " · no slides link"}
           </span>
+        }
+        actions={
+          view.slides_url ? (
+            // Only a link hackathon_slides_url_ok() accepted reaches here: https, on a known host.
+            <Button asChild size="sm" variant="outline">
+              <a href={view.slides_url} target="_blank" rel="noreferrer noopener">
+                <ICON.external data-icon="inline-start" />
+                Open slides
+              </a>
+            </Button>
+          ) : null
         }
       />
 
