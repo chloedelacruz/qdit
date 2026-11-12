@@ -1001,6 +1001,11 @@ export type Database = {
           received_at: string
           /** Written later by `record_doqtri_chain_check`; null until then. */
           chain_check: Json | null
+          /**
+           * QDIT-66. The payload's `mindmap_url`, doqtri's public mindmap page
+           * (`<doqtri origin>/m/<token>`); null when doqtri sent none.
+           */
+          mindmap_url: string | null
         }
         Insert: Record<string, never>
         Update: Record<string, never>
@@ -1112,6 +1117,8 @@ export type Database = {
           image_paths: string[]
           /** QDIT-63. The team's Slides link; null only on versions from before migration 20261112062735. */
           slides_url: string | null
+          /** QDIT-66. The team's Mindmap link (`<doqtri origin>/m/<token>`); optional, null when none. */
+          mindmap_url: string | null
           submitted_by: string | null
           submitted_at: string
           /** Not granted to clients. `{eligible: boolean, rules: [...]}`; null until the grader runs. */
@@ -1653,6 +1660,8 @@ export type Database = {
           p_image_paths: string[]
           /** QDIT-63. Required: null or blank is 22023, hint `slides_url`. */
           p_slides_url?: string
+          /** QDIT-66. Optional: blank is none; a link off doqtri's /m/<token> is 22023, hint `mindmap_url`. */
+          p_mindmap_url?: string
         }
         Returns: string
       }
@@ -1663,7 +1672,9 @@ export type Database = {
        * project or slug; QD409 `snapshot_conflict` (also for the same key
        * to another hackathon) | `snapshot_limit` | `hackathon_not_open` |
        * `hackathon_closed`; QD413 `payload_too_large` over 3 MiB of jsonb text (a backstop: the route enforces 2 MiB on the raw body); 22023 for
-       * bad arguments, `note_count` must equal the payload's notes.
+       * bad arguments, `note_count` must equal the payload's notes, hint
+       * `mindmap_url` for a payload `mindmap_url` that is neither null nor a
+       * doqtri mindmap link (QDIT-66; stored in its own column).
        * A replay (same project, snapshot_id and hash) returns the first
        * answer with `replay: true`.
        */
