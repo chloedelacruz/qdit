@@ -5,6 +5,7 @@ import {
   clearDraft,
   draftKey,
   parseDraft,
+  prefillableMindmapUrl,
   readDraft,
   sameAsBase,
   saveDraft,
@@ -236,6 +237,43 @@ describe("saveDraft, readDraft and clearDraft", () => {
     expect(readDraft(broken, IDS)).toBeNull();
     expect(readDraft(null, IDS)).toBeNull();
     expect(() => saveDraft(null, IDS, changed, ENTRY)).not.toThrow();
+  });
+});
+
+describe("the Mindmap link's status (QDIT-67)", () => {
+  /** What the page hands the dialog: each stored link through prefillableMindmapUrl. */
+  const start = (
+    snapshot: { url: string | null; status: "live" | "dead" | "unknown" },
+    version: { url: string | null; status: "live" | "dead" | "unknown" },
+  ) =>
+    startingMindmapUrl(prefillableMindmapUrl(snapshot.url, snapshot.status), {
+      ...ENTRY!,
+      mindmapUrl: prefillableMindmapUrl(version.url, version.status),
+    });
+
+  it("keeps a live or unknown link, drops a dead one", () => {
+    expect(prefillableMindmapUrl(MAP_SENT, "live")).toBe(MAP_SENT);
+    expect(prefillableMindmapUrl(MAP_SENT, "unknown")).toBe(MAP_SENT);
+    expect(prefillableMindmapUrl(MAP_SENT, "dead")).toBeNull();
+    expect(prefillableMindmapUrl(null, "live")).toBeNull();
+  });
+
+  it("skips a dead snapshot link for the version's live one", () => {
+    expect(start({ url: MAP_SENT, status: "dead" }, { url: MAP_V1, status: "live" })).toBe(MAP_V1);
+  });
+
+  it("leaves the field empty when both are dead", () => {
+    expect(start({ url: MAP_SENT, status: "dead" }, { url: MAP_V1, status: "dead" })).toBe("");
+    expect(start({ url: null, status: "unknown" }, { url: MAP_V1, status: "dead" })).toBe("");
+  });
+
+  it("prefills as before when doqtri did not answer (unknown is live)", () => {
+    expect(start({ url: MAP_SENT, status: "unknown" }, { url: MAP_V1, status: "unknown" })).toBe(MAP_SENT);
+    expect(start({ url: null, status: "unknown" }, { url: MAP_V1, status: "unknown" })).toBe(MAP_V1);
+  });
+
+  it("still prefers a live snapshot link over the version's", () => {
+    expect(start({ url: MAP_SENT, status: "live" }, { url: MAP_V1, status: "live" })).toBe(MAP_SENT);
   });
 });
 

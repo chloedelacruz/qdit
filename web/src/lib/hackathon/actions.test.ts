@@ -38,6 +38,14 @@ vi.mock("@/lib/hackathon/entry-check", () => ({
   checkEntry: (...args: unknown[]) => checkEntry(...args),
 }));
 
+/** doqtri's link status (QDIT-67); unknown (an empty answer) unless a test says otherwise. */
+const checkMindmapLinks = vi.fn<(urls: Iterable<string | null | undefined>) => Promise<Map<string, string>>>(
+  async () => new Map(),
+);
+vi.mock("@/lib/hackathon/mindmap-link-status", () => ({
+  checkMindmapLinks: (urls: Iterable<string | null | undefined>) => checkMindmapLinks(urls),
+}));
+
 const { checkHackathonEntry, submitHackathonEntry } = await import("./actions");
 
 const HACKATHON = "3f0c2a8e-1b4d-4c6e-9a7f-2d5b8e1c0a93";
@@ -103,6 +111,17 @@ describe("checkHackathonEntry", () => {
     createClient.mockResolvedValue(db.client);
     return db;
   }
+
+  it("refuses a dead Mindmap link in the check too, before the preview (QDIT-67)", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = previewDatabase({ data: PREVIEW, error: null });
+    checkMindmapLinks.mockResolvedValueOnce(new Map([[MINDMAP, "dead"]]));
+
+    expect(await checkHackathonEntry({}, form({ mindmapUrl: MINDMAP }))).toEqual({
+      fieldErrors: { mindmapUrl: "This link was revoked or has expired." },
+    });
+    expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
+  });
 
   it("runs the gate on the preview and returns it without ok, writing nothing", async () => {
     getUser.mockResolvedValue({ id: PEOPLE[0] });
@@ -215,6 +234,36 @@ describe("submitHackathonEntry", () => {
     });
     expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
     expect(afterCallbacks).toHaveLength(0);
+  });
+
+  it("refuses a Mindmap link doqtri says is revoked or expired, and nothing is submitted (QDIT-67)", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    const db = database({ data: VERSION, error: null });
+    checkMindmapLinks.mockResolvedValueOnce(new Map([[MINDMAP, "dead"]]));
+
+    const result = await submitHackathonEntry({}, form({ mindmapUrl: ` ${MINDMAP} ` }));
+
+    expect(result).toEqual({ fieldErrors: { mindmapUrl: "This link was revoked or has expired." } });
+    expect(checkMindmapLinks).toHaveBeenCalledWith([MINDMAP]);
+    expect(db.requests.some((r) => r.kind === "rpc")).toBe(false);
+    expect(afterCallbacks).toHaveLength(0);
+  });
+
+  it("submits a link whose status is live or unknown (doqtri did not answer)", async () => {
+    for (const status of [new Map([[MINDMAP, "live"]]), new Map<string, string>()]) {
+      getUser.mockResolvedValue({ id: PEOPLE[0] });
+      const db = database({ data: VERSION, error: null });
+      checkMindmapLinks.mockResolvedValueOnce(status);
+      expect(await submitHackathonEntry({}, form({ mindmapUrl: MINDMAP }))).toEqual({ ok: true });
+      expect(db.requests.find((r) => r.kind === "rpc")?.args).toMatchObject({ p_mindmap_url: MINDMAP });
+    }
+  });
+
+  it("asks doqtri nothing when the Mindmap link is empty", async () => {
+    getUser.mockResolvedValue({ id: PEOPLE[0] });
+    database({ data: VERSION, error: null });
+    expect(await submitHackathonEntry({}, form())).toEqual({ ok: true });
+    expect(checkMindmapLinks).not.toHaveBeenCalled();
   });
 
   it("swallows a follow-up failure and logs only the version id", async () => {
