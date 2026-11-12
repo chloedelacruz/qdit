@@ -406,23 +406,46 @@ function SortableCard({
   members: MemberOption[];
   onOpen: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: task.id,
-      /**
-       * dnd-kit defaults a draggable to `role="button"`, which would replace the
-       * card's `article` role — the thing that makes a board card a card to a
-       * screen reader, and what the board specs select on. Keep the semantic and
-       * describe the drag separately; `attributes` still supplies the tabIndex
-       * the keyboard sensor needs.
-       */
-      attributes: { role: "article", roleDescription: "Draggable task card" },
-    });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: task.id,
+    /**
+     * dnd-kit defaults a draggable to `role="button"`, which would replace the
+     * card's `article` role — the thing that makes a board card a card to a
+     * screen reader, and what the board specs select on. Keep the semantic and
+     * describe the drag separately; `attributes` still supplies the tabIndex
+     * the keyboard sensor needs.
+     */
+    attributes: { role: "article", roleDescription: "Draggable task card" },
+  });
+
+  /**
+   * The card is registered as its own activator, not just its node, because the
+   * keyboard sensor only refuses a keydown from somewhere else when it knows
+   * what the activator is. Without one, a key pressed in the ⋯ menu's edit
+   * dialog — portaled out of the card in the DOM, but still inside it in the
+   * React tree its events bubble through — started a drag instead of typing
+   * (QDIT-64).
+   */
+  const ref = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node);
+      setActivatorNodeRef(node);
+    },
+    [setNodeRef, setActivatorNodeRef],
+  );
 
   return (
     <Card
       task={task}
-      ref={setNodeRef}
+      ref={ref}
       onOpen={onOpen}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       // The whole card is the handle. A dedicated grip would be a second thing
