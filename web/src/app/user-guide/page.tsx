@@ -678,7 +678,10 @@ const SECTIONS: Section[] = [
         You can submit again until the deadline. Click{" "}
         <strong>Update submission</strong>. The last submission counts. If you
         send from doqtri again, submit again in qdit to include it. A person
-        can be on one team only.
+        can be on one team only. Changes you haven&apos;t submitted are kept
+        as a draft in this browser, so you can close the dialog and come back.
+        Click <strong>Discard draft</strong> to start again from your last
+        submission.
       </>
     ),
   },
