@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkEligibility,
   largestConnectedNotes,
+  noteLinks,
   parseInstant,
   qualifyingNotes,
   TRUNCATED_SUFFIX,
@@ -388,7 +389,7 @@ describe("checkEligibility", () => {
         ),
       },
       passed: false,
-      reason: "3 of 5 event notes connected in the global mindmap",
+      reason: "3 of 5 event notes connected by the global mindmap or [[links]]",
     },
     {
       name: "notes joined only by links between their document nodes",
@@ -418,7 +419,52 @@ describe("checkEligibility", () => {
         }),
       },
       passed: false,
-      reason: "4 of 5 event notes connected in the global mindmap",
+      reason: "4 of 5 event notes connected by the global mindmap or [[links]]",
+    },
+    {
+      name: "notes the map leaves apart, joined by [[links]]",
+      rule: "notes_connected",
+      input: {
+        doqtri: doqtri(
+          [
+            note("n1", { title: "Index", markdown: "[[Scope]] [[ team ]] [[Risks|the risks]]" }),
+            note("n2", { title: "Scope" }),
+            note("n3", { title: "Team" }),
+            note("n4", { title: "Risks", markdown: "Next: [[Plan]]" }),
+            note("n5", { title: "Plan" }),
+          ],
+          { nodes: [], links: [] },
+        ),
+      },
+      passed: true,
+      reason: "5 event notes connected by the global mindmap or [[links]] (needs 5)",
+    },
+    {
+      name: "a map cluster and a [[link]] cluster joined by one link",
+      rule: "notes_connected",
+      input: {
+        doqtri: doqtri(
+          [
+            ...["n1", "n2", "n3"].map((id) => note(id)),
+            note("n4", { markdown: "See [[n5]] and [[n1]]" }),
+            note("n5"),
+          ],
+          hub(["n1", "n2", "n3"]),
+        ),
+      },
+      passed: true,
+    },
+    {
+      name: "links to titles no note has do not join notes",
+      rule: "notes_connected",
+      input: {
+        doqtri: doqtri(
+          FIVE.map((id) => note(id, { markdown: "[[Ghost]]" })),
+          { nodes: [], links: [] },
+        ),
+      },
+      passed: false,
+      reason: "1 of 5 event notes connected by the global mindmap or [[links]]",
     },
 
     // notes_on_chain
@@ -602,5 +648,42 @@ describe("largestConnectedNotes", () => {
 
   it("ignores notes that appear in no node", () => {
     expect(largestConnectedNotes(hub(["a", "b"]), ["a", "b", "c"])).toEqual(["a", "b"]);
+  });
+
+  it("joins notes through a [[link]] to a note outside the counted set", () => {
+    const empty: DoqtriGlobalMindmap = { nodes: [], links: [] };
+    const notes = [
+      note("a", { markdown: "[[t]]" }),
+      note("t", { source: "template" }),
+      note("b", { markdown: "[[T]]" }),
+    ];
+    expect(largestConnectedNotes(empty, ["a", "b"], notes)).toEqual(["a", "b"]);
+  });
+});
+
+describe("noteLinks", () => {
+  it("resolves titles ignoring case and surrounding space, and keeps only the title of an alias", () => {
+    const notes = [
+      note("a", { title: "Client Project", markdown: "[[ client project ]] [[Scope|see scope]]" }),
+      note("b", { title: "Scope", markdown: "Part of [[Client Project]]." }),
+    ];
+    // a's self-link is dropped.
+    expect(noteLinks(notes)).toEqual([
+      ["a", "b"],
+      ["b", "a"],
+    ]);
+  });
+
+  it("drops links to a title no note has", () => {
+    expect(noteLinks([note("a", { markdown: "[[Nowhere]]" })])).toEqual([]);
+  });
+
+  it("gives a shared title to the later note, as doqtri does", () => {
+    const notes = [
+      note("a", { title: "Same" }),
+      note("b", { title: "Same" }),
+      note("c", { markdown: "[[Same]]" }),
+    ];
+    expect(noteLinks(notes)).toEqual([["c", "b"]]);
   });
 });

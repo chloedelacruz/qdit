@@ -81,7 +81,7 @@ export interface SnapshotFacts {
     notes_by_source: Record<DoqtriNoteSource | "unknown", number>;
     global_mindmap_nodes: number;
     global_mindmap_links: number;
-    /** Largest group of qualifying notes the global mindmap connects. */
+    /** Largest group of qualifying notes the global mindmap or `[[links]]` connect. */
     largest_connected_qualifying_notes: number;
   } | null;
 }
@@ -163,6 +163,7 @@ export function snapshotFacts(
       largest_connected_qualifying_notes: largestConnectedNotes(
         doqtri.global_mindmap,
         qualifying.map((n) => n.doc_id),
+        notes,
       ).length,
     };
   }
