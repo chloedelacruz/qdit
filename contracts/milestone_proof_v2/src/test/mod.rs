@@ -5,6 +5,7 @@ mod batches;
 mod members;
 mod milestones;
 mod project;
+mod storage;
 
 use crate::{MilestoneProofV2Contract, MilestoneProofV2ContractClient, Role};
 use soroban_sdk::{

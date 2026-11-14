@@ -104,6 +104,47 @@ the shared test vectors are in [`docs/merkle/SPEC.md`](../../docs/merkle/SPEC.md
 - The contract never sees the leaves, so it can't refuse a batch that names the same
   milestone twice. `qdit-batch` refuses one before anchoring.
 
+## Storage and TTL
+
+Everything lives in persistent storage, one entry per key:
+
+| Key | Holds | Bound |
+| --- | --- | --- |
+| `Project(project_id)` | owner, threshold | fixed size |
+| `Members(project_id)` | roster, `Map<Address, Role>` | 20 members (`MAX_MEMBERS`, `MemberLimit`) |
+| `Milestone(project_id, milestone_id)` | record, with its approvers `Vec` | approvers: 21, one more than the roster cap (see Removed approvers) |
+| `Batch(project_id, batch_id)` | root, leaf count, submitter, ledger | fixed size; 1 to 65,536 leaves, proofs of at most 16 hashes |
+
+Ids are at most 64 bytes. No entry holds a collection that grows without a bound,
+and nothing is kept in instance storage.
+
+**Every write extends TTL.** A write extends the entry it writes, the project's
+record, its roster and the contract instance (which also covers the contract code) to
+`TTL_EXTEND_TO`, 120 days (2,073,600 ledgers at 5 s). An entry is only extended
+once its TTL is below `TTL_THRESHOLD`, 119 days, so a busy project pays the bump
+at most once a day. 120 days stays under the network's ceiling of 3,110,400
+ledgers (about 180 days), which the crate checks at compile time.
+
+So a project that keeps getting writes never loses its record or roster, even if
+neither is written again. Reads extend nothing: they are usually simulations, and
+a simulation writes nothing.
+
+### Idle entries need extending or restoring
+
+An entry nobody writes for 120 days is archived. In practice:
+
+- **An idle project.** No write for 120 days archives its record, roster and
+  possibly the instance. Every call on it fails until they are restored.
+- **A finished milestone or an old batch.** An Approved milestone or an anchored
+  batch is never written again, so it is archived 120 days after its last write,
+  even while the project stays busy. `get_milestone_status`, `get_batch` and
+  `verify_inclusion` fail on it until it is restored.
+
+Nothing is lost: an archived entry is restored with `stellar contract restore`
+(or a `RestoreFootprint` operation) for its key, paid by whoever restores it, and
+it reads as before. To keep one live ahead of time, extend it with
+`stellar contract extend --durability persistent`.
+
 ## Events
 
 Every write emits one event, and a refused call emits none. Topic 0 is `qdit`, topic 1

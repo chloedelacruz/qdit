@@ -14,6 +14,20 @@ const MAX_ID_LEN: u32 = 64;
 /// and the next approval then finalises the milestone.
 pub const MAX_MEMBERS: u32 = 20;
 
+/// Ledgers in a day, at five seconds a ledger.
+pub const DAY_IN_LEDGERS: u32 = 17_280;
+
+/// TTL every write extends its entries, the project's shared entries and the
+/// contract instance to: 120 days, well under the network's 180-day ceiling.
+pub const TTL_EXTEND_TO: u32 = 120 * DAY_IN_LEDGERS;
+
+/// An entry with less TTL left than this is extended on a write, so a busy
+/// project pays the rent bump at most once a day.
+pub const TTL_THRESHOLD: u32 = TTL_EXTEND_TO - DAY_IN_LEDGERS;
+
+/// Mainnet and testnet cap an entry's TTL at 3,110,400 ledgers.
+const _: () = assert!(TTL_EXTEND_TO < 3_110_400);
+
 /// A registered project.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +107,26 @@ pub struct BatchRecord {
     pub ledger: u32,
 }
 
+fn extend(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
+/// Keep alive what every call on a project reads: its record, its roster when
+/// it has one, and the contract instance and code. Every write calls this, so a
+/// project in use never loses an entry it still needs.
+fn extend_project(env: &Env, project_id: &String) {
+    extend(env, &DataKey::Project(project_id.clone()));
+    let members = DataKey::Members(project_id.clone());
+    if env.storage().persistent().has(&members) {
+        extend(env, &members);
+    }
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
 /// Reject an identifier longer than [`MAX_ID_LEN`].
 pub fn check_id(id: &String) -> Result<(), Error> {
     if id.len() > MAX_ID_LEN {
@@ -118,6 +152,7 @@ pub fn set_project(env: &Env, project_id: &String, project: &Project) {
     env.storage()
         .persistent()
         .set(&DataKey::Project(project_id.clone()), project);
+    extend_project(env, project_id);
 }
 
 /// The project's roster. Empty until the owner adds someone.
@@ -132,6 +167,7 @@ pub fn set_members(env: &Env, project_id: &String, members: &Map<Address, Role>)
     env.storage()
         .persistent()
         .set(&DataKey::Members(project_id.clone()), members);
+    extend_project(env, project_id);
 }
 
 pub fn get_milestone(
@@ -151,10 +187,10 @@ pub fn set_milestone(
     milestone_id: &String,
     record: &MilestoneRecord,
 ) {
-    env.storage().persistent().set(
-        &DataKey::Milestone(project_id.clone(), milestone_id.clone()),
-        record,
-    );
+    let key = DataKey::Milestone(project_id.clone(), milestone_id.clone());
+    env.storage().persistent().set(&key, record);
+    extend(env, &key);
+    extend_project(env, project_id);
 }
 
 pub fn get_batch(env: &Env, project_id: &String, batch_id: &String) -> Option<BatchRecord> {
@@ -170,8 +206,8 @@ pub fn has_batch(env: &Env, project_id: &String, batch_id: &String) -> bool {
 }
 
 pub fn set_batch(env: &Env, project_id: &String, batch_id: &String, record: &BatchRecord) {
-    env.storage().persistent().set(
-        &DataKey::Batch(project_id.clone(), batch_id.clone()),
-        record,
-    );
+    let key = DataKey::Batch(project_id.clone(), batch_id.clone());
+    env.storage().persistent().set(&key, record);
+    extend(env, &key);
+    extend_project(env, project_id);
 }
