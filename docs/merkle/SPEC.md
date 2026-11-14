@@ -190,8 +190,8 @@ vectors. Version 2 never changes.
 
 | Version | `TAG` | Leaf | Used by |
 | --- | --- | --- | --- |
-| v2 (current) | `qdit/merkle/v2` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ u32be(version) ‖ proof_hash)` | `milestone_proof_v2` from the deployment in `contracts/milestone_proof_v2/DEPLOYMENTS.md` dated 2026-11-14 onwards; `qdit-inclusion-proof/v2` files |
-| v1 | `qdit/merkle/v1` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ proof_hash)` | Only the superseded testnet contract `CCLOK4SW…QFH3` and the 2026-11-10 benchmark run ([`BENCHMARK.md`](./BENCHMARK.md)) |
+| v2 (current) | `qdit/merkle/v2` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ u32be(version) ‖ proof_hash)` | `milestone_proof_v2` from testnet contract `CAIBMWYD…BFNB` onwards (`contracts/milestone_proof_v2/DEPLOYMENTS.md`); `qdit-inclusion-proof/v2` files |
+| v1 | `qdit/merkle/v1` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ proof_hash)` | Only the superseded testnet contracts `CCLOK4SW…QFH3` and `CDDIVHDM…BT6N`, and the 2026-11-10 benchmark run ([`BENCHMARK.md`](./BENCHMARK.md)) |
 
 v1 left out the submission version, which QDIT-6 called for. The week 2 review
 (QDIT-20) caught it while nothing outside testnet used the scheme, and v2 adds it.

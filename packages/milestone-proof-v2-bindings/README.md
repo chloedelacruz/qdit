@@ -32,11 +32,12 @@ cd packages
 stellar contract bindings typescript --network testnet --overwrite \
   --contract-id <current id from DEPLOYMENTS.md> \
   --output-dir milestone-proof-v2-bindings
-git checkout -- milestone-proof-v2-bindings/package.json milestone-proof-v2-bindings/README.md
+git checkout -- milestone-proof-v2-bindings/package.json milestone-proof-v2-bindings/README.md \
+  milestone-proof-v2-bindings/test
 npm run build && npm test
 ```
 
-The generator also writes its own `package.json` and `README.md`; the `git checkout`
-keeps these. The generated code uses a constructor parameter property, which Node can't
+`--overwrite` empties the folder first, and the generator writes its own `package.json`
+and `README.md`, so the `git checkout` brings back these files and `test/`. The generated code uses a constructor parameter property, which Node can't
 strip, so this package keeps its own `tsconfig.json` instead of the shared base, and its
 test reads `dist/`.
