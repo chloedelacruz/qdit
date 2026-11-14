@@ -1,0 +1,25 @@
+{
+  "name": "v2-harness",
+  "version": "0.1.0",
+  "description": "Drives every milestone_proof_v2 call against the live testnet contract from throwaway Friendbot accounts, and writes a tx-linked evidence log.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "harness": "node src/harness.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@qdit/merkle": "0.1.0",
+    "@qdit/milestone-proof-v2-bindings": "0.1.0",
+    "@stellar/stellar-sdk": "^16.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5.9"
+  }
+}
