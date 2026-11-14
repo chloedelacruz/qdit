@@ -21,7 +21,8 @@ pub use errors::Error;
 pub use events::*;
 pub use merkle::{MAX_BATCH_LEAVES, MAX_PROOF_LEN, TAG as MERKLE_TAG};
 pub use storage::{
-    BatchRecord, DataKey, MilestoneRecord, MilestoneStatus, Project, Role, MAX_MEMBERS,
+    BatchRecord, DataKey, MilestoneRecord, MilestoneStatus, Project, Role, DAY_IN_LEDGERS,
+    MAX_MEMBERS, TTL_EXTEND_TO, TTL_THRESHOLD,
 };
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String, Vec};
