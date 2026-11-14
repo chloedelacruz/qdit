@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   MerkleTree,
   fromHex,
+  isU32,
   proofFiles,
   toHex,
   type AnchorInfo,
@@ -16,7 +17,8 @@ import {
 /** The input file: one project, the milestones to batch, in order. */
 export interface BatchInput {
   project_id: string;
-  milestones: { milestone_id: string; proof_hash: string }[];
+  /** `version` is the milestone's submission version, as the contract records it. */
+  milestones: { milestone_id: string; version: number; proof_hash: string }[];
 }
 
 /** Ids the contract accepts: at most 64 bytes (`IdTooLong`). */
@@ -30,6 +32,7 @@ export function parseInput(json: string): BatchInput {
   v.milestones.forEach((m, i) => {
     if (typeof m?.milestone_id !== "string") throw new TypeError(`input: milestones[${i}].milestone_id must be a string`);
     checkId(`milestones[${i}].milestone_id`, m.milestone_id);
+    if (!isU32(m.version)) throw new TypeError(`input: milestones[${i}].version must be a whole number from 0 to 2^32-1`);
     if (typeof m.proof_hash !== "string") throw new TypeError(`input: milestones[${i}].proof_hash must be hex`);
     fromHex(m.proof_hash, 32);
   });
@@ -44,20 +47,24 @@ export function checkId(name: string, id: string): void {
 export function buildTree(input: BatchInput): MerkleTree {
   return MerkleTree.build(
     input.project_id,
-    input.milestones.map((m) => ({ milestoneId: m.milestone_id, proofHash: fromHex(m.proof_hash, 32) })),
+    input.milestones.map((m) => ({
+      milestoneId: m.milestone_id,
+      version: m.version,
+      proofHash: fromHex(m.proof_hash, 32),
+    })),
   );
 }
 
 /** `batch.json`: the batch as a whole, for the record. */
 export interface BatchSummary {
-  format: "qdit-batch/v1";
+  format: "qdit-batch/v2";
   network: string;
   contract_id: string;
   project_id: string;
   batch_id: string;
   root: string;
   leaf_count: number;
-  milestones: { index: number; milestone_id: string; proof_hash: string; leaf: string; proof_file: string }[];
+  milestones: { index: number; milestone_id: string; version: number; proof_hash: string; leaf: string; proof_file: string }[];
   anchor?: AnchorInfo & { submitter: string; fee_charged_stroops: string };
 }
 
@@ -94,7 +101,7 @@ export function writeBatch(outDir: string, tree: MerkleTree, ctx: WriteContext):
   });
 
   const summary: BatchSummary = {
-    format: "qdit-batch/v1",
+    format: "qdit-batch/v2",
     network: ctx.network,
     contract_id: ctx.contractId,
     project_id: tree.projectId,
@@ -104,6 +111,7 @@ export function writeBatch(outDir: string, tree: MerkleTree, ctx: WriteContext):
     milestones: files.map((f, i) => ({
       index: f.index,
       milestone_id: f.milestone_id,
+      version: f.version,
       proof_hash: f.proof_hash,
       leaf: f.leaf,
       proof_file: `proofs/${names[i]}`,

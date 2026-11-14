@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 
-const TAG = Buffer.from("qdit/merkle/v1", "ascii");
+const TAG = Buffer.from("qdit/merkle/v2", "ascii");
 
 const sha256 = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
 
@@ -18,8 +18,14 @@ function str(s) {
   return Buffer.concat([len, bytes]);
 }
 
-const leafHash = (projectId, milestoneId, proofHash) =>
-  sha256(Buffer.from([0x00]), TAG, str(projectId), str(milestoneId), proofHash);
+function u32be(n) {
+  const b = Buffer.alloc(4);
+  b.writeUInt32BE(n);
+  return b;
+}
+
+const leafHash = (projectId, milestoneId, version, proofHash) =>
+  sha256(Buffer.from([0x00]), TAG, str(projectId), str(milestoneId), u32be(version), proofHash);
 
 const nodeHash = (left, right) => sha256(Buffer.from([0x01]), TAG, left, right);
 
@@ -75,11 +81,13 @@ const proofHash = (n) => sha256(Buffer.from(`qdit test proof ${n}`, "utf8"));
 const PROJECT = "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2";
 
 function batch(name, projectId, milestoneIds) {
+  // Versions vary, so a version that is dropped or misplaced breaks a vector.
   const leaves = milestoneIds.map((m, n) => ({
     milestone_id: m,
+    version: (n % 3) + 1,
     proof_hash: proofHash(n),
   }));
-  const hashes = leaves.map((l) => leafHash(projectId, l.milestone_id, l.proof_hash));
+  const hashes = leaves.map((l) => leafHash(projectId, l.milestone_id, l.version, l.proof_hash));
   const lv = levels(hashes);
   const root = lv.at(-1)[0];
   const proofs = hashes.map((leaf, index) => {
@@ -92,6 +100,7 @@ function batch(name, projectId, milestoneIds) {
     project_id: projectId,
     leaves: leaves.map((l, n) => ({
       milestone_id: l.milestone_id,
+      version: l.version,
       proof_hash: hex(l.proof_hash),
       leaf: hex(hashes[n]),
     })),
@@ -111,7 +120,9 @@ const batches = [
   batch("four leaves", PROJECT, ids(4)),
   batch("five leaves, promoted twice", PROJECT, ids(5)),
   batch("seven leaves", PROJECT, ids(7)),
+  batch("eight leaves", PROJECT, ids(8)),
   batch("ten leaves", PROJECT, ids(10)),
+  batch("sixteen leaves", PROJECT, ids(16)),
   batch("uuid and non-ascii ids", PROJECT, [
     "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7",
     "hito-ñ",
@@ -139,9 +150,22 @@ const negatives = [
   ...n,
   batch: ten.name,
   milestone_id: leaf4.milestone_id,
+  version: leaf4.version,
   proof_hash: leaf4.proof_hash,
   expected: false,
 }));
+
+// Same milestone and proof hash, but another submission version: the leaf changes.
+negatives.push({
+  name: "right proof, wrong version",
+  batch: ten.name,
+  index: 4,
+  path: good.path,
+  milestone_id: leaf4.milestone_id,
+  version: leaf4.version + 1,
+  proof_hash: leaf4.proof_hash,
+  expected: false,
+});
 
 // Same leaf fields, but claimed under a different project: the leaf changes.
 negatives.push({
@@ -151,6 +175,7 @@ negatives.push({
   index: 4,
   path: good.path,
   milestone_id: leaf4.milestone_id,
+  version: leaf4.version,
   proof_hash: leaf4.proof_hash,
   expected: false,
 });
@@ -164,13 +189,14 @@ negatives.push({
   index: 0,
   path: proofFor(ten._lv, 0).slice(1).map(hex),
   milestone_id: ten.leaves[0].milestone_id,
+  version: ten.leaves[0].version,
   proof_hash: hex(inner),
   expected: false,
 });
 
 for (const n of negatives) {
   const b = batches.find((x) => x.name === n.batch);
-  const leaf = leafHash(n.project_id ?? b.project_id, n.milestone_id, Buffer.from(n.proof_hash, "hex"));
+  const leaf = leafHash(n.project_id ?? b.project_id, n.milestone_id, n.version, Buffer.from(n.proof_hash, "hex"));
   const ok = verify(
     Buffer.from(b.root, "hex"),
     b.leaves.length,
@@ -185,7 +211,7 @@ const zero = Buffer.alloc(32, 0);
 const ff = Buffer.alloc(32, 0xff);
 
 const out = {
-  scheme: "qdit/merkle/v1",
+  scheme: "qdit/merkle/v2",
   spec: "docs/merkle/SPEC.md",
   primitives: {
     tag_hex: hex(TAG),
@@ -193,11 +219,15 @@ const out = {
       {
         project_id: PROJECT,
         milestone_id: "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7",
+        version: 1,
         proof_hash: hex(zero),
-        hash: hex(leafHash(PROJECT, "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7", zero)),
+        hash: hex(leafHash(PROJECT, "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7", 1, zero)),
       },
-      { project_id: "ab", milestone_id: "c", proof_hash: hex(ff), hash: hex(leafHash("ab", "c", ff)) },
-      { project_id: "a", milestone_id: "bc", proof_hash: hex(ff), hash: hex(leafHash("a", "bc", ff)) },
+      { project_id: "ab", milestone_id: "c", version: 1, proof_hash: hex(ff), hash: hex(leafHash("ab", "c", 1, ff)) },
+      { project_id: "a", milestone_id: "bc", version: 1, proof_hash: hex(ff), hash: hex(leafHash("a", "bc", 1, ff)) },
+      // The version is a fixed-width big-endian u32, so 1 and 256 differ in one byte.
+      { project_id: "a", milestone_id: "bc", version: 256, proof_hash: hex(ff), hash: hex(leafHash("a", "bc", 256, ff)) },
+      { project_id: "a", milestone_id: "bc", version: 4294967295, proof_hash: hex(ff), hash: hex(leafHash("a", "bc", 4294967295, ff)) },
     ],
     node: [{ left: hex(zero), right: hex(ff), hash: hex(nodeHash(zero, ff)) }],
   },

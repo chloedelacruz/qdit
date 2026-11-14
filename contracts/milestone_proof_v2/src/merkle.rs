@@ -1,4 +1,4 @@
-//! The qdit Merkle batch scheme, version 1 (`docs/merkle/SPEC.md`).
+//! The qdit Merkle batch scheme, version 2 (`docs/merkle/SPEC.md`).
 //!
 //! The contract never builds a tree. It stores a root and a leaf count, and
 //! checks one inclusion proof at a time against them.
@@ -6,7 +6,7 @@
 use soroban_sdk::{Bytes, BytesN, Env, String, Vec};
 
 /// Domain tag for this version of the scheme. A new version gets a new tag.
-pub const TAG: &[u8; 14] = b"qdit/merkle/v1";
+pub const TAG: &[u8; 14] = b"qdit/merkle/v2";
 
 /// First preimage byte of a leaf, so no inner node can pass as a leaf.
 const LEAF_PREFIX: u8 = 0x00;
@@ -24,11 +24,15 @@ fn append_str(buf: &mut Bytes, s: &String) {
     buf.append(&s.to_bytes());
 }
 
-/// `H(0x00 || TAG || str(project_id) || str(milestone_id) || proof_hash)`.
+/// `H(0x00 || TAG || str(project_id) || str(milestone_id) || u32be(version) || proof_hash)`.
+///
+/// `version` is the milestone's submission version, so a leaf names the exact
+/// submission it anchors, not only its hash.
 pub fn leaf_hash(
     env: &Env,
     project_id: &String,
     milestone_id: &String,
+    version: u32,
     proof_hash: &BytesN<32>,
 ) -> BytesN<32> {
     let mut buf = Bytes::new(env);
@@ -36,6 +40,7 @@ pub fn leaf_hash(
     buf.extend_from_array(TAG);
     append_str(&mut buf, project_id);
     append_str(&mut buf, milestone_id);
+    buf.extend_from_array(&version.to_be_bytes());
     buf.append(&Bytes::from(proof_hash));
     env.crypto().sha256(&buf).to_bytes()
 }

@@ -70,13 +70,14 @@ pub fn verify_inclusion(
     project_id: String,
     batch_id: String,
     milestone_id: String,
+    version: u32,
     proof_hash: BytesN<32>,
     index: u32,
     path: Vec<BytesN<32>>,
 ) -> Result<bool, Error> {
     storage::check_id(&milestone_id)?;
     let batch = get(env, project_id.clone(), batch_id)?;
-    let leaf = merkle::leaf_hash(env, &project_id, &milestone_id, &proof_hash);
+    let leaf = merkle::leaf_hash(env, &project_id, &milestone_id, version, &proof_hash);
     Ok(merkle::verify(
         env,
         &batch.root,

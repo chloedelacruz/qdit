@@ -17,7 +17,8 @@ function sample(n: number) {
     PROJECT,
     Array.from({ length: n }, (_, i) => ({
       milestoneId: `m-${i}`,
-      proofHash: leafHash("seed", String(i), new Uint8Array(32)),
+      version: i + 1,
+      proofHash: leafHash("seed", String(i), 1, new Uint8Array(32)),
     })),
   );
   const files = proofFiles(tree, {
@@ -56,6 +57,13 @@ test("an edited proof_hash fails both checks", () => {
   assert.deepEqual([check.leafMatches, check.pathValid], [false, false]);
 });
 
+test("an edited version fails both checks", () => {
+  const { tree, files } = sample(4);
+  const forged = { ...files[1]!, version: files[1]!.version + 1 };
+  const check = checkProofFile(forged, { root: tree.root, leafCount: 4 });
+  assert.deepEqual([check.leafMatches, check.pathValid], [false, false]);
+});
+
 test("the anchor block is optional", () => {
   const tree = sample(2).tree;
   const [file] = proofFiles(tree, { network: "testnet", contractId: "C", batchId: "b" });
@@ -69,6 +77,8 @@ test("malformed files are refused", () => {
   assert.throws(() => parseProofFile({ ...good, format: "v0" }), /format/);
   assert.throws(() => parseProofFile({ ...good, root: "abcd" }), /32 bytes/);
   assert.throws(() => parseProofFile({ ...good, index: -1 }), /index/);
+  assert.throws(() => parseProofFile({ ...good, version: -1 }), /version/);
+  assert.throws(() => parseProofFile({ ...good, version: undefined }), /version/);
   assert.throws(() => parseProofFile({ ...good, path: Array(17).fill(good.root) }), /path/);
   assert.throws(() => parseProofFile({ ...good, anchor: { tx_hash: "x" } }), /anchor/);
 });
