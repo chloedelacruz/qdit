@@ -1,4 +1,8 @@
+# Pinned, not "stable": rustc decides the wasm bytes, so a toolchain upgrade
+# changes the hash of an unchanged contract. The deployed v2 hash in
+# milestone_proof_v2/DEPLOYMENTS.md was built with this version. Bump it in its
+# own commit, and expect every contract's hash to change.
 [toolchain]
-channel = "stable"
+channel = "1.96.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32v1-none"]

@@ -4,11 +4,14 @@
   "description": "Off-chain tooling for the qdit contracts. Not part of the web app.",
   "workspaces": [
     "merkle",
-    "qdit-batch"
+    "qdit-batch",
+    "milestone-proof-v2-bindings",
+    "v2-harness"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces",
-    "typecheck": "npm run typecheck --workspaces"
+    "typecheck": "npm run typecheck --workspaces",
+    "harness": "npm run build && npm run harness -w v2-harness"
   }
 }

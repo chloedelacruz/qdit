@@ -29,7 +29,7 @@ Usage:
            that the file agrees with itself.
 
 Options:
-  --input <file>        { "project_id": "...", "milestones": [ { "milestone_id": "...", "proof_hash": "<64 hex>" } ] }
+  --input <file>        { "project_id": "...", "milestones": [ { "milestone_id": "...", "version": 1, "proof_hash": "<64 hex>" } ] }
   --batch-id <id>       Unique per project, at most 64 bytes.
   --out <dir>           Output directory (default: ./batch-<batch-id>).
   --contract <C...>     milestone_proof_v2 contract id. verify defaults to the file's.
@@ -152,6 +152,7 @@ async function cmdVerify(values: Record<string, unknown>, files: string[]): Prom
         sc.string(file.project_id),
         sc.string(file.batch_id),
         sc.string(file.milestone_id),
+        sc.u32(file.version),
         sc.bytes(fromHex(file.proof_hash, 32)),
         sc.u32(file.index),
         sc.vec(file.path.map((h) => sc.bytes(fromHex(h, 32)))),

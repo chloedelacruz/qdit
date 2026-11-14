@@ -1,5 +1,5 @@
 /**
- * The qdit Merkle batch scheme, version 1: `docs/merkle/SPEC.md`.
+ * The qdit Merkle batch scheme, version 2: `docs/merkle/SPEC.md`.
  *
  * Byte-for-byte the same as `milestone_proof_v2` (`anchor_batch`,
  * `verify_inclusion`). Both are tested against `docs/merkle/vectors.json`.
@@ -7,8 +7,8 @@
 
 import { createHash } from "node:crypto";
 
-/** The domain tag, ASCII `qdit/merkle/v1`. A new scheme version gets a new tag. */
-export const TAG: Uint8Array = new TextEncoder().encode("qdit/merkle/v1");
+/** The domain tag, ASCII `qdit/merkle/v2`. A new scheme version gets a new tag. */
+export const TAG: Uint8Array = new TextEncoder().encode("qdit/merkle/v2");
 
 /** Most leaves a batch may hold, the contract's `MAX_BATCH_LEAVES`. */
 export const MAX_BATCH_LEAVES = 65_536;
@@ -25,6 +25,8 @@ export type Hash = Uint8Array;
 /** One milestone in a batch. */
 export interface Leaf {
   milestoneId: string;
+  /** The milestone's submission version, as the contract records it (u32). */
+  version: number;
   /** The milestone's existing 32-byte proof hash. */
   proofHash: Hash;
 }
@@ -52,10 +54,23 @@ function check32(name: string, h: Uint8Array): void {
   }
 }
 
-/** `H(0x00 || TAG || str(projectId) || str(milestoneId) || proofHash)`. */
-export function leafHash(projectId: string, milestoneId: string, proofHash: Hash): Hash {
+/** `u32be(n)`. */
+function u32be(n: number): Uint8Array {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, n, false);
+  return out;
+}
+
+/** Whether `n` fits the contract's `u32`. */
+export function isU32(n: unknown): n is number {
+  return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 0xffff_ffff;
+}
+
+/** `H(0x00 || TAG || str(projectId) || str(milestoneId) || u32be(version) || proofHash)`. */
+export function leafHash(projectId: string, milestoneId: string, version: number, proofHash: Hash): Hash {
+  if (!isU32(version)) throw new RangeError(`version must be a u32, got ${version}`);
   check32("proofHash", proofHash);
-  return sha256([Uint8Array.of(LEAF_PREFIX), TAG, str(projectId), str(milestoneId), proofHash]);
+  return sha256([Uint8Array.of(LEAF_PREFIX), TAG, str(projectId), str(milestoneId), u32be(version), proofHash]);
 }
 
 /** `H(0x01 || TAG || left || right)`. */
@@ -95,7 +110,7 @@ export class MerkleTree {
       seen.add(leaf.milestoneId);
     }
 
-    let level = leaves.map((l) => leafHash(projectId, l.milestoneId, l.proofHash));
+    let level = leaves.map((l) => leafHash(projectId, l.milestoneId, l.version, l.proofHash));
     const levels: Hash[][] = [level];
     while (level.length > 1) {
       const next: Hash[] = [];
@@ -154,6 +169,7 @@ export class MerkleTree {
 export interface InclusionClaim {
   projectId: string;
   milestoneId: string;
+  version: number;
   proofHash: Hash;
   index: number;
   path: readonly Hash[];
@@ -212,8 +228,8 @@ export function verifyPath(
  * from the chain (`get_batch`), not from the proof file being checked.
  */
 export function verifyInclusion(root: Hash, leafCount: number, claim: InclusionClaim): boolean {
-  if (claim.proofHash.length !== 32) return false;
-  const leaf = leafHash(claim.projectId, claim.milestoneId, claim.proofHash);
+  if (claim.proofHash.length !== 32 || !isU32(claim.version)) return false;
+  const leaf = leafHash(claim.projectId, claim.milestoneId, claim.version, claim.proofHash);
   return verifyPath(root, leafCount, claim.index, leaf, claim.path);
 }
 

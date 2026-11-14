@@ -23,6 +23,10 @@ fn s(env: &Env, v: &Value) -> String {
     String::from_str(env, v.as_str().expect("a string"))
 }
 
+fn ver(v: &Value) -> u32 {
+    u32::try_from(v.as_u64().unwrap()).unwrap()
+}
+
 fn h(env: &Env, v: &Value) -> BytesN<32> {
     let text = v.as_str().expect("a hex string");
     assert_eq!(text.len(), 64, "32-byte hex: {text}");
@@ -112,6 +116,7 @@ fn leaf_and_node_hashes_match_the_vectors() {
                 &env,
                 &s(&env, &leaf["project_id"]),
                 &s(&env, &leaf["milestone_id"]),
+                ver(&leaf["version"]),
                 &h(&env, &leaf["proof_hash"]),
             ),
             h(&env, &leaf["hash"]),
@@ -157,9 +162,10 @@ fn every_vector_batch_proves_every_leaf_on_chain() {
 
         for (n, leaf) in leaves.iter().enumerate() {
             let milestone = s(env, &leaf["milestone_id"]);
+            let version = ver(&leaf["version"]);
             let proof_hash = h(env, &leaf["proof_hash"]);
             assert_eq!(
-                merkle::leaf_hash(env, &project, &milestone, &proof_hash),
+                merkle::leaf_hash(env, &project, &milestone, version, &proof_hash),
                 h(env, &leaf["leaf"]),
                 "{}: leaf {n}",
                 batch["name"],
@@ -172,6 +178,7 @@ fn every_vector_batch_proves_every_leaf_on_chain() {
                     &project,
                     &batch_id(env),
                     &milestone,
+                    &version,
                     &proof_hash,
                     &(n as u32),
                     &path(env, &p["path"]),
@@ -216,6 +223,7 @@ fn every_invalid_vector_proof_is_false() {
             env,
             claimed.as_ref().unwrap_or(&project),
             &s(env, &bad["milestone_id"]),
+            ver(&bad["version"]),
             &h(env, &bad["proof_hash"]),
         );
         let ok = merkle::verify(
@@ -234,6 +242,7 @@ fn every_invalid_vector_proof_is_false() {
                     &project,
                     &batch_id(env),
                     &s(env, &bad["milestone_id"]),
+                    &ver(&bad["version"]),
                     &h(env, &bad["proof_hash"]),
                     &(bad["index"].as_u64().unwrap() as u32),
                     &path(env, &bad["path"]),
@@ -437,6 +446,7 @@ fn long_ids_are_refused() {
             &project_id(env),
             &batch_id(env),
             &long,
+            &1,
             &proof(env, 1),
             &0,
             &Vec::new(env),
@@ -449,7 +459,7 @@ fn long_ids_are_refused() {
 fn a_batch_changes_no_milestone() {
     let t = team();
     let env = &t.f.env;
-    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), &proof(env, 9));
+    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), 1, &proof(env, 9));
 
     // A one-leaf batch: the root is the leaf.
     t.anchor(&leaf, 1);
@@ -458,6 +468,7 @@ fn a_batch_changes_no_milestone() {
         &project_id(env),
         &batch_id(env),
         &milestone_id(env),
+        &1,
         &proof(env, 9),
         &0,
         &Vec::new(env),
@@ -480,6 +491,7 @@ fn verifying_against_an_unknown_batch_is_an_error_not_false() {
             &project_id(env),
             &batch_id(env),
             &milestone_id(env),
+            &1,
             &proof(env, 1),
             &0,
             &Vec::new(env),
@@ -492,13 +504,14 @@ fn verifying_against_an_unknown_batch_is_an_error_not_false() {
 fn a_wrong_proof_hash_is_false() {
     let t = team();
     let env = &t.f.env;
-    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), &proof(env, 9));
+    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), 1, &proof(env, 9));
     t.anchor(&leaf, 1);
 
     assert!(!t.f.client.verify_inclusion(
         &project_id(env),
         &batch_id(env),
         &milestone_id(env),
+        &1,
         &proof(env, 8),
         &0,
         &Vec::new(env),
@@ -509,7 +522,7 @@ fn a_wrong_proof_hash_is_false() {
 fn verify_inclusion_needs_no_signature() {
     let t = team();
     let env = &t.f.env;
-    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), &proof(env, 9));
+    let leaf = merkle::leaf_hash(env, &project_id(env), &milestone_id(env), 1, &proof(env, 9));
     t.anchor(&leaf, 1);
 
     env.mock_auths(&[]);
@@ -517,6 +530,7 @@ fn verify_inclusion_needs_no_signature() {
         &project_id(env),
         &batch_id(env),
         &milestone_id(env),
+        &1,
         &proof(env, 9),
         &0,
         &Vec::new(env),

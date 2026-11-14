@@ -22,14 +22,16 @@ node qdit-batch/src/cli.ts --help
 ## Input
 
 One project and the milestones to batch, in leaf order. `proof_hash` is each
-milestone's existing 32-byte proof hash, the value `submit_milestone_proof` takes.
+milestone's existing 32-byte proof hash, the value `submit_milestone_proof` takes, and
+`version` is the submission version the contract recorded for it (`get_milestone_status`).
+Both go into the leaf, so a proof names the exact submission.
 See [`examples/milestones.json`](./examples/milestones.json).
 
 ```json
 {
   "project_id": "8f14e45f-ceea-467a-9b7e-5a0dcbf1c8b2",
   "milestones": [
-    { "milestone_id": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7", "proof_hash": "<64 hex>" }
+    { "milestone_id": "c9f0f895-fb98-4b1f-a1b3-8ee9a1d6c4e7", "version": 1, "proof_hash": "<64 hex>" }
   ]
 }
 ```
@@ -79,7 +81,7 @@ file fails.
 batch-sprint-12/
   batch.json                 root, leaf count, every leaf, the anchor and its fee
   proofs/
-    00000-<milestone>.json   qdit-inclusion-proof/v1, one per milestone
+    00000-<milestone>.json   qdit-inclusion-proof/v2, one per milestone
     00001-<milestone>.json
 ```
 

@@ -2,7 +2,10 @@
 
 On-chain team roles, M-of-N milestone approval and Merkle batch anchoring. A new contract beside
 [`milestone_proof`](../milestone_proof), not an upgrade of it: v1 and its records are
-not touched, and the app and doqtri stay on v1. Testnet only for now.
+not touched, and the app and doqtri stay on v1. Testnet only for now: the current
+contract id, its wasm hash and how to check it are in [`DEPLOYMENTS.md`](./DEPLOYMENTS.md),
+and the TypeScript client is
+[`@qdit/milestone-proof-v2-bindings`](../../packages/milestone-proof-v2-bindings).
 
 It has no admin, no privileged override and no upgrade entry point. Every write
 requires the acting address's signature and reads roles and the owner from storage,
@@ -25,7 +28,7 @@ never from an argument.
 | `get_milestone_status(project_id, milestone_id)` | none | `MilestoneNotFound` |
 | `anchor_batch(project_id, batch_id, submitter, root, leaf_count)` | `submitter`, role `Submitter` | `ProjectNotFound`, `NotMember`, `NotAuthorized`, `InvalidBatch`, `BatchExists` |
 | `get_batch(project_id, batch_id)` | none | `BatchNotFound` |
-| `verify_inclusion(project_id, batch_id, milestone_id, proof_hash, index, path) -> bool` | none | `BatchNotFound` |
+| `verify_inclusion(project_id, batch_id, milestone_id, version, proof_hash, index, path) -> bool` | none | `BatchNotFound` |
 
 Every call also refuses an id over 64 characters with `IdTooLong`.
 
@@ -97,7 +100,7 @@ the shared test vectors are in [`docs/merkle/SPEC.md`](../../docs/merkle/SPEC.md
 - **1 to 65,536 leaves** (`MAX_BATCH_LEAVES`), else `InvalidBatch`. A proof holds at most
   16 hashes.
 - **`false`, not an error, for a bad proof.** `verify_inclusion` rebuilds the leaf from
-  `project_id`, `milestone_id` and `proof_hash`, takes every left/right side from `index`
+  `project_id`, `milestone_id`, `version` and `proof_hash`, takes every left/right side from `index`
   and the stored leaf count, and returns `false` for a wrong, short, long or
   out-of-range proof. Only an unknown batch is an error (`BatchNotFound`). It is
   read-only, so a simulation is enough and costs no fee.

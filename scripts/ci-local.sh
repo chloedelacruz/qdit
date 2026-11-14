@@ -96,6 +96,7 @@ job_wasm() {
   cd "$root/contracts"
   stellar contract build
   test -s target/wasm32v1-none/release/milestone_proof.wasm
+  test -s target/wasm32v1-none/release/milestone_proof_v2.wasm
 }
 
 # The same Supabase CLI CI pins (the `version:` under supabase/setup-cli in

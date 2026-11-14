@@ -10,7 +10,7 @@ import { buildTree, parseInput, proofFileName, writeBatch, type BatchSummary } f
 
 const vectors = JSON.parse(
   readFileSync(new URL("../../../docs/merkle/vectors.json", import.meta.url), "utf8"),
-) as { batches: { name: string; project_id: string; root: string; leaves: { milestone_id: string; proof_hash: string }[] }[] };
+) as { batches: { name: string; project_id: string; root: string; leaves: { milestone_id: string; version: number; proof_hash: string }[] }[] };
 
 const ten = vectors.batches.find((b) => b.name === "ten leaves")!;
 const input = JSON.stringify({ project_id: ten.project_id, milestones: ten.leaves });
@@ -52,14 +52,21 @@ test("writeBatch lays out batch.json and one valid proof per milestone", () => {
 });
 
 test("input checks", () => {
-  const ok = { project_id: "p", milestones: [{ milestone_id: "m", proof_hash: "00".repeat(32) }] };
+  const ok = { project_id: "p", milestones: [{ milestone_id: "m", version: 1, proof_hash: "00".repeat(32) }] };
   assert.ok(parseInput(JSON.stringify(ok)));
   assert.throws(() => parseInput(JSON.stringify({ ...ok, project_id: 1 })), /project_id/);
   assert.throws(() => parseInput(JSON.stringify({ ...ok, project_id: "x".repeat(65) })), /64/);
   assert.throws(
-    () => parseInput(JSON.stringify({ ...ok, milestones: [{ milestone_id: "m", proof_hash: "abc" }] })),
+    () => parseInput(JSON.stringify({ ...ok, milestones: [{ milestone_id: "m", version: 1, proof_hash: "abc" }] })),
     /hex/,
   );
+  for (const version of [undefined, -1, 1.5, 2 ** 32, "1"]) {
+    assert.throws(
+      () => parseInput(JSON.stringify({ ...ok, milestones: [{ milestone_id: "m", version, proof_hash: "00".repeat(32) }] })),
+      /version/,
+      `version ${String(version)}`,
+    );
+  }
   assert.throws(() => buildTree(parseInput(JSON.stringify({ ...ok, milestones: [] }))), /at least one/);
   assert.throws(
     () => buildTree(parseInput(JSON.stringify({ ...ok, milestones: [ok.milestones[0], ok.milestones[0]] }))),
