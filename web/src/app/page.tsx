@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ConnectWalletButton } from "@/components/auth/connect-wallet-button";
 import { QditMark, QditWordmark } from "@/components/brand/qdit-mark";
 import { HackathonBanner } from "@/components/hackathon/hackathon-banner";
+import { LiveStats } from "@/components/landing/live-stats";
 import { MarketingHeader } from "@/components/landing/marketing-header";
 import { ProofRecord } from "@/components/landing/proof-record";
 import { Reveal } from "@/components/landing/reveal";
@@ -169,6 +170,9 @@ export default async function Home() {
             </Reveal>
           </div>
         </section>
+
+        {/* Live counts, read on the client so this page stays static. */}
+        <LiveStats />
 
         {/* ---------------------------------------------------------------- */}
         {/* The gap — the problem, stated once and quietly                    */}
