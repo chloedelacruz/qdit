@@ -1,11 +1,11 @@
 /**
- * The portable inclusion-proof file, `qdit-inclusion-proof/v1`
+ * The portable inclusion-proof file, `qdit-inclusion-proof/v2`
  * (`docs/merkle/SPEC.md`, section 7).
  */
 
-import { MAX_PROOF_LEN, MerkleTree, equal, fromHex, leafHash, toHex, verifyPath, type Hash } from "./tree.ts";
+import { MAX_PROOF_LEN, MerkleTree, equal, fromHex, isU32, leafHash, toHex, verifyPath, type Hash } from "./tree.ts";
 
-export const PROOF_FORMAT = "qdit-inclusion-proof/v1";
+export const PROOF_FORMAT = "qdit-inclusion-proof/v2";
 
 /** Where and when the batch root was anchored. */
 export interface AnchorInfo {
@@ -22,6 +22,8 @@ export interface InclusionProofFile {
   project_id: string;
   batch_id: string;
   milestone_id: string;
+  /** The milestone's submission version. Part of the leaf. */
+  version: number;
   proof_hash: string;
   index: number;
   leaf_count: number;
@@ -50,6 +52,7 @@ export function proofFiles(tree: MerkleTree, ctx: ProofFileContext): InclusionPr
       project_id: tree.projectId,
       batch_id: ctx.batchId,
       milestone_id: leaf.milestoneId,
+      version: leaf.version,
       proof_hash: toHex(leaf.proofHash),
       index,
       leaf_count: tree.leafCount,
@@ -77,6 +80,7 @@ export function parseProofFile(json: string | unknown): InclusionProofFile {
     if (typeof v[key] !== "string") fail(`${key} is not a string`);
     fromHex(v[key] as string, 32);
   }
+  if (!isU32(v.version)) fail("version is not a u32");
   for (const key of ["index", "leaf_count"] as const) {
     if (!Number.isInteger(v[key]) || (v[key] as number) < 0) fail(`${key} is not a whole number`);
   }
@@ -114,7 +118,7 @@ export function checkProofFile(
 ): OfflineCheck {
   const root = trusted?.root ?? fromHex(file.root, 32);
   const leafCount = trusted?.leafCount ?? file.leaf_count;
-  const leaf = leafHash(file.project_id, file.milestone_id, fromHex(file.proof_hash, 32));
+  const leaf = leafHash(file.project_id, file.milestone_id, file.version, fromHex(file.proof_hash, 32));
   return {
     leafMatches: equal(leaf, fromHex(file.leaf, 32)),
     pathValid: verifyPath(

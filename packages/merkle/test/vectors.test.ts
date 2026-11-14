@@ -20,6 +20,7 @@ import {
 
 interface VectorLeaf {
   milestone_id: string;
+  version: number;
   proof_hash: string;
   leaf: string;
 }
@@ -34,7 +35,7 @@ interface Vectors {
   scheme: string;
   primitives: {
     tag_hex: string;
-    leaf: { project_id: string; milestone_id: string; proof_hash: string; hash: string }[];
+    leaf: { project_id: string; milestone_id: string; version: number; proof_hash: string; hash: string }[];
     node: { left: string; right: string; hash: string }[];
   };
   batches: VectorBatch[];
@@ -43,6 +44,7 @@ interface Vectors {
     batch: string;
     project_id?: string;
     milestone_id: string;
+    version: number;
     proof_hash: string;
     index: number;
     path: string[];
@@ -57,17 +59,17 @@ const vectors: Vectors = JSON.parse(
 const tree = (b: VectorBatch) =>
   MerkleTree.build(
     b.project_id,
-    b.leaves.map((l) => ({ milestoneId: l.milestone_id, proofHash: fromHex(l.proof_hash, 32) })),
+    b.leaves.map((l) => ({ milestoneId: l.milestone_id, version: l.version, proofHash: fromHex(l.proof_hash, 32) })),
   );
 
 test("the scheme and tag match", () => {
-  assert.equal(vectors.scheme, "qdit/merkle/v1");
+  assert.equal(vectors.scheme, "qdit/merkle/v2");
   assert.equal(toHex(TAG), vectors.primitives.tag_hex);
 });
 
 test("leaf hashes match", () => {
   for (const v of vectors.primitives.leaf) {
-    assert.equal(toHex(leafHash(v.project_id, v.milestone_id, fromHex(v.proof_hash, 32))), v.hash);
+    assert.equal(toHex(leafHash(v.project_id, v.milestone_id, v.version, fromHex(v.proof_hash, 32))), v.hash);
   }
 });
 
@@ -91,6 +93,7 @@ for (const b of vectors.batches) {
         verifyInclusion(fromHex(b.root, 32), b.leaves.length, {
           projectId: b.project_id,
           milestoneId: leaf.milestone_id,
+          version: leaf.version,
           proofHash: fromHex(leaf.proof_hash, 32),
           index: p.index,
           path: p.path.map((h) => fromHex(h, 32)),
@@ -108,6 +111,7 @@ for (const bad of vectors.invalid_proofs) {
       verifyInclusion(fromHex(b.root, 32), b.leaves.length, {
         projectId: bad.project_id ?? b.project_id,
         milestoneId: bad.milestone_id,
+        version: bad.version,
         proofHash: fromHex(bad.proof_hash, 32),
         index: bad.index,
         path: bad.path.map((h) => fromHex(h, 32)),
@@ -126,15 +130,18 @@ test("a repeated milestone id is refused", () => {
   assert.throws(
     () =>
       MerkleTree.build("p", [
-        { milestoneId: "m", proofHash },
-        { milestoneId: "m", proofHash },
+        { milestoneId: "m", version: 1, proofHash },
+        { milestoneId: "m", version: 1, proofHash },
       ]),
     /appears twice/,
   );
 });
 
 test("a proof hash that isn't 32 bytes is refused", () => {
-  assert.throws(() => leafHash("p", "m", new Uint8Array(31)), TypeError);
+  assert.throws(() => leafHash("p", "m", 1, new Uint8Array(31)), TypeError);
+  assert.throws(() => leafHash("p", "m", -1, new Uint8Array(32)), RangeError);
+  assert.throws(() => leafHash("p", "m", 2 ** 32, new Uint8Array(32)), RangeError);
+  assert.throws(() => leafHash("p", "m", 1.5, new Uint8Array(32)), RangeError);
 });
 
 test("out-of-range input to verifyPath is false, not a throw", () => {
@@ -149,7 +156,8 @@ test("out-of-range input to verifyPath is false, not a throw", () => {
 test("a 100-leaf tree proves every leaf with at most 7 hashes", () => {
   const leaves = Array.from({ length: 100 }, (_, i) => ({
     milestoneId: `m-${i}`,
-    proofHash: leafHash("seed", String(i), new Uint8Array(32)),
+    version: 1,
+    proofHash: leafHash("seed", String(i), 1, new Uint8Array(32)),
   }));
   const t = MerkleTree.build("p", leaves);
   for (let i = 0; i < 100; i++) {

@@ -6,6 +6,12 @@ built from this repository at the commit that added `anchor_batch`. Every number
 comes from a real, confirmed transaction. The raw results, with every transaction hash,
 are in [`benchmark/testnet-2026-11-10.json`](./benchmark/testnet-2026-11-10.json).
 
+> **Superseded contract and scheme.** This run used Merkle scheme v1, whose leaf has
+> no submission version ([`SPEC.md`](./SPEC.md) section 9), on a contract that predates
+> TTL extension (QDIT-15). Its transactions stay valid as a record of that run. The
+> numbers have not been re-measured on the current contract, which is listed in
+> `contracts/milestone_proof_v2/DEPLOYMENTS.md`. The re-run is week 3 work (QDIT-23).
+
 ## What was compared
 
 For N = 1, 10, 50 and 100 milestones, with the same N proof hashes each time:

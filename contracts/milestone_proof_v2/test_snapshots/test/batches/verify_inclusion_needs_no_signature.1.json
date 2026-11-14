@@ -114,7 +114,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "bytes": "b0fed60d9a88dceeb737a33899bbe8662c2dd49efcf0181b58ac7cb0745a0ef0"
+                  "bytes": "cadd0b0a926699f2784132d3e801b99d879664d68b5172ef0d25fc4250b4e393"
                 },
                 {
                   "u32": 1
@@ -182,7 +182,7 @@
                       "symbol": "root"
                     },
                     "val": {
-                      "bytes": "b0fed60d9a88dceeb737a33899bbe8662c2dd49efcf0181b58ac7cb0745a0ef0"
+                      "bytes": "cadd0b0a926699f2784132d3e801b99d879664d68b5172ef0d25fc4250b4e393"
                     }
                   },
                   {

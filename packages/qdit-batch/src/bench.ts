@@ -83,6 +83,8 @@ const rows = [];
 for (const n of sizes) {
   const milestones = Array.from({ length: n }, (_, i) => ({
     milestoneId: randomUUID(),
+    // Each is submitted once below, so the contract records version 1.
+    version: 1,
     proofHash: proofHash(`bench ${n} milestone ${i}`),
   }));
 
@@ -120,6 +122,7 @@ for (const n of sizes) {
     sc.string(projectId),
     sc.string(batchId),
     sc.string(milestones[last]!.milestoneId),
+    sc.u32(milestones[last]!.version),
     sc.bytes(milestones[last]!.proofHash),
     sc.u32(last),
     sc.vec(tree.proof(last).map((h) => sc.bytes(h))),

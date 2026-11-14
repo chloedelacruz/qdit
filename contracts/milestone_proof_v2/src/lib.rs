@@ -1,4 +1,9 @@
 #![no_std]
+// `verify_inclusion` takes the leaf's fields and the proof as separate contract
+// arguments (8), so a caller never builds a struct to check one proof. The lint
+// has to be crate-wide: `#[contractimpl]` also generates the client and spec
+// functions outside the impl block.
+#![allow(clippy::too_many_arguments)]
 //! `milestone_proof_v2`: on-chain team roles and M-of-N milestone approval.
 //!
 //! A new contract, not an upgrade of `milestone_proof`. It has no admin, no
@@ -222,8 +227,9 @@ impl MilestoneProofV2Contract {
 
     /// Check that a milestone proof is a leaf of an anchored batch.
     ///
-    /// Read-only. The leaf is rebuilt from `project_id`, `milestone_id` and
-    /// `proof_hash`. `path` is the sibling hashes, leaf level first, and every
+    /// Read-only. The leaf is rebuilt from `project_id`, `milestone_id`,
+    /// `version` (the milestone's submission version) and `proof_hash`. `path`
+    /// is the sibling hashes, leaf level first, and every
     /// side is derived from `index` and the stored leaf count. A wrong or
     /// malformed proof is `false`; an unknown batch is [`Error::BatchNotFound`].
     pub fn verify_inclusion(
@@ -231,6 +237,7 @@ impl MilestoneProofV2Contract {
         project_id: String,
         batch_id: String,
         milestone_id: String,
+        version: u32,
         proof_hash: BytesN<32>,
         index: u32,
         path: Vec<BytesN<32>>,
@@ -240,6 +247,7 @@ impl MilestoneProofV2Contract {
             project_id,
             batch_id,
             milestone_id,
+            version,
             proof_hash,
             index,
             path,
