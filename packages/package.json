@@ -4,7 +4,8 @@
   "description": "Off-chain tooling for the qdit contracts. Not part of the web app.",
   "workspaces": [
     "merkle",
-    "qdit-batch"
+    "qdit-batch",
+    "milestone-proof-v2-bindings"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

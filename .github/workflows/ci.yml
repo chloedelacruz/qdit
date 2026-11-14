@@ -178,6 +178,13 @@ jobs:
           # A silently empty artifact would let a broken build look green.
           if-no-files-found: error
 
+      # v2's deployed hash is in contracts/milestone_proof_v2/DEPLOYMENTS.md.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: milestone_proof_v2-wasm
+          path: contracts/target/wasm32v1-none/release/milestone_proof_v2.wasm
+          if-no-files-found: error
+
   database:
     name: database — migrations, pgTAP
     runs-on: ubuntu-latest
