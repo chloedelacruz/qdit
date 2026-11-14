@@ -22,7 +22,7 @@ export interface ReadStep {
   outcome: string;
 }
 
-/** A call the contract refused, as its simulation reports it. */
+/** A call the contract refused: checked by simulation, then sent and failed on chain. */
 export interface RefusedStep {
   kind: "refused";
   title: string;
@@ -31,6 +31,9 @@ export interface RefusedStep {
   code: number;
   /** The host error the simulation returned, e.g. `Error(Contract, #7)`. */
   hostError: string;
+  /** The failed transaction, whose diagnostic events carry the same code. */
+  txHash: string;
+  ledger: number;
 }
 
 export type Step = SentStep | ReadStep | RefusedStep;
@@ -71,9 +74,10 @@ export function renderEvidence(run: Run): string {
   const lines: string[] = [
     `# milestone_proof_v2 testnet harness: ${run.date}`,
     "",
-    "Written by `packages/v2-harness` (`cd packages && npm run harness`). Every sent step",
-    "below links its confirmed testnet transaction on Stellar Expert. Nothing here was",
-    "edited by hand.",
+    "Written by `packages/v2-harness` (`cd packages && npm run harness`). Every write and",
+    "every refusal below links its testnet transaction on Stellar Expert. Every check the",
+    "harness logs is also asserted: a run that wrote this file passed all of them. Nothing",
+    "here was edited by hand.",
     "",
     "| | |",
     "| --- | --- |",
@@ -83,7 +87,7 @@ export function renderEvidence(run: Run): string {
     `| Project id | \`${run.projectId}\` |`,
     `| Started | ${run.startedAt} |`,
     `| Finished | ${run.finishedAt} |`,
-    `| Steps | ${run.steps.length}: ${sent} sent, ${refused.length} refused as expected, ${run.steps.length - sent - refused.length} simulated reads |`,
+    `| Steps | ${run.steps.length}: ${sent} sent, ${refused.length} refused as expected (also on chain), ${run.steps.length - sent - refused.length} simulated reads |`,
     "",
     "## Accounts",
     "",
@@ -105,21 +109,22 @@ export function renderEvidence(run: Run): string {
         case "read":
           return `| ${n} | ${step.title} | ${step.signer} | ${step.outcome} | simulated read, no transaction |`;
         case "refused":
-          return `| ${n} | ${step.title} | ${step.signer} | refused: \`${step.expected}\` (#${step.code}) | refused in simulation, see below |`;
+          return `| ${n} | ${step.title} | ${step.signer} | refused: \`${step.expected}\` (#${step.code}) | ${txLink(step.txHash)} (ledger ${step.ledger}), failed as expected |`;
       }
     }),
     "",
     "## Refusals",
     "",
-    "A refused call fails its simulation, so it is never signed or sent and leaves no",
-    "transaction. The simulation's host error carries the contract's error code, which the",
-    "harness checks against the code it expects.",
+    "Each refusal is checked twice. Its simulation has to fail with the expected contract",
+    "error. Then it is signed and sent anyway, borrowing the footprint of the same call made",
+    "valid, so it lands on the ledger as a failed transaction; the harness reads that",
+    "transaction's diagnostic events and checks they carry the same code.",
     "",
-    "| # | Call | Signer | Expected | Host error |",
-    "| ---: | --- | --- | --- | --- |",
+    "| # | Call | Signer | Expected | Simulation | Failed transaction |",
+    "| ---: | --- | --- | --- | --- | --- |",
     ...refused.map(({ n, step }) => {
       const r = step as RefusedStep;
-      return `| ${n} | ${r.title} | ${r.signer} | \`${r.expected}\` (#${r.code}) | \`${r.hostError}\` |`;
+      return `| ${n} | ${r.title} | ${r.signer} | \`${r.expected}\` (#${r.code}) | \`${r.hostError}\` | ${txLink(r.txHash)} |`;
     }),
     "",
   ];

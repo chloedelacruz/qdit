@@ -18,7 +18,7 @@ const run: Run = {
   steps: [
     { kind: "sent", title: "create_project", signer: "owner", outcome: "ok", txHash: TX, ledger: 42 },
     { kind: "read", title: "get_members", signer: "anyone", outcome: "4 members" },
-    { kind: "refused", title: "submit by a non-member", signer: "outsider", expected: "NotMember", code: 7, hostError: "Error(Contract, #7)" },
+    { kind: "refused", title: "submit by a non-member", signer: "outsider", expected: "NotMember", code: 7, hostError: "Error(Contract, #7)", txHash: TX, ledger: 43 },
   ],
 };
 
@@ -31,15 +31,15 @@ test("every sent step links its transaction on Stellar Expert", () => {
   assert.match(md, new RegExp(`\\| 1 \\| create_project \\| owner \\| ok \\| \\[\`0db66be1…43857b\`\\]\\(https://stellar.expert/explorer/testnet/tx/${TX}\\) \\(ledger 42\\) \\|`));
 });
 
-test("a refusal shows its expected error, code and host error", () => {
+test("a refusal shows its expected error, code, host error and failed transaction", () => {
   const md = renderEvidence(run);
-  assert.match(md, /\| 3 \| submit by a non-member \| outsider \| refused: `NotMember` \(#7\) \|/);
-  assert.match(md, /\| 3 \| submit by a non-member \| outsider \| `NotMember` \(#7\) \| `Error\(Contract, #7\)` \|/);
+  assert.match(md, new RegExp(`\\| 3 \\| submit by a non-member \\| outsider \\| refused: \`NotMember\` \\(#7\\) \\| \\[\`0db66be1…43857b\`\\]\\(https://stellar.expert/explorer/testnet/tx/${TX}\\) \\(ledger 43\\), failed as expected \\|`));
+  assert.match(md, /\| 3 \| submit by a non-member \| outsider \| `NotMember` \(#7\) \| `Error\(Contract, #7\)` \| \[`0db66be1…43857b`\]/);
 });
 
 test("the header counts each kind of step and links the contract and accounts", () => {
   const md = renderEvidence(run);
-  assert.match(md, /\| Steps \| 3: 1 sent, 1 refused as expected, 1 simulated reads \|/);
+  assert.match(md, /\| Steps \| 3: 1 sent, 1 refused as expected \(also on chain\), 1 simulated reads \|/);
   assert.match(md, /explorer\/testnet\/contract\/CDDIVHDM66BHZ3ZWHTYXSD5KHL4S5SJOALDSHR3UATRZ655POIKSBT6N/);
   assert.match(md, new RegExp(`explorer/testnet/account/${ADDR}`));
 });
