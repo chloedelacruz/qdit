@@ -18,7 +18,9 @@ test.describe("landing page", () => {
     // chooser in place instead of navigating somewhere to ask for credentials.
     // `.first()` because the closing plate offers the same door again.
     await expect(page.getByRole("button", { name: "Connect wallet" }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Verify a hash" })).toBeVisible();
+    // It goes to the public /verify page, not the signed-in registry: the
+    // page promises anyone can check a hash.
+    await expect(page.getByRole("link", { name: "Verify a hash" })).toHaveAttribute("href", "/verify");
   });
 
   test("offers a signed-out visitor a way in", async ({ page }) => {

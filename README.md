@@ -1003,8 +1003,8 @@ deployed `milestone_proof` contract, signed in the browser with Freighter:
 | Fee charged | 0.0010703 XLM |
 | Transaction size | 976 bytes |
 
-**The result is shown back to the user, not just written to a ledger.** The proof registry
-at `/proofs` verifies any transaction hash against Horizon and renders the outcome in the
+**The result is shown back to the user, not just written to a ledger.** The public
+`/verify` page (no account needed) and the proof registry at `/proofs` both verify any transaction hash against Horizon and renders the outcome in the
 app — result, transaction, source account, ledger, timestamp and operation count, each
 hash carrying a copy button and a link to the explorer:
 
@@ -1468,7 +1468,7 @@ stalled re-ran to completion — closing round 2 at 50 of 50 and moving their ra
 - [x] CSV export of the anchor table, and a per-project archive that verifies with this app offline ([`8f3570f`](https://github.com/chloedelacruz/qdit/commit/8f3570f)) *(2 mentions)*
 - [x] State the proof boundary in the product — chain carries status, version and digest; the reason text lives in Postgres ([`8f3570f`](https://github.com/chloedelacruz/qdit/commit/8f3570f)) *(auditor, 3★)*
 - [x] Project name and context on the public proof page; active network labelled in the header ([`8f3570f`](https://github.com/chloedelacruz/qdit/commit/8f3570f)) *(2 mentions)*
-- [ ] Rate-limit `/api/verify-tx` before onboarding at any scale — the public page is the moment that matters
+- [x] Rate-limit `/api/verify-tx` before onboarding at any scale — the public page is the moment that matters (public `/verify` page, 60 checks a minute per account, 20 per client address)
 - [ ] Email delivery on the notification event, plus milestone due reminders *(1 mention, 3★)*
 - [ ] Board search and status filter, one cross-project “waiting on me” queue *(2 mentions)*
 - [x] Deploy to mainnet — done; two production rounds ([first](#mainnet-feedback--first-production-round), [second](#mainnet-feedback--second-production-round)) have run against it on real fees, 70 testers and 217 writes total

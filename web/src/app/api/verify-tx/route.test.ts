@@ -5,13 +5,18 @@ import { HORIZON_URL } from "@/lib/stellar";
 const getUser = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({ getUser: () => getUser() }));
 
-const { GET } = await import("./route");
+const { ANONYMOUS_LIMIT, GET, SIGNED_IN_LIMIT } = await import("./route");
 
 const HASH = "4d2f27982c7714f418b7506f6c51b04edc1a2976f2c74a05573d19173d31e5f5";
 const fetchMock = vi.fn();
 
-function get(query: string): Request {
-  return new Request(`https://qdit.test/api/verify-tx${query}`);
+let nextIp = 0;
+
+/** Each request gets its own client address unless a test names one, so tests never share a window. */
+function get(query: string, ip = `192.0.2.${++nextIp % 250}`): Request {
+  return new Request(`https://qdit.test/api/verify-tx${query}`, {
+    headers: { "x-forwarded-for": ip },
+  });
 }
 
 function horizon(body: unknown, status = 200) {
@@ -41,10 +46,34 @@ afterEach(() => {
 });
 
 describe("GET /api/verify-tx", () => {
-  it("is behind the auth gate: 401 when signed out, with no fetch", async () => {
+  it("answers a signed-out caller too: the landing page promises anyone can check", async () => {
     getUser.mockResolvedValueOnce(null);
-    expect((await GET(get(`?hash=${HASH}`))).status).toBe(401);
-    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockReturnValueOnce(horizon(TX));
+    const response = await GET(get(`?hash=${HASH}`, "203.0.113.7"));
+    expect(response.status).toBe(200);
+    expect((await response.json()).hash).toBe(HASH);
+  });
+
+  it("rate limits signed-out callers per client address, with no fetch once refused", async () => {
+    getUser.mockResolvedValue(null);
+    fetchMock.mockImplementation(() => horizon(TX));
+    for (let i = 0; i < ANONYMOUS_LIMIT.limit; i++) {
+      expect((await GET(get(`?hash=${HASH}`, "198.51.100.1"))).status).toBe(200);
+    }
+    const calls = fetchMock.mock.calls.length;
+    expect((await GET(get(`?hash=${HASH}`, "198.51.100.1"))).status).toBe(429);
+    expect(fetchMock.mock.calls.length).toBe(calls);
+    // Another address has its own window.
+    expect((await GET(get(`?hash=${HASH}`, "198.51.100.2"))).status).toBe(200);
+  });
+
+  it("rate limits a signed-in user per account", async () => {
+    getUser.mockResolvedValue({ id: "user-limit", email: null });
+    fetchMock.mockImplementation(() => horizon(TX));
+    for (let i = 0; i < SIGNED_IN_LIMIT.limit; i++) {
+      expect((await GET(get(`?hash=${HASH}`))).status).toBe(200);
+    }
+    expect((await GET(get(`?hash=${HASH}`))).status).toBe(429);
   });
 
   it("refuses something that is not a 64-hex hash", async () => {

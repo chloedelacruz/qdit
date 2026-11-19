@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { clientKey, rateLimit } from "@/lib/auth/rate-limit";
 import { getUser } from "@/lib/supabase/server";
 import { HORIZON_URL, isTxHash, type StellarNetwork } from "@/lib/stellar";
 
@@ -10,7 +11,16 @@ import { HORIZON_URL, isTxHash, type StellarNetwork } from "@/lib/stellar";
  * stays dependency-free by design and its header says network calls belong in a
  * route; this is that route. Nothing here touches the `milestone_proof`
  * contract, so it works today, before anything is deployed.
+ *
+ * Open to signed-out callers: the landing page promises that anyone can paste
+ * a hash back and get the network's answer, and `/verify` is that page. What
+ * stops it being a free Horizon proxy is the rate limit below, not a session:
+ * a signed-in user is counted per account, everyone else per client address.
  */
+
+/** A person checking proofs by hand stays far below these. */
+export const SIGNED_IN_LIMIT = { limit: 60, windowMs: 60_000 };
+export const ANONYMOUS_LIMIT = { limit: 20, windowMs: 60_000 };
 
 export type VerifiedTx = {
   hash: string;
@@ -40,11 +50,15 @@ function isNetwork(value: string): value is StellarNetwork {
 }
 
 export async function GET(request: Request) {
-  // Reads a third-party API on demand — behind the auth gate so it cannot be
-  // used as an open Horizon proxy.
   const user = await getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const allowed = user
+    ? rateLimit(`verify-tx:user:${user.id}`, SIGNED_IN_LIMIT)
+    : rateLimit(clientKey(request, "verify-tx"), ANONYMOUS_LIMIT);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many checks. Wait a minute and try again." },
+      { status: 429 },
+    );
   }
 
   const { searchParams } = new URL(request.url);

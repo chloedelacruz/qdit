@@ -154,7 +154,7 @@ export default async function Home() {
                 <div className="mt-8 flex flex-wrap items-center gap-3">
                   <ConnectWalletButton />
                   <Button asChild variant="outline" size="lg">
-                    <Link href="/proofs">Verify a hash</Link>
+                    <Link href="/verify">Verify a hash</Link>
                   </Button>
                 </div>
 

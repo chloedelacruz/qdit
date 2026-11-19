@@ -663,7 +663,7 @@ function ApiRoutes() {
           ],
           [
             <C key="r">GET /api/verify-tx</C>,
-            "Auth-gated. Paste a 64-hex transaction hash; confirms it on the given network via Horizon /transactions and returns ledger, success, source, fee, operation count and memo.",
+            "Open to signed-out callers, rate limited (60 a minute per account, 20 per client address); the public /verify page uses it. Paste a 64-hex transaction hash; confirms it on the given network via Horizon /transactions and returns ledger, success, source, fee, operation count and memo.",
           ],
         ]}
       />

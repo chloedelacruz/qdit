@@ -234,8 +234,11 @@ Not oversights.
 
 ## 6. Older risks, still true
 
-- **`/api/verify-tx` has no rate limit.** Auth-gated, so not an open Horizon
-  proxy, but any signed-in user can drive unlimited upstream requests.
+- **`/api/verify-tx`'s rate limit is per instance.** It is public now (the
+  `/verify` page), limited to 60 checks a minute per account and 20 per client
+  address. The counter is the in-memory one from `lib/auth/rate-limit.ts`, so
+  it is a floor: several instances each count separately, and a spoofed
+  `x-forwarded-for` buys a fresh window.
 - **`moveTask` writes the destination column one row at a time.** N round trips,
   not transactional; a partial failure leaves positions inconsistent, which the
   code notes and tolerates.
@@ -259,6 +262,6 @@ task waiting to be done, so the order is whatever the next goal makes relevant:
 
 - **Before mainnet**, settle §3 — the upgrade path, and whether a handover ever
   needs to be possible from the app rather than the CLI (§1).
-- **Before onboarding at any scale**, §6's rate limit on `/api/verify-tx`.
+- **Before onboarding at any scale**, move §6's in-memory rate limit on `/api/verify-tx` to a shared store.
 - **Before trusting the repo to rebuild the database**, keep §2 true by pushing
   migrations with the CLI rather than pasting them.
