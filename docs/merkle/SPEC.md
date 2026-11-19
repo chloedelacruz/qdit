@@ -29,6 +29,9 @@ existed. It does **not** move any milestone through the approval state machine
 - `u32be(n)` is `n` as a 4-byte big-endian unsigned integer.
 - `str(s)` is `u32be(byte length of the UTF-8 encoding of s) || UTF-8 bytes of s`.
   The length counts bytes, not characters: `hito-ñ` is 7 bytes.
+- Ids are hashed exactly as given, with no Unicode normalisation: `é` as one code
+  point (NFC) and `e` plus a combining accent (NFD) are different ids. `project_id`
+  and `milestone_id` are at most 64 bytes, the contract's id limit (`IdTooLong`).
 
 ## 3. Hashes
 
@@ -56,8 +59,9 @@ There are two separators, and each one closes a different attack.
   pair of child hashes can be presented as a leaf, and no leaf can be presented
   as an inner node (a second-preimage attack on the tree).
 - **`TAG` splits this scheme from every other use of SHA-256**, including other
-  versions of this one. A hash computed for another protocol, or for a future
-  `qdit/merkle/v2`, can't collide with a v1 leaf or node by construction.
+  versions of this one. A hash computed for another protocol, or for another
+  version of this scheme (v1 in section 9, or a future v3), can't collide with a v2
+  leaf or node by construction.
 
 Every variable-length field is length-prefixed, so `("ab", "c")` and
 `("a", "bc")` hash differently. The leaf commits to the `project_id`, so a
@@ -191,7 +195,7 @@ vectors. Version 2 never changes.
 | Version | `TAG` | Leaf | Used by |
 | --- | --- | --- | --- |
 | v2 (current) | `qdit/merkle/v2` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ u32be(version) ‖ proof_hash)` | `milestone_proof_v2` from testnet contract `CAIBMWYD…BFNB` onwards (`contracts/milestone_proof_v2/DEPLOYMENTS.md`); `qdit-inclusion-proof/v2` files |
-| v1 | `qdit/merkle/v1` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ proof_hash)` | Only the superseded testnet contracts `CCLOK4SW…QFH3` and `CDDIVHDM…BT6N`, and the 2026-11-10 benchmark run ([`BENCHMARK.md`](./BENCHMARK.md)) |
+| v1 | `qdit/merkle/v1` | `H(0x00 ‖ TAG ‖ str(project_id) ‖ str(milestone_id) ‖ proof_hash)` | Only the superseded testnet contracts `CCLOK4SW…QFH3` and `CDDIVHDM…BT6N`, and the 2026-11-10 benchmark run (`benchmark/testnet-2026-11-10.json`) |
 
 v1 left out the submission version, which QDIT-6 called for. The week 2 review
 (QDIT-20) caught it while nothing outside testnet used the scheme, and v2 adds it.

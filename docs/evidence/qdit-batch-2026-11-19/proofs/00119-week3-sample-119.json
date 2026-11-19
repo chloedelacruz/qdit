@@ -1,0 +1,27 @@
+{
+  "format": "qdit-inclusion-proof/v2",
+  "network": "testnet",
+  "contract_id": "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB",
+  "project_id": "4862f6dd-f9ed-44bf-a5b9-fb68e64ceaef",
+  "batch_id": "week3-sample-120",
+  "milestone_id": "week3-sample-119",
+  "version": 1,
+  "proof_hash": "0a9aaf236377eb5c252cbce43ed5b27179dab5f45bdea909ef5bfd12d0893b4b",
+  "index": 119,
+  "leaf_count": 120,
+  "leaf": "cdb4250f20044df3b1ee794ff59c3387b0544ebf93f097f93f545543b58b4f0f",
+  "path": [
+    "0c30ebb927d8352ecd865c34a621738c8f3e412709c713c65f9e8369ee26a5ca",
+    "837764a257fbe53ee1f0239f2a29e5a1563dd8fb72f4a404b92883177e064388",
+    "15802a13fdec1521275f902d747caf56360fa2f7ada2c68c2afe0a2e17a6a2a5",
+    "7fede38cf64a6ea387d52f348a8e02dab75b91e28d927e46b72dcc4f9ea6be49",
+    "f018829a5ef432fb78074b0615ba160e28fd2d85080bd156cb14fe855e15af78",
+    "e1d1d7baae2e165dd481e78b3131b4dbd57e3ee8b674a2fdf671411e6af155eb"
+  ],
+  "root": "73320bae8b8f93d65c818b3c264b74ccfcfda7b775f94beb6717cc06fbe92d7a",
+  "anchor": {
+    "tx_hash": "2a9cc5f7bd27637d6a709a980ce2833ee4a6d056bc6672b8631a5125fccbaea2",
+    "ledger": 5807495,
+    "timestamp": 1795061115
+  }
+}

@@ -10,7 +10,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { checkProofFile, equal, fromHex, parseProofFile, toHex } from "@qdit/merkle";
 
 import { buildTree, checkId, parseInput, writeBatch } from "./batch.ts";
-import { Client, TESTNET, sc, toBatchRecord, type Network } from "./soroban.ts";
+import { CURRENT_CONTRACT, Client, TESTNET, sc, toBatchRecord, type Network } from "./soroban.ts";
 
 const USAGE = `qdit-batch: Merkle batch anchoring for milestone_proof_v2
 
@@ -32,7 +32,8 @@ Options:
   --input <file>        { "project_id": "...", "milestones": [ { "milestone_id": "...", "version": 1, "proof_hash": "<64 hex>" } ] }
   --batch-id <id>       Unique per project, at most 64 bytes.
   --out <dir>           Output directory (default: ./batch-<batch-id>).
-  --contract <C...>     milestone_proof_v2 contract id. verify defaults to the file's.
+  --contract <C...>     milestone_proof_v2 contract id. verify defaults to the
+                        current deployment and refuses a file naming another.
   --network <name>      testnet (default), or any name with --rpc-url and --passphrase.
   --rpc-url <url>       Soroban RPC endpoint.
   --passphrase <text>   Network passphrase.
@@ -96,6 +97,9 @@ async function cmdAnchor(values: Record<string, unknown>): Promise<void> {
     sc.bytes(tree.root),
     sc.u32(tree.leafCount),
   ]);
+  // Print it before anything else can fail: the batch id is now spent, and a
+  // re-run would be refused with BatchExists.
+  console.log(`tx          ${sent.txHash}`);
 
   // Read back what the chain stored, rather than trusting what was sent.
   const stored = toBatchRecord(
@@ -115,7 +119,6 @@ async function cmdAnchor(values: Record<string, unknown>): Promise<void> {
     feeCharged: sent.feeCharged,
   });
 
-  console.log(`tx          ${sent.txHash}`);
   console.log(`ledger      ${stored.ledger} at ${new Date(stored.timestamp * 1000).toISOString()}`);
   console.log(`fee         ${sent.feeCharged} stroops`);
   console.log(`wrote       ${out}/batch.json and ${tree.leafCount} proof files`);
@@ -139,8 +142,19 @@ async function cmdVerify(values: Record<string, unknown>, files: string[]): Prom
       continue;
     }
 
-    const contractId = (values.contract as string | undefined) ?? file.contract_id;
-    if (!contractId) throw new Error(`${path}: no contract id in the file; pass --contract`);
+    // The root is only as good as the contract it is read from, so the file
+    // doesn't get to choose it: anyone can deploy the same WASM and anchor any
+    // root there. Check against --contract, or the current deployment.
+    const contractId = (values.contract as string | undefined) ?? CURRENT_CONTRACT;
+    if (file.contract_id !== contractId) {
+      throw new Error(
+        `${path}: the file names contract ${file.contract_id || "(none)"}, not ${contractId}; ` +
+          "pass --contract to check against another deployment you trust",
+      );
+    }
+    if (file.network !== net.name) {
+      throw new Error(`${path}: the file is for ${file.network}, but this checks ${net.name}`);
+    }
     const client = new Client(net, contractId);
 
     const stored = toBatchRecord(

@@ -13,6 +13,9 @@ export const TAG: Uint8Array = new TextEncoder().encode("qdit/merkle/v2");
 /** Most leaves a batch may hold, the contract's `MAX_BATCH_LEAVES`. */
 export const MAX_BATCH_LEAVES = 65_536;
 
+/** Longest id the contract accepts, in UTF-8 bytes (`IdTooLong`). */
+export const MAX_ID_BYTES = 64;
+
 /** Longest inclusion proof, `log2(MAX_BATCH_LEAVES)`. */
 export const MAX_PROOF_LEN = 16;
 
@@ -54,6 +57,12 @@ function check32(name: string, h: Uint8Array): void {
   }
 }
 
+/** Refuse an id the contract would refuse with `IdTooLong`: it could never verify on chain. */
+function checkIdBytes(name: string, id: string): void {
+  const n = encoder.encode(id).length;
+  if (n > MAX_ID_BYTES) throw new RangeError(`${name} is ${n} bytes; the contract accepts at most ${MAX_ID_BYTES}`);
+}
+
 /** `u32be(n)`. */
 function u32be(n: number): Uint8Array {
   const out = new Uint8Array(4);
@@ -68,6 +77,8 @@ export function isU32(n: unknown): n is number {
 
 /** `H(0x00 || TAG || str(projectId) || str(milestoneId) || u32be(version) || proofHash)`. */
 export function leafHash(projectId: string, milestoneId: string, version: number, proofHash: Hash): Hash {
+  checkIdBytes("projectId", projectId);
+  checkIdBytes("milestoneId", milestoneId);
   if (!isU32(version)) throw new RangeError(`version must be a u32, got ${version}`);
   check32("proofHash", proofHash);
   return sha256([Uint8Array.of(LEAF_PREFIX), TAG, str(projectId), str(milestoneId), u32be(version), proofHash]);

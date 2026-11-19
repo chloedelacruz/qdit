@@ -3,7 +3,9 @@
 // (submit_milestone_proof) against one anchor_batch for all N, at
 // N = 1, 10, 50, 100. Every number comes from a real transaction.
 //
-//   node src/bench.ts --contract C... [--sizes 1,10,50,100] [--out results.json]
+//   npm run bench -w qdit-batch -- [--contract C...] [--sizes 1,10,50,100] [--out results.json]
+//
+// --contract defaults to the deployment qdit uses.
 //
 // It funds a fresh account through friendbot unless QDIT_SECRET_KEY is set,
 // creates its own project and makes itself the Submitter, so it never touches
@@ -16,7 +18,7 @@ import { parseArgs } from "node:util";
 import { Keypair } from "@stellar/stellar-sdk";
 import { MerkleTree, toHex } from "@qdit/merkle";
 
-import { Client, TESTNET, fund, sc, type Sent } from "./soroban.ts";
+import { CURRENT_CONTRACT, Client, TESTNET, fund, sc, type Sent } from "./soroban.ts";
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
@@ -26,13 +28,9 @@ const { values } = parseArgs({
     out: { type: "string", default: "bench-results.json" },
   },
 });
-if (!values.contract) {
-  console.error("bench: --contract <milestone_proof_v2 id> is required");
-  process.exit(2);
-}
 const sizes = values.sizes.split(",").map((s) => Number.parseInt(s, 10));
 
-const client = new Client(TESTNET, values.contract);
+const client = new Client(TESTNET, values.contract ?? CURRENT_CONTRACT);
 const key = process.env.QDIT_SECRET_KEY ? Keypair.fromSecret(process.env.QDIT_SECRET_KEY.trim()) : Keypair.random();
 if (!process.env.QDIT_SECRET_KEY) {
   await fund(TESTNET, key.publicKey());

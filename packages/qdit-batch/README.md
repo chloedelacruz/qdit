@@ -72,6 +72,10 @@ locally against that root, and also asks the contract's own `verify_inclusion`. 
 checks must pass. These are simulations: no key, no fee. The command exits 1 if any
 file fails.
 
+The root is read from the current `milestone_proof_v2` deployment, or from `--contract`.
+A file naming any other contract is refused: anyone can deploy the same WASM and
+anchor any root there, so the file doesn't get to choose where its root comes from.
+
 `--offline` checks only that the file agrees with itself. It never trusts the file's
 `root` field as proof of anything.
 
@@ -99,10 +103,11 @@ in section 7 of the spec.
 `src/bench.ts` compares one `submit_milestone_proof` per milestone with a single
 `anchor_batch`, at 1, 10, 50 and 100 milestones, on testnet. The published run is in
 [`docs/merkle/BENCHMARK.md`](../../docs/merkle/BENCHMARK.md): at 100 milestones a batch
-is one transaction in one ledger, against 100 transactions over 306 ledgers, and costs
-117.6 times less.
+is one transaction in one ledger, against 100 transactions over 100 ledgers, and costs
+120.3 times less.
 
 ```sh
-node src/bench.ts --contract <C...> --out results.json
-node src/bench-table.ts results.json
+npm run bench -w qdit-batch -- --out results.json   # from packages/; --contract C... for another deployment
+node qdit-batch/src/bench-table.ts results.json
+node qdit-batch/src/bench-table.ts --tx-list results.json
 ```
