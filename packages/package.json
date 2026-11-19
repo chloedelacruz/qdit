@@ -6,7 +6,8 @@
     "merkle",
     "qdit-batch",
     "milestone-proof-v2-bindings",
-    "v2-harness"
+    "v2-harness",
+    "verify"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
