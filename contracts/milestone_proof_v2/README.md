@@ -2,7 +2,8 @@
 
 On-chain team roles, M-of-N milestone approval and Merkle batch anchoring. A new contract beside
 [`milestone_proof`](../milestone_proof), not an upgrade of it: v1 and its records are
-not touched, and the app and doqtri stay on v1. Testnet only for now: the current
+not touched, and the app and doqtri stay on v1 (the proposal to move the app is
+[`APP-INTEGRATION.md`](./APP-INTEGRATION.md)). Testnet only for now: the current
 contract id, its wasm hash and how to check it are in [`DEPLOYMENTS.md`](./DEPLOYMENTS.md),
 and the TypeScript client is
 [`@qdit/milestone-proof-v2-bindings`](../../packages/milestone-proof-v2-bindings).
