@@ -24,6 +24,9 @@ export interface Network {
   friendbotUrl?: string;
 }
 
+/** The milestone_proof_v2 deployment qdit uses (contracts/milestone_proof_v2/DEPLOYMENTS.md). */
+export const CURRENT_CONTRACT = "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB";
+
 export const TESTNET: Network = {
   name: "testnet",
   rpcUrl: "https://soroban-testnet.stellar.org",

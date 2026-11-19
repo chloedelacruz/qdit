@@ -2,9 +2,9 @@
 
 One `anchor_batch` transaction anchored 120 milestones on the current
 `milestone_proof_v2` contract (Merkle scheme `qdit/merkle/v2`, D-124), and every
-inclusion proof verified on chain and offline. The earlier 100-milestone run in
-[`docs/merkle/BENCHMARK.md`](../../merkle/BENCHMARK.md) used a superseded contract and
-scheme v1.
+inclusion proof verified on chain and offline. The fee benchmark in
+[`docs/merkle/BENCHMARK.md`](../../merkle/BENCHMARK.md) was re-run on the same contract
+the same day.
 
 | | |
 | --- | --- |

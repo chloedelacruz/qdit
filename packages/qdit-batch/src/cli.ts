@@ -10,7 +10,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { checkProofFile, equal, fromHex, parseProofFile, toHex } from "@qdit/merkle";
 
 import { buildTree, checkId, parseInput, writeBatch } from "./batch.ts";
-import { Client, TESTNET, sc, toBatchRecord, type Network } from "./soroban.ts";
+import { CURRENT_CONTRACT, Client, TESTNET, sc, toBatchRecord, type Network } from "./soroban.ts";
 
 const USAGE = `qdit-batch: Merkle batch anchoring for milestone_proof_v2
 
@@ -50,9 +50,6 @@ function network(values: Record<string, unknown>): Network {
   if (!rpcUrl || !passphrase) throw new Error(`--network ${name} needs --rpc-url and --passphrase`);
   return { name, rpcUrl, passphrase };
 }
-
-/** The current milestone_proof_v2 deployment (contracts/milestone_proof_v2/DEPLOYMENTS.md). */
-const CURRENT_CONTRACT = "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB";
 
 function signer(): Keypair {
   const secret = process.env.QDIT_SECRET_KEY;
