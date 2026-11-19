@@ -1,0 +1,16 @@
+{
+  "network": "testnet",
+  "contract_id": "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB",
+  "project_id": "4862f6dd-f9ed-44bf-a5b9-fb68e64ceaef",
+  "batch_id": "week3-sample-120",
+  "owner": "GAWKXOVFGXVYIY6MQYLAKIE3TSZYFLKBJXPADSXTNO4VTRH46PFFT5S6",
+  "submitter": "GCIQ6C5G4DGDASAXT7NDH5G5OLD3B26Y72JBSTAUMBI2ZI44A5OUYMH6",
+  "create_project": {
+    "tx_hash": "37949a20f73fb54ad6bd7d72552bea83f3237828d56294896f3796c7091a1832",
+    "ledger": 5807493
+  },
+  "add_member": {
+    "tx_hash": "e8d295de307f809fc1b8ac07ab5c6478df610065658cdc22f90fd9ad35812d3c",
+    "ledger": 5807494
+  }
+}
