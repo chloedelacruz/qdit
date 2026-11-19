@@ -139,6 +139,10 @@ test("a repeated milestone id is refused", () => {
 
 test("a proof hash that isn't 32 bytes is refused", () => {
   assert.throws(() => leafHash("p", "m", 1, new Uint8Array(31)), TypeError);
+  // 64 bytes is the contract's limit; 65 would be refused with IdTooLong.
+  assert.doesNotThrow(() => leafHash("p".repeat(64), "m".repeat(64), 1, new Uint8Array(32)));
+  assert.throws(() => leafHash("p".repeat(65), "m", 1, new Uint8Array(32)), RangeError);
+  assert.throws(() => leafHash("p", "ñ".repeat(33), 1, new Uint8Array(32)), RangeError, "counts bytes, not characters");
   assert.throws(() => leafHash("p", "m", -1, new Uint8Array(32)), RangeError);
   assert.throws(() => leafHash("p", "m", 2 ** 32, new Uint8Array(32)), RangeError);
   assert.throws(() => leafHash("p", "m", 1.5, new Uint8Array(32)), RangeError);

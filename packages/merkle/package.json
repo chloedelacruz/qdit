@@ -1,7 +1,7 @@
 {
   "name": "@qdit/merkle",
   "version": "0.1.0",
-  "description": "The qdit Merkle batch scheme (qdit/merkle/v1): leaf and node hashing, trees and inclusion proofs. Matches milestone_proof_v2.",
+  "description": "The qdit Merkle batch scheme (qdit/merkle/v2): leaf and node hashing, trees and inclusion proofs. Matches milestone_proof_v2.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

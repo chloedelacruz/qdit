@@ -29,6 +29,9 @@ existed. It does **not** move any milestone through the approval state machine
 - `u32be(n)` is `n` as a 4-byte big-endian unsigned integer.
 - `str(s)` is `u32be(byte length of the UTF-8 encoding of s) || UTF-8 bytes of s`.
   The length counts bytes, not characters: `hito-ñ` is 7 bytes.
+- Ids are hashed exactly as given, with no Unicode normalisation: `é` as one code
+  point (NFC) and `e` plus a combining accent (NFD) are different ids. `project_id`
+  and `milestone_id` are at most 64 bytes, the contract's id limit (`IdTooLong`).
 
 ## 3. Hashes
 
@@ -56,8 +59,9 @@ There are two separators, and each one closes a different attack.
   pair of child hashes can be presented as a leaf, and no leaf can be presented
   as an inner node (a second-preimage attack on the tree).
 - **`TAG` splits this scheme from every other use of SHA-256**, including other
-  versions of this one. A hash computed for another protocol, or for a future
-  `qdit/merkle/v2`, can't collide with a v1 leaf or node by construction.
+  versions of this one. A hash computed for another protocol, or for another
+  version of this scheme (v1 in section 9, or a future v3), can't collide with a v2
+  leaf or node by construction.
 
 Every variable-length field is length-prefixed, so `("ab", "c")` and
 `("a", "bc")` hash differently. The leaf commits to the `project_id`, so a

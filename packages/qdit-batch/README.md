@@ -72,6 +72,10 @@ locally against that root, and also asks the contract's own `verify_inclusion`. 
 checks must pass. These are simulations: no key, no fee. The command exits 1 if any
 file fails.
 
+The root is read from the current `milestone_proof_v2` deployment, or from `--contract`.
+A file naming any other contract is refused: anyone can deploy the same WASM and
+anchor any root there, so the file doesn't get to choose where its root comes from.
+
 `--offline` checks only that the file agrees with itself. It never trusts the file's
 `root` field as proof of anything.
 
