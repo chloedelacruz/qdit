@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { qditUrl } from "@/lib/api/resources";
 
 import "./globals.css";
 
@@ -18,14 +19,36 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const TITLE = "qdit — builder operations for Stellar teams";
+const DESCRIPTION =
+  "Track tasks, milestones and Soroban deployments in one place — with contract IDs, transaction hashes and proof of work attached to every milestone.";
+
+/**
+ * `metadataBase` makes the generated `opengraph-image` URL absolute, which
+ * link previews need. The Open Graph and Twitter blocks here are the defaults
+ * every page shares; a page that sets its own `openGraph` replaces this one
+ * whole (Next merges metadata shallowly), so it must restate what it keeps.
+ */
 export const metadata: Metadata = {
+  metadataBase: new URL(qditUrl("/")),
   title: {
-    default: "qdit — builder operations for Stellar teams",
+    default: TITLE,
     template: "%s · qdit",
   },
-  description:
-    "Track tasks, milestones and Soroban deployments in one place — with contract IDs, transaction hashes and proof of work attached to every milestone.",
+  description: DESCRIPTION,
   applicationName: "qdit",
+  openGraph: {
+    type: "website",
+    siteName: "qdit",
+    title: TITLE,
+    description: DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
