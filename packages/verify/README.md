@@ -5,8 +5,28 @@ Check a qdit record on Stellar testnet without trusting qdit's app or database
 It reads the `milestone_proof_v2` contract through Soroban RPC simulation, so it
 needs no key and pays no fee.
 
-`0.1.0-dev`: the library (`verifyMilestone`, `verifyInclusion`, `replay`) and the
-`qdit-verify` command. The npm release is the rest of v0.1. MIT licensed.
+v0.1: the library (`verifyMilestone`, `verifyInclusion`, `replay`) and the
+`qdit-verify` command. Testnet and `milestone_proof_v2` only. MIT licensed.
+
+## Try it on real records
+
+These are records from the sprint's testnet QA run
+([`docs/evidence/qa-2026-11-22`](../../docs/evidence/qa-2026-11-22/README.md)). Node 22.18
+or later.
+
+```sh
+# A milestone approved by 2 of its 3 approvers
+npx @qdit/verify milestone --project ad605dca-7cab-491d-9d62-0d196ebc54b7 --milestone milestone-1
+
+# One of 128 records anchored in a single batch transaction
+curl -sO https://raw.githubusercontent.com/chloedelacruz/qdit/main/docs/evidence/qa-2026-11-22/batches/qa-1/records/proofs/00127-record-127.json
+npx @qdit/verify proof 00127-record-127.json
+
+# Every project's state rebuilt from the contract's events, checked against the contract
+npx @qdit/verify replay --compare --allow-incomplete --out snapshot.json
+```
+
+Each prints JSON and exits 0 when the record verifies.
 
 ```ts
 import { verifyMilestone, verifyInclusion } from "@qdit/verify";

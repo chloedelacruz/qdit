@@ -17,7 +17,7 @@
   "dependencies": {
     "@qdit/merkle": "0.1.0",
     "@qdit/milestone-proof-v2-bindings": "0.1.0",
-    "@qdit/verify": "0.1.0-dev",
+    "@qdit/verify": "0.1.0",
     "@stellar/stellar-sdk": "^16.2.0"
   },
   "devDependencies": {

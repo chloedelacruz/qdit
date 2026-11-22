@@ -1,8 +1,22 @@
 {
   "name": "@qdit/verify",
-  "version": "0.1.0-dev",
+  "version": "0.1.0",
   "description": "Check a qdit milestone or batch inclusion proof against Stellar testnet without trusting qdit's app or database.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chloedelacruz/qdit.git",
+    "directory": "packages/verify"
+  },
+  "homepage": "https://github.com/chloedelacruz/qdit/tree/main/packages/verify#readme",
+  "keywords": [
+    "stellar",
+    "soroban",
+    "qdit",
+    "merkle",
+    "attestation",
+    "verifier"
+  ],
   "type": "module",
   "exports": {
     ".": {
