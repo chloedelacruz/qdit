@@ -34,6 +34,11 @@ secrets were never written down.
   The other 119 can be rebuilt from `milestones.json` with `qdit-batch build
   --batch-id week3-sample-120` (add `--contract CAIBM…BFNB` to fill in `contract_id`).
   The rebuild gives the same root, so it is the same tree.
+- [`certificates/00119-week3-sample-119.html`](./certificates/00119-week3-sample-119.html):
+  the certificate for that proof, written on 2026-11-23 with `qdit-batch certificates
+  proofs/00119-week3-sample-119.json --out certificates` (QDIT-70). It carries the proof
+  file byte for byte, and `qdit-batch verify` on it passed on chain:
+  `included  week3-sample-120/week3-sample-119  root 73320bae8b8f93d6…  ledger 5807495  local true  contract true`.
 - [`qdit-batch-verify.txt`](./qdit-batch-verify.txt): `qdit-batch verify` over all 120
   files. Each one passed the local path check against the stored root and the
   contract's own `verify_inclusion`.
@@ -43,5 +48,6 @@ secrets were never written down.
 ```sh
 cd packages && npm ci && npm run build
 node qdit-batch/dist/cli.js verify ../docs/evidence/qdit-batch-2026-11-19/proofs/*.json
+node qdit-batch/dist/cli.js verify ../docs/evidence/qdit-batch-2026-11-19/certificates/*.html
 QDIT_LIVE=1 npm test -w verify      # @qdit/verify checks the same file, offline and on chain
 ```

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { extractCertificateProof } from "@qdit/merkle";
 import { verifyInclusion, verifyMilestone } from "../src/index.ts";
 
 const skip = process.env.QDIT_LIVE === "1" ? false : "set QDIT_LIVE=1 to run against testnet";
@@ -57,4 +58,14 @@ test("live: a tampered copy of that proof fails on chain", { skip }, async () =>
   const on = await verifyInclusion(file, { onChain: true });
   assert.equal(on.ok, false);
   assert.equal(on.batch?.contractSays, false);
+});
+
+test("live: the sample certificate's proof verifies on chain", { skip }, async () => {
+  const cert = readFileSync(
+    new URL("../../../docs/evidence/qdit-batch-2026-11-19/certificates/00119-week3-sample-119.html", import.meta.url),
+    "utf8",
+  );
+  const on = await verifyInclusion(extractCertificateProof(cert), { onChain: true });
+  assert.equal(on.ok, true, on.reasons.join("; "));
+  assert.equal(on.batch?.contractSays, true);
 });
