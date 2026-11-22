@@ -32,15 +32,15 @@ p.batch?.contractSays; // the contract's own verify_inclusion
 
 ```sh
 npx @qdit/verify milestone --project 817745fb-e68a-497b-bd7a-b7d3fc1e4556 --milestone milestone-1
-npx @qdit/verify proof inclusion-proof.json --on-chain     # or a qdit-batch certificate (.html)
+npx @qdit/verify proof inclusion-proof.json               # or a qdit-batch certificate (.html)
 npx @qdit/verify replay --compare --out snapshot.json
 ```
 
 | Command | Checks |
 | --- | --- |
 | `milestone --project <id> --milestone <id> [--hash <hex>] [--version <n>]` | `verifyMilestone`: Approved on chain, at this hash and version when given |
-| `proof <file> [--on-chain]` | `verifyInclusion` on a proof file, or the one a `qdit-batch` certificate carries. Without `--on-chain` it only checks that the file agrees with itself |
-| `replay [--from-ledger <n>] [--to-ledger <n>] [--out <file>] [--compare]` | `replay`, and with `--compare` also `compareWithContract` |
+| `proof <file> [--offline]` | `verifyInclusion` on a proof file, or the one a `qdit-batch` certificate carries, against the root stored on chain. `--offline` only checks that the file agrees with itself, which a forged file also does, so it exits 1 even when `ok` is true |
+| `replay [--from-ledger <n>] [--to-ledger <n>] [--out <file>] [--compare [--allow-incomplete]]` | `replay`, and with `--compare` also `compareWithContract`. `--compare` passes only on a complete snapshot; `--allow-incomplete` accepts one with gaps and compares what it has |
 
 Every command takes `--contract <C…>` (default: the current qdit deployment,
 `CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB`; a contract you name is
@@ -53,7 +53,7 @@ The result is JSON on stdout, always. A check that can't run prints
 | Exit | Meaning |
 | --- | --- |
 | 0 | Verified (for `replay` without `--compare`: the snapshot was written; check `complete`) |
-| 1 | Not verified: the check ran and failed, or `--compare` found a difference |
+| 1 | Not verified: the check ran and failed, `--compare` found a difference or an incomplete snapshot, or `proof --offline` (never more than consistent) |
 | 2 | Usage error: bad arguments, a malformed file, another network, or a contract that isn't a known v2 deployment |
 | 3 | Network or RPC error |
 
@@ -124,11 +124,29 @@ contract a proof file names. To check another deployment you trust, pass
 `trustedContracts: ["C…"]`. It must still run a known v2 WASM
 (`KNOWN_V2_WASM_HASHES`).
 
+## What a pass does and doesn't say
+
+- **Who.** The owner picks every approver, and anyone can register an unused project id
+  on the contract. "Approved by 2 of 3" means 2 addresses the owner added, not 2
+  independent people. Both checks return the project's current owner (`owner`,
+  `projectOwner`): compare it with the owner you expect.
+- **Which version.** An approval names the proof hash the approver reviewed, not the
+  version. If a milestone is rejected and resubmitted with the same hash, an approval
+  sent for the old version lands on the new one. Check the version you expect with
+  `expected.version`.
+- **Older versions.** The contract keeps only a milestone's current record, so the
+  proof hash of an earlier version can't be confirmed from its record; a batch proof for
+  an earlier version is checked against the batch only.
+- **Certificates.** Only the proof block a `qdit-batch` certificate carries is checked.
+  A hand-made page can show a browser anything beside it: trust the command's output,
+  not the page.
+
 ## What you still trust
 
 The RPC. Simulation results aren't signed, so an RPC you don't trust can answer
 anything, including the network passphrase and the WASM hash. The default is the
-public testnet RPC; pass `rpcUrl` to use your own node.
+public testnet RPC; pass `rpcUrl` to use your own node. The CLI warns about a plain
+`http://` URL to anything but localhost.
 
 ## Errors
 

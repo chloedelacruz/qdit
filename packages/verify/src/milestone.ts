@@ -41,6 +41,12 @@ export interface MilestoneVerification {
    * approved with fewer approvers than this.
    */
   threshold: number | null;
+  /**
+   * The project's owner now. The owner picks every approver, and anyone can
+   * register an unused project id, so check this is the owner you expect:
+   * "approved by M approvers" means M addresses the owner chose.
+   */
+  owner: string | null;
   /** Why `ok` is false. Empty when it is true. */
   reasons: string[];
 }
@@ -84,6 +90,7 @@ export async function verifyMilestone(
     submittedAt: null,
     approvers: [],
     threshold: null,
+    owner: null,
     reasons: [],
   };
 
@@ -97,6 +104,7 @@ export async function verifyMilestone(
     return result;
   }
   result.threshold = Number((project.value as { threshold: unknown }).threshold);
+  result.owner = addressString((project.value as { owner: unknown }).owner);
 
   if (!milestone.ok) {
     result.reasons.push(`milestone ${JSON.stringify(milestoneId)}: ${milestone.error}`);

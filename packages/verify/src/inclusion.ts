@@ -81,6 +81,12 @@ export interface InclusionVerification {
   batch?: AnchoredBatch;
   /** Present when `onChain` is set and the batch exists. */
   submission?: SubmissionCheck;
+  /**
+   * The project's owner now, when `onChain` is set and the batch exists.
+   * Anyone can register an unused project id, so check it is the owner you
+   * expect.
+   */
+  projectOwner?: string;
   /** Why `ok` is false. Empty when it is true. */
   reasons: string[];
 }
@@ -186,6 +192,8 @@ export async function verifyInclusion(
     ]),
     chain.read("get_milestone_status", [sc.string(file.project_id), sc.string(file.milestone_id)]),
   ]);
+  const project = await chain.read("get_project", [sc.string(file.project_id)]);
+  if (project.ok) result.projectOwner = addressString((project.value as { owner: unknown }).owner);
 
   result.batch = {
     root: result.root,

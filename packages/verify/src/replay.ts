@@ -37,6 +37,12 @@ export interface ReplayEvent {
   topic: unknown[];
   /** The event's data as a native value (a field map for every v2 event). */
   value: unknown;
+  /**
+   * An id in the event is not valid UTF-8: the project id itself
+   * (`"project"`) or another field (`"field"`). Such an id can't be named back
+   * to the contract through a string argument, so the event is not folded.
+   */
+  undecodable?: "project" | "field";
 }
 
 export interface ReplayMilestone {
@@ -153,8 +159,16 @@ function num(v: unknown): number {
   return n;
 }
 
+/**
+ * A map keyed by on-chain ids. No prototype, so an id such as `__proto__` is
+ * an ordinary key and can't vanish or reach Object.prototype.
+ */
+function idMap<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
 function emptyProject(complete: boolean): ReplayProject {
-  return { complete, owner: null, threshold: null, createdLedger: null, members: {}, milestones: {}, batches: {} };
+  return { complete, owner: null, threshold: null, createdLedger: null, members: idMap(), milestones: idMap(), batches: idMap() };
 }
 
 /**
@@ -174,6 +188,12 @@ export function foldEvents(events: readonly ReplayEvent[]): Record<string, Repla
 
   for (const e of events) {
     if (e.topic[0] !== "qdit" || typeof e.topic[1] !== "string" || typeof e.topic[2] !== "string") continue;
+    if (e.undecodable) {
+      // The project's state is missing this event. A project whose own id is
+      // not UTF-8 is left out altogether; replay's gaps name the events.
+      if (e.undecodable === "field") project(e.topic[2]).complete = false;
+      continue;
+    }
     const verb = e.topic[1];
     const pid = e.topic[2];
     const f = fields(e);
@@ -265,14 +285,42 @@ function sortProjects(projects: Map<string, ReplayProject>): Record<string, Repl
 // --- reading -------------------------------------------------------------
 
 /** Decode one RPC event. */
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** Whether any string inside `v` is not valid UTF-8 (the SDK would decode it lossily). */
+function hasBadUtf8(v: xdr.ScVal): boolean {
+  switch (v.switch().name) {
+    case "scvString": {
+      const raw = v.str();
+      if (typeof raw === "string") return false;
+      try {
+        strictUtf8.decode(raw);
+        return false;
+      } catch {
+        return true;
+      }
+    }
+    case "scvVec":
+      return (v.vec() ?? []).some(hasBadUtf8);
+    case "scvMap":
+      return (v.map() ?? []).some((e) => hasBadUtf8(e.key()) || hasBadUtf8(e.val()));
+    default:
+      return false;
+  }
+}
+
+/** Decode one RPC event. */
 export function decodeEvent(e: rpc.Api.EventResponse): ReplayEvent {
-  return {
+  const event: ReplayEvent = {
     id: e.id,
     ledger: e.ledger,
     txHash: e.txHash,
     topic: e.topic.map((t: xdr.ScVal) => scValToNative(t)),
     value: scValToNative(e.value),
   };
+  if (e.topic.some(hasBadUtf8)) event.undecodable = "project";
+  else if (hasBadUtf8(e.value)) event.undecodable = "field";
+  return event;
 }
 
 /**
@@ -361,7 +409,10 @@ export async function replay(options: ReplayOptions): Promise<ReplaySnapshot> {
       }
       events.push(decodeEvent(e));
     }
-    if (past || !page.cursor || cursorLedger(page.cursor) >= toLedger) break;
+    if (past || !page.cursor) break;
+    // A full page may end mid-ledger: only a short page means the scan reached
+    // its cursor, so only then can the cursor say the range is done.
+    if (page.events.length < limit && cursorLedger(page.cursor) >= toLedger) break;
     if (page.cursor === lastCursor) throw new VerifyError("RPC", `getEvents made no progress at cursor ${page.cursor}`);
     lastCursor = page.cursor;
     try {
@@ -371,6 +422,13 @@ export async function replay(options: ReplayOptions): Promise<ReplaySnapshot> {
     }
   }
 
+  const undecodable = events.filter((e) => e.undecodable);
+  if (undecodable.length > 0) {
+    gaps.push(
+      `${undecodable.length} event(s) carry an id that is not valid UTF-8 and were not replayed: ` +
+        undecodable.map((e) => e.txHash).join(", "),
+    );
+  }
   const projects = foldEvents(events);
   const partial = Object.entries(projects).filter(([, p]) => !p.complete).map(([id]) => id);
   if (partial.length > 0) {

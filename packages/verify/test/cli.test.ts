@@ -86,17 +86,20 @@ test("milestone: below threshold or at the wrong hash fails with exit 1", async 
   assert.match(wrong.json.reasons[0], /proof hash on chain/);
 });
 
-test("proof: a valid file passes offline and on chain; certificates too", async () => {
+test("proof: a valid file verifies on chain by default; offline it is only consistent (exit 1)", async () => {
   const path = join(dir, "proof.json");
   writeFileSync(path, JSON.stringify(files[1]));
-  const off = await cli("proof", path);
-  assert.equal(off.code, 0, off.stderr);
-  assert.equal(off.json.ok, true);
-  assert.equal(off.json.rootConfirmed, false);
-  const on = await cli("proof", path, "--on-chain", ...rpcArgs());
+  const on = await cli("proof", path, ...rpcArgs());
   assert.equal(on.code, 0, on.stderr);
   assert.equal(on.json.rootConfirmed, true);
   assert.equal(on.json.batch.contractSays, true);
+  assert.equal(on.json.projectOwner, addr(1));
+  // A forged file that agrees with itself passes this too, so it never exits 0.
+  const off = await cli("proof", path, "--offline");
+  assert.equal(off.code, 1, off.stderr);
+  assert.equal(off.json.ok, true);
+  assert.equal(off.json.rootConfirmed, false);
+  assert.equal((await cli("proof", path, "--offline", "--on-chain")).code, 2);
 
   const cert = readFileSync(
     new URL("../../../docs/evidence/qdit-batch-2026-11-19/certificates/00119-week3-sample-119.html", import.meta.url),
@@ -104,24 +107,25 @@ test("proof: a valid file passes offline and on chain; certificates too", async 
   );
   const certPath = join(dir, "cert.html");
   writeFileSync(certPath, cert);
-  const fromCert = await cli("proof", certPath);
-  assert.equal(fromCert.code, 0, fromCert.stderr);
+  const fromCert = await cli("proof", certPath, "--offline");
+  assert.equal(fromCert.code, 1, fromCert.stderr);
+  assert.equal(fromCert.json.ok, true);
   assert.equal(fromCert.json.milestoneId, "week3-sample-119");
 });
 
 test("proof: a tampered file fails with exit 1, a file naming another contract with exit 2", async () => {
   const bad = join(dir, "bad.json");
   writeFileSync(bad, JSON.stringify({ ...files[1], proof_hash: "00".repeat(32) }));
-  const off = await cli("proof", bad);
+  const off = await cli("proof", bad, "--offline");
   assert.equal(off.code, 1);
   assert.equal(off.json.leafMatches, false);
-  const on = await cli("proof", bad, "--on-chain", ...rpcArgs());
+  const on = await cli("proof", bad, ...rpcArgs());
   assert.equal(on.code, 1);
   assert.equal(on.json.batch.contractSays, false);
 
   const other = join(dir, "other.json");
   writeFileSync(other, JSON.stringify({ ...files[1], contract_id: "CCLOK4SW" }));
-  const wrong = await cli("proof", other, "--on-chain", ...rpcArgs());
+  const wrong = await cli("proof", other, ...rpcArgs());
   assert.equal(wrong.code, 2);
   assert.equal(wrong.json.error.code, "WRONG_CONTRACT");
 });
@@ -146,6 +150,14 @@ test("replay: a window that cut off events is reported incomplete, and diffs fai
     assert.equal(r.json.complete, false);
     assert.match(r.json.gaps[0], /outside the RPC's retention window/);
     assert.match(r.stderr, /snapshot is incomplete/);
+    // --compare passes only on a complete snapshot, unless gaps are accepted.
+    const strict = await cli("replay", "--from-ledger", "1", "--compare", ...rpcArgs());
+    assert.equal(strict.code, 1);
+    assert.equal(strict.json.ok, false);
+    assert.equal(strict.json.comparison.ok, true);
+    const lenient = await cli("replay", "--from-ledger", "1", "--compare", "--allow-incomplete", ...rpcArgs());
+    assert.equal(lenient.code, 0);
+    assert.equal(lenient.json.ok, true);
   } finally {
     chain.oldestLedger = 1;
   }

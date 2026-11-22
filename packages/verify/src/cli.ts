@@ -23,18 +23,21 @@ const USAGE = `@qdit/verify: check qdit records on Stellar testnet without trust
 
 Usage:
   qdit-verify milestone --project <id> --milestone <id> [--hash <64 hex>] [--version <n>]
-  qdit-verify proof <proof.json | certificate.html> [--on-chain]
-  qdit-verify replay [--from-ledger <n>] [--to-ledger <n>] [--out <file>] [--compare]
+  qdit-verify proof <proof.json | certificate.html> [--offline]
+  qdit-verify replay [--from-ledger <n>] [--to-ledger <n>] [--out <file>] [--compare [--allow-incomplete]]
 
   milestone  Is the milestone Approved on chain (and at this proof hash / version)?
   proof      Does a qdit-batch inclusion-proof file, or a certificate carrying one,
-             prove its milestone is in a batch? Offline it checks only that the
-             file agrees with itself; --on-chain checks it against the root the
+             prove its milestone is in a batch? Checks it against the root the
              contract stored and asks the contract's own verify_inclusion.
+             --offline checks only that the file agrees with itself, which a
+             forged file also does, so it never exits 0: 1 at best.
   replay     Rebuild every project's state from the contract's events and print
              (or --out) the snapshot. --compare also checks it against the
-             contract's getters. "complete": false means some events were past
-             the RPC's retention window; "gaps" says which.
+             contract's getters, and passes only when the snapshot is complete
+             and nothing differs; --allow-incomplete accepts a snapshot with
+             gaps (events past the RPC's retention window) and compares what
+             it has. "gaps" says what is missing.
 
 Options:
   --contract <C...>   milestone_proof_v2 contract (default: ${DEFAULT_CONTRACT})
@@ -88,6 +91,8 @@ export async function run(argv: string[]): Promise<number> {
         hash: { type: "string" },
         version: { type: "string" },
         "on-chain": { type: "boolean" },
+        offline: { type: "boolean" },
+        "allow-incomplete": { type: "boolean" },
         "from-ledger": { type: "string" },
         "to-ledger": { type: "string" },
         out: { type: "string" },
@@ -112,6 +117,9 @@ export async function run(argv: string[]): Promise<number> {
     }
     const contractId = str(values, "contract") ?? DEFAULT_CONTRACT;
     const rpcUrl = str(values, "rpc-url");
+    if (rpcUrl?.startsWith("http://") && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(rpcUrl)) {
+      process.stderr.write(`qdit-verify: warning: ${rpcUrl} is plain HTTP; anyone on the path can change what it answers\n`);
+    }
     // A contract named on the command line is one the caller trusts; it must
     // still run a known milestone_proof_v2 build.
     const chain = {
@@ -150,7 +158,9 @@ export async function run(argv: string[]): Promise<number> {
         } catch (e) {
           throw new VerifyError("BAD_INPUT", `${rest[0]}: ${e instanceof Error ? e.message : String(e)}`);
         }
-        const onChain = values["on-chain"] === true;
+        if (values.offline && values["on-chain"]) throw new UsageError("--offline and --on-chain contradict each other");
+        // On chain by default: a file that only agrees with itself proves nothing.
+        const onChain = values.offline !== true;
         // The contract a proof is checked against is never the file's choice.
         const named = (file as { contract_id?: unknown } | null)?.contract_id;
         if (onChain && named !== contractId) {
@@ -161,7 +171,8 @@ export async function run(argv: string[]): Promise<number> {
         }
         const r = await verifyInclusion(file, { onChain, ...chain });
         print(r);
-        return r.ok ? EXIT.VERIFIED : EXIT.NOT_VERIFIED;
+        // Offline, "ok" means only that the file is consistent: never "verified".
+        return r.ok && r.rootConfirmed ? EXIT.VERIFIED : EXIT.NOT_VERIFIED;
       }
 
       case "replay": {
@@ -180,9 +191,10 @@ export async function run(argv: string[]): Promise<number> {
 
         if (values.compare) {
           const comparison = await compareWithContract(snapshot, chain);
-          const summary = { ok: comparison.ok, complete: snapshot.complete, gaps: snapshot.gaps, comparison };
+          const ok = comparison.ok && (snapshot.complete || values["allow-incomplete"] === true);
+          const summary = { ok, complete: snapshot.complete, gaps: snapshot.gaps, comparison };
           print(out ? { ...summary, snapshot: out } : { ...summary, snapshot });
-          return comparison.ok ? EXIT.VERIFIED : EXIT.NOT_VERIFIED;
+          return ok ? EXIT.VERIFIED : EXIT.NOT_VERIFIED;
         }
         print(out ? { ok: true, complete: snapshot.complete, gaps: snapshot.gaps, eventCount: snapshot.eventCount, snapshot: out } : snapshot);
         return EXIT.VERIFIED;

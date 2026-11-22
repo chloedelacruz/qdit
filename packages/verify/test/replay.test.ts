@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { compareWithContract, foldEvents, replay, type EventRpcLike } from "../src/index.ts";
 import { decodeEvent } from "../src/replay.ts";
+import { xdr } from "@stellar/stellar-sdk";
 import { CONTRACT_ID, FakeChain, addr } from "./fake-rpc.ts";
 
 const OWNER = addr(1);
@@ -162,6 +163,51 @@ test("compare reports a snapshot that disagrees with the contract", async () => 
     `p1/milestone/m2: approvers snapshot ${JSON.stringify([A1, A2])}, contract ${JSON.stringify([A2])}`,
     "p1: threshold snapshot 3, contract 2",
   ]);
+});
+
+test("replay: a full page that ends inside the last ledger doesn't drop the rest of it (review L-2)", async () => {
+  const c = new FakeChain();
+  c.create("p", OWNER, 1);
+  // Six events in one ledger, the last one of the range.
+  const ledger = c.ledger + 1;
+  for (const who of [SUB, A1, A2, A3, NEW_OWNER]) {
+    c.addMember("p", who, "Approver");
+    c.ledger = ledger - 1; // emit() bumps it back to `ledger`
+  }
+  c.ledger = ledger;
+  const server = c.rpc() as EventRpcLike;
+  const snap = await replay({ contractId: CONTRACT_ID, startLedger: 1001, endLedger: ledger, server, pageLimit: 2 });
+  assert.equal(snap.eventCount, 6);
+  assert.equal(Object.keys(snap.projects.p!.members).length, 5);
+});
+
+test("fold: ids like __proto__ are ordinary keys (review L-3)", () => {
+  const c = new FakeChain();
+  c.create("p", OWNER, 1);
+  c.addMember("p", SUB, "Submitter");
+  c.submit("p", "__proto__", SUB, h(1));
+  c.anchorBatch("p", "constructor", SUB, h(2), 1);
+  const p = foldEvents(c.events.map(decodeEvent)).p!;
+  assert.deepEqual(Object.keys(p.milestones), ["__proto__"]);
+  assert.equal(p.milestones["__proto__"]!.version, 1);
+  assert.deepEqual(Object.keys(p.batches), ["constructor"]);
+  assert.equal(({} as Record<string, unknown>).version, undefined);
+});
+
+test("replay: an id that isn't UTF-8 is reported, not replayed under a lossy name (review L-4)", async () => {
+  const c = story();
+  const bad = Buffer.from([0x6d, 0xff, 0x31]); // "m\xff1"
+  c.submit("p1", "placeholder", SUB, h(5));
+  const ev = c.events.at(-1)!;
+  const data = ev.value.map()!;
+  for (const e of data) if (e.key().sym().toString() === "milestone_id") e.val(xdr.ScVal.scvString(bad));
+  const server = c.rpc() as EventRpcLike;
+  c.milestones.delete("p1/placeholder");
+  const snap = await replay({ contractId: CONTRACT_ID, startLedger: 1, server });
+  assert.equal(snap.complete, false);
+  assert.match(snap.gaps.join("\n"), /1 event\(s\) carry an id that is not valid UTF-8/);
+  assert.equal(snap.projects.p1!.complete, false);
+  assert.equal(Object.keys(snap.projects.p1!.milestones).length, 2);
 });
 
 test("cursorLedger reads the ledger out of a TOID cursor", async () => {

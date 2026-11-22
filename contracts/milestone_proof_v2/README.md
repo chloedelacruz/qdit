@@ -82,7 +82,9 @@ approver, whose approval finalises it.
   submitted, which replaces `submitter` and clears its approvals. The remedy is the owner
   removing them.
 - **The owner can make a submitter an approver**, who can then approve their own proof. A
-  threshold of 2 or more still requires someone else.
+  threshold of 2 or more still requires another approver address, but the owner adds every
+  approver, so M-of-N means M addresses the owner chose, not M independent people. Check
+  who owns the project (`get_project`; `@qdit/verify` reports it) before relying on it.
 - **Anyone can claim an unused `project_id`.** After `ProjectExists`, check the owner with
   `get_project`.
 - **Ids may be empty**, as in v1.
