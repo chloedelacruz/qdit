@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "complete": false,
+  "gaps": [
+    "events from ledger 5728090 to 5751718 are outside the RPC's retention window (it keeps ledgers 5751719 to 5872678); state written in them is missing"
+  ],
+  "comparison": {
+    "ok": true,
+    "snapshotComplete": false,
+    "checked": {
+      "projects": 21,
+      "members": 75,
+      "milestones": 212,
+      "batches": 19
+    },
+    "skipped": [],
+    "diffs": []
+  },
+  "snapshot": "docs/evidence/replay-snapshot.json"
+}
