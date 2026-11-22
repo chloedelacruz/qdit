@@ -16,3 +16,14 @@ export {
   VerifyError,
 } from "./chain.ts";
 export type { ChainOptions, RpcLike, VerifyErrorCode } from "./chain.ts";
+export { compareWithContract, decodeEvent, foldEvents, replay, KNOWN_V2_DEPLOY_LEDGERS, SNAPSHOT_FORMAT } from "./replay.ts";
+export type {
+  ContractComparison,
+  EventRpcLike,
+  ReplayBatch,
+  ReplayEvent,
+  ReplayMilestone,
+  ReplayOptions,
+  ReplayProject,
+  ReplaySnapshot,
+} from "./replay.ts";

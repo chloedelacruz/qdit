@@ -1,0 +1,24 @@
+{
+  "format": "qdit-inclusion-proof/v2",
+  "network": "testnet",
+  "contract_id": "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB",
+  "project_id": "ad5718d9-a0be-497d-b699-3c4947972a9d",
+  "batch_id": "approved",
+  "milestone_id": "milestone-4",
+  "version": 1,
+  "proof_hash": "8ce8b69f6451a7aaec7c8b9e29a3ad273930cccd8c81785738a7cd2499c1bad2",
+  "index": 3,
+  "leaf_count": 5,
+  "leaf": "27b19b3aa817c089922fbcd90d29c8acd68b7cc8a1d9075f7079f7818780d459",
+  "path": [
+    "bbf21938bb46799a2c06c9172c8df485b8873eb5b5f43555b3881ea63bf0201d",
+    "cb2cb1f36828007bca5127f9123703dd5a44fc7c8d8ddf2f4f22f378f73769d8",
+    "d5907e78850e777089d24b7242e61171861dec8a7e96940017f63578b2bf915d"
+  ],
+  "root": "1d2752d899fe533b5e8f80bea29778471731332875c68e6f2f5f6fb8b57dc6f9",
+  "anchor": {
+    "tx_hash": "0469698f7e9be5a6def108376de55cf26f547925d467e5c863d1dc3b91444d44",
+    "ledger": 5872638,
+    "timestamp": 1795386831
+  }
+}

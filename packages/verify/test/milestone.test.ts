@@ -65,6 +65,7 @@ test("an approved milestone verifies, with its record and the project's threshol
     submittedAt: 1763128500,
     approvers: [APPROVER1, APPROVER2],
     threshold: 2,
+    owner: OWNER,
     reasons: [],
   });
 });

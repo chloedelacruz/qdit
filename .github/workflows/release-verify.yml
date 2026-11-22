@@ -1,0 +1,140 @@
+name: Release @qdit/verify
+
+# Publishes @qdit/merkle and @qdit/verify to npm when a `verify-v<version>` tag
+# is pushed, with npm provenance, then installs the published package on a
+# clean runner and checks real testnet records with it.
+#
+# Needs the NPM_TOKEN repository secret: an npm automation token that can
+# publish under the @qdit scope. Nothing else in the repository reads it.
+#
+# The clean-install job also runs on its own (Actions → Run workflow), to
+# re-check a release that is already on npm.
+
+on:
+  push:
+    tags: ["verify-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published @qdit/verify version to check"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish to npm
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm provenance: the package is signed as built from this commit.
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+
+      # The tag names the version being released; the package must agree.
+      - name: Check the tag matches packages/verify
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#verify-v}"
+          pkg="$(node -p 'require("./verify/package.json").version')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag says $tag, packages/verify/package.json says $pkg" >&2
+            exit 1
+          fi
+
+      # @qdit/verify depends on @qdit/merkle, so merkle goes first. A version
+      # already on npm is left alone: npm never lets a version be replaced.
+      - name: Publish @qdit/merkle
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="$(node -p 'require("./merkle/package.json").version')"
+          if npm view "@qdit/merkle@$v" version >/dev/null 2>&1; then
+            echo "@qdit/merkle@$v is already published"
+          else
+            npm publish -w merkle --access public --provenance
+          fi
+
+      - name: Publish @qdit/verify
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish -w verify --access public --provenance
+
+  clean-install:
+    name: clean install, verify testnet records
+    needs: publish
+    # Runs after a publish, or on its own from workflow_dispatch.
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    steps:
+      # Only for the committed proof file. The package itself comes from npm,
+      # run from a directory outside the checkout so nothing local is used.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: docs/evidence
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Which version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#verify-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # npm can take a little while to serve a version it just accepted.
+      - name: Wait for the version on npm
+        run: |
+          for i in $(seq 1 30); do
+            npm view "@qdit/verify@${{ steps.v.outputs.version }}" version && exit 0
+            sleep 10
+          done
+          echo "@qdit/verify@${{ steps.v.outputs.version }} never appeared on npm" >&2
+          exit 1
+
+      - name: A threshold-approved v2 milestone (2 of 3 approvers)
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          npx --yes "@qdit/verify@${{ steps.v.outputs.version }}" milestone \
+            --project "$(jq -r '.projects[0].projectId' "$GITHUB_WORKSPACE/docs/evidence/qa-2026-11-22/run.json")" \
+            --milestone milestone-1 | tee milestone.json
+          jq -e '.ok == true and .status == "Approved" and (.approvers | length) >= 2' milestone.json
+
+      - name: A batch inclusion proof, offline and on chain
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          proof="$GITHUB_WORKSPACE/docs/evidence/qa-2026-11-22/batches/qa-1/records/proofs/00127-record-127.json"
+          # Offline only shows the file is consistent, so it exits 1 by design.
+          code=0
+          npx --yes "@qdit/verify@${{ steps.v.outputs.version }}" proof "$proof" --offline > offline.json || code=$?
+          cat offline.json
+          test "$code" -eq 1
+          jq -e '.ok == true and .rootConfirmed == false' offline.json
+          npx --yes "@qdit/verify@${{ steps.v.outputs.version }}" proof "$proof" | tee onchain.json
+          jq -e '.ok == true and .rootConfirmed == true and .batch.contractSays == true' onchain.json

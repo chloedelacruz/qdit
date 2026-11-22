@@ -45,13 +45,20 @@ yarn-error.log*
 # docs/integration/ is the exception: the doqtri x qdit contract is shared
 # with the doqtri repo and must be tracked. So are docs/runbooks/, the
 # operator runbooks, docs/merkle/, the batch scheme and its test vectors, and
-# docs/evidence/, the testnet harness logs. `docs/*` (not `docs/`) so the
-# negation can reach inside the directory.
+# docs/evidence/, the testnet harness logs, and docs/security/, the security
+# reviews. `docs/*` (not `docs/`) so the negation can reach inside the
+# directory.
 docs/*
 !docs/integration/
 !docs/runbooks/
 !docs/merkle/
 !docs/evidence/
+!docs/security/
+# docs/deliverables/ holds the SOW, which stays out of this public repository;
+# only its evidence/ folder, the evidence pack for the reviewer, is tracked.
+!docs/deliverables/
+docs/deliverables/*
+!docs/deliverables/evidence/
 docs/qdit-pitch-deck.pptx
 docs/qdit-pitch-deck.pdf
 

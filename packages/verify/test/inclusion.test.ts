@@ -77,9 +77,10 @@ test("on chain: an untouched file verifies against the stored root and the contr
       contractSays: true,
     },
     submission: { recorded: false },
+    projectOwner: addr(1),
     reasons: [],
   });
-  assert.deepEqual([...c.calls].sort(), ["get_batch", "get_milestone_status", "verify_inclusion"]);
+  assert.deepEqual([...c.calls].sort(), ["get_batch", "get_milestone_status", "get_project", "verify_inclusion"]);
 });
 
 test("every leaf of the batch verifies on chain", async () => {
