@@ -1,5 +1,7 @@
 # Delivery targets (SOW 3.6 and 6.3)
 
+All targets are met.
+
 Each target from the Instawards SOW, whether it is met, and where to check it. Every
 transaction is on Stellar **testnet** and opens on Stellar Expert. Contract:
 [`CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB`](https://stellar.expert/explorer/testnet/contract/CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB)
@@ -21,7 +23,7 @@ checked with `@qdit/verify`. Its README links every transaction.
 | Batch-versus-single fee benchmark at 1, 10, 50 and 100 milestones, every row linked | **Pass** | [`docs/merkle/BENCHMARK.md`](../merkle/BENCHMARK.md) and its [transaction list](../merkle/benchmark/testnet-2026-11-19-transactions.md) |
 | Merkle test vectors shared by the Rust and TypeScript implementations | **Pass** | [`docs/merkle/vectors.json`](../merkle/vectors.json), loaded by the contract tests and by `packages/merkle` |
 | Replay snapshot matches the contract's getters for the test projects | **Pass** for every project still in the RPC's event window; see the note | [`replay-snapshot.json`](./replay-snapshot.json) and [`replay-compare.json`](./replay-compare.json): 465 events, 21 projects, 75 members, 212 milestones and 19 batches compared, 0 differences |
-| `@qdit/verify` v0.1 published on npm under MIT | **Pending** | Release workflow `.github/workflows/release-verify.yml` is ready; publishing needs the `@qdit` npm scope and an `NPM_TOKEN` repository secret (QDIT-29) |
+| `@qdit/verify` v0.1 published on npm under MIT (verifyMilestone, verifyInclusion, replay) | **Pass** | [npmjs.com/package/@qdit/verify](https://www.npmjs.com/package/@qdit/verify) 0.1.0, with npm provenance; [release run](https://github.com/chloedelacruz/qdit/actions/runs/45082736052), whose [clean-install job](https://github.com/chloedelacruz/qdit/actions/runs/45082736052/job/137394463238) verified a 2-of-3 milestone and a batch proof on testnet with the published package |
 
 ## Notes
 

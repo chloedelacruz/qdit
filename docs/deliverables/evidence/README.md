@@ -11,7 +11,7 @@ transaction link opens on Stellar Expert, a public block explorer, and needs no 
 | Source code | [github.com/chloedelacruz/qdit](https://github.com/chloedelacruz/qdit) (contracts in `contracts/`, tools in `packages/`) |
 | New contract (v2), deployed in this sprint | [`CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB`](https://stellar.expert/explorer/testnet/contract/CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB) |
 | Existing contract (v1), unchanged | [`CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG`](https://stellar.expert/explorer/testnet/contract/CBP3NKXCRUSOJLLUXDF5AIRNPAC6IL7TFJ2KCNL5A2GTKC2MB7M4OHVG) |
-| Every target, pass or pending | [Delivery targets](../../evidence/delivery-targets.md) |
+| Every target and its result (all met) | [Delivery targets](../../evidence/delivery-targets.md) |
 | Security self-review | [v2 self-review](../../security/v2-self-review.md) (not a third-party audit, as the SOW says) |
 
 ## Deliverable 1: on-chain team roles and M-of-N approval (`milestone_proof_v2`)
@@ -55,8 +55,8 @@ blockchain, without trusting qdit's website or database.
 
 | Evidence (SOW 6.1) | Where to see it |
 | --- | --- |
-| The npm page and source | **Pending publication.** npm page: [npmjs.com/package/@qdit/verify](https://www.npmjs.com/package/@qdit/verify) (live once released). Source: [`packages/verify`](../../../packages/verify) (MIT licence) |
-| A CI job that installs the published package in a clean environment and verifies a v2 threshold-approved milestone and a batch proof on testnet | **Pending publication.** The job is ready: [`release-verify.yml`](../../../.github/workflows/release-verify.yml), "clean install, verify testnet records". Its run link is added here when it has run |
+| The npm page and source | npm page: [npmjs.com/package/@qdit/verify](https://www.npmjs.com/package/@qdit/verify), version 0.1.0, MIT licence, published from this repository with npm provenance ([release run](https://github.com/chloedelacruz/qdit/actions/runs/45082736052)). Source: [`packages/verify`](../../../packages/verify) |
+| A CI job that installs the published package in a clean environment and verifies a v2 threshold-approved milestone and a batch proof on testnet | [Clean-install job, passed](https://github.com/chloedelacruz/qdit/actions/runs/45082736052/job/137394463238): on a fresh runner, `npx @qdit/verify@0.1.0` confirmed a milestone approved by 2 of 3 approvers, and a batch proof both offline and on chain (the contract's own check returned true). Workflow: [`release-verify.yml`](../../../.github/workflows/release-verify.yml) |
 | A replay snapshot of the sprint test projects | [Snapshot](../../evidence/replay-snapshot.json) and its [comparison with the contract](../../evidence/replay-compare.json): 21 projects, 212 milestones and 19 batches rebuilt from the contract's events, 0 differences. The public testnet service keeps events for about 7 days, so the earliest projects (2026-11-14) could no longer be replayed; the snapshot says so itself (see [Delivery targets](../../evidence/delivery-targets.md#notes)) |
 
 ## Check it yourself
@@ -89,7 +89,3 @@ fee: the tool only reads the blockchain.
    ```
 
    Look for `"diffs": []`.
-
-Until the package is on npm, run the same commands from a copy of the repository:
-`cd packages && npm ci && npm run build`, then use `node verify/dist/cli.js` in place of
-`npx @qdit/verify`.
