@@ -8,229 +8,29 @@
 // it lands on the ledger as a failed transaction carrying the contract's error.
 // Every check throws on a mismatch: a run that finishes passed all of them.
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  Address,
-  BASE_FEE,
-  Keypair,
-  Operation,
-  SorobanDataBuilder,
-  TransactionBuilder,
-  nativeToScVal,
-  rpc,
-  xdr,
-} from "@stellar/stellar-sdk";
-import { basicNodeSigner, type AssembledTransaction, type Result } from "@stellar/stellar-sdk/contract";
+import { Keypair } from "@stellar/stellar-sdk";
+import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { MerkleTree } from "@qdit/merkle";
-import { Client, Errors, networks } from "@qdit/milestone-proof-v2-bindings";
+import type { Client } from "@qdit/milestone-proof-v2-bindings";
 
-import { evidencePath, renderEvidence, type Step } from "./evidence.ts";
+import { evidencePath, renderEvidence } from "./evidence.ts";
+import * as lib from "./lib.ts";
+import { RPC_URL, batchKey, check, clientFor, contractId, fund, networkPassphrase, server, sha256, type Tx } from "./lib.ts";
 
-const RPC_URL = process.env["QDIT_RPC_URL"] ?? "https://soroban-testnet.stellar.org";
-const FRIENDBOT = "https://friendbot.stellar.org";
-const { contractId, networkPassphrase } = networks.testnet;
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const server = new rpc.Server(RPC_URL);
-
-type ErrorName = (typeof Errors)[keyof typeof Errors]["message"];
-type Tx<T> = AssembledTransaction<Result<T>>;
-
-const steps: Step[] = [];
-
-function log(line: string): void {
-  process.stdout.write(`${line}\n`);
-}
-
-function check(ok: boolean, what: string): void {
-  if (!ok) throw new Error(`check failed: ${what}`);
-}
-
-function codeOf(name: string): number {
-  const hit = Object.entries(Errors).find(([, e]) => e.message === name);
-  if (!hit) throw new Error(`unknown contract error ${name}`);
-  return Number(hit[0]);
-}
-
-const sha256 = (data: string | Uint8Array): Buffer => createHash("sha256").update(data).digest();
-
-async function fund(kp: Keypair): Promise<void> {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const res = await fetch(`${FRIENDBOT}?addr=${kp.publicKey()}`);
-    if (res.ok) return;
-    if (attempt === 3) throw new Error(`Friendbot refused ${kp.publicKey()}: ${res.status}`);
-    await new Promise((r) => setTimeout(r, 2000 * attempt));
-  }
-}
-
-function clientFor(kp: Keypair): Client {
-  const { signTransaction, signAuthEntry } = basicNodeSigner(kp, networkPassphrase);
-  return new Client({
-    contractId,
-    networkPassphrase,
-    rpcUrl: RPC_URL,
-    publicKey: kp.publicKey(),
-    signTransaction,
-    signAuthEntry,
-  });
-}
-
-/** Sign, send and confirm a write the simulation accepted. */
-async function send<T>(
-  title: string,
-  signer: string,
-  tx: Tx<T>,
-  outcome: (value: T) => string = () => "ok",
-  force = false,
-): Promise<T> {
-  const simulated = tx.result;
-  if (simulated.isErr()) {
-    throw new Error(`${title}: simulation refused with ${simulated.unwrapErr().message}`);
-  }
-  const sent = await tx.signAndSend({ force });
-  const txHash = sent.sendTransactionResponse?.hash;
-  const done = sent.getTransactionResponse;
-  if (!txHash || !done || done.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
-    throw new Error(`${title}: transaction did not succeed (${done?.status ?? "not sent"})`);
-  }
-  const value = sent.result.unwrap();
-  const step: Step = { kind: "sent", title, signer, outcome: outcome(value), txHash, ledger: done.ledger };
-  steps.push(step);
-  log(`  ✓ ${title} — ${step.outcome} — ${txHash}`);
-  return value;
-}
-
-/** A simulated read. `outcome` should throw (via `check`) if the value is wrong. */
-function read<T>(title: string, signer: string, tx: Tx<T>, outcome: (value: T) => string): T {
-  const value = tx.result.unwrap();
-  const text = outcome(value);
-  steps.push({ kind: "read", title, signer, outcome: text });
-  log(`  ✓ ${title} — ${text} (simulated)`);
-  return value;
-}
-
-/** The first `Error(Contract, #n)` anywhere in a failed transaction's diagnostic events. */
-function contractErrorIn(events: readonly xdr.DiagnosticEvent[]): number | undefined {
-  const scan = (v: xdr.ScVal): number | undefined => {
-    if (v.switch().name === "scvError" && v.error().switch().name === "sceContract") {
-      return v.error().contractCode();
-    }
-    if (v.switch().name === "scvVec") {
-      for (const item of v.vec() ?? []) {
-        const hit = scan(item);
-        if (hit !== undefined) return hit;
-      }
-    }
-    return undefined;
-  };
-  for (const ev of events) {
-    const body = ev.event().body().v0();
-    for (const v of [...body.topics(), body.data()]) {
-      const hit = scan(v);
-      if (hit !== undefined) return hit;
-    }
-  }
-  return undefined;
-}
-
-/**
- * A call the contract must refuse with `expected`.
- *
- * The simulation has to fail with that code. Then the call is sent anyway: a
- * failing simulation gives no footprint, so the transaction borrows the
- * resources and footprint of `model`, the same call made valid (another signer
- * or another id), plus any `extraKeys` only the refused call reads. It lands on
- * the ledger as a failed transaction, and its diagnostic events must carry the
- * same code.
- */
-async function refuse(
-  title: string,
-  signer: string,
-  kp: Keypair,
-  refused: { tx: Tx<unknown>; method: string; args: Record<string, unknown> },
-  model: Tx<unknown>,
-  expected: ErrorName,
-  extraKeys: xdr.LedgerKey[] = [],
-): Promise<void> {
-  const code = codeOf(expected);
-  const sim = refused.tx.simulation;
-  const raw = sim && rpc.Api.isSimulationError(sim) ? sim.error : "";
-  const hostError = /Error\(Contract, #\d+\)/.exec(raw)?.[0] ?? "";
-  if (!refused.tx.result.isErr() || hostError !== `Error(Contract, #${code})`) {
-    throw new Error(`${title}: expected ${expected} (#${code}) in simulation, got ${hostError || raw || "success"}`);
-  }
-  check(model.result.isOk(), `${title}: the model call has to simulate cleanly`);
-
-  const client = clientFor(kp);
-  const scArgs = client.spec.funcArgsToScVals(refused.method, refused.args);
-  const invocation = new xdr.SorobanAuthorizedInvocation({
-    function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-      new xdr.InvokeContractArgs({
-        contractAddress: new Address(contractId).toScAddress(),
-        functionName: refused.method,
-        args: scArgs,
-      }),
-    ),
-    subInvocations: [],
-  });
-  const auth = new xdr.SorobanAuthorizationEntry({
-    credentials: xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
-    rootInvocation: invocation,
-  });
-
-  const modelData = model.simulationData.transactionData;
-  const builder = new SorobanDataBuilder(modelData);
-  builder.setFootprint([...builder.getReadOnly(), ...extraKeys], builder.getReadWrite());
-  const resourceFee = BigInt(modelData.resourceFee().toString()) * 2n;
-  builder.setResourceFee(resourceFee.toString());
-
-  const account = await server.getAccount(kp.publicKey());
-  const tx = new TransactionBuilder(account, {
-    fee: (BigInt(BASE_FEE) + resourceFee).toString(),
-    networkPassphrase,
-  })
-    .addOperation(
-      Operation.invokeContractFunction({ contract: contractId, function: refused.method, args: scArgs, auth: [auth] }),
-    )
-    .setSorobanData(builder.build())
-    .setTimeout(60)
-    .build();
-  tx.sign(kp);
-
-  const submitted = await server.sendTransaction(tx);
-  if (submitted.status !== "PENDING") {
-    throw new Error(`${title}: the node didn't accept the transaction (${submitted.status})`);
-  }
-  const done = await server.pollTransaction(submitted.hash, { attempts: 30 });
-  if (done.status !== rpc.Api.GetTransactionStatus.FAILED) {
-    throw new Error(`${title}: expected a failed transaction, got ${done.status}`);
-  }
-  const onChain = contractErrorIn(done.diagnosticEventsXdr ?? []);
-  if (onChain !== code) {
-    throw new Error(`${title}: the failed transaction carries ${onChain === undefined ? "no contract error" : `#${onChain}`}, expected #${code}`);
-  }
-
-  steps.push({ kind: "refused", title, signer, expected, code, hostError, txHash: submitted.hash, ledger: done.ledger });
-  log(`  ✓ ${title} — refused ${expected} (#${code}) on chain — ${submitted.hash}`);
-}
-
-/** The persistent key of `DataKey::Batch(project_id, batch_id)`. */
-function batchKey(projectId: string, batchId: string): xdr.LedgerKey {
-  return xdr.LedgerKey.contractData(
-    new xdr.LedgerKeyContractData({
-      contract: new Address(contractId).toScAddress(),
-      key: xdr.ScVal.scvVec([
-        xdr.ScVal.scvSymbol("Batch"),
-        nativeToScVal(projectId, { type: "string" }),
-        nativeToScVal(batchId, { type: "string" }),
-      ]),
-      durability: xdr.ContractDataDurability.persistent(),
-    }),
-  );
-}
+const rec = new lib.Recorder();
+const steps = rec.steps;
+const log = (line: string) => rec.log(line);
+const send = <T>(title: string, signer: string, tx: Tx<T>, outcome?: (value: T) => string, force?: boolean) =>
+  lib.send(rec, title, signer, tx, outcome, force);
+const read = <T>(title: string, signer: string, tx: Tx<T>, outcome: (value: T) => string) =>
+  lib.read(rec, title, signer, tx, outcome);
+const refuse = (...a: Parameters<typeof lib.refuse> extends [unknown, ...infer R] ? R : never) => lib.refuse(rec, ...a);
 
 interface MilestoneView {
   status: { tag: string };

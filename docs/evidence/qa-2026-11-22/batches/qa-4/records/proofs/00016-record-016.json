@@ -1,0 +1,24 @@
+{
+  "format": "qdit-inclusion-proof/v2",
+  "network": "testnet",
+  "contract_id": "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB",
+  "project_id": "50891578-9540-46e7-9e85-56ec7dfde114",
+  "batch_id": "records",
+  "milestone_id": "record-016",
+  "version": 1,
+  "proof_hash": "29bc5d744ad98a8f78dec0779d53775dd58e46a178396297c23e7b1616e15eb9",
+  "index": 16,
+  "leaf_count": 20,
+  "leaf": "d008211c593cb5c9111e388988ba93acc5c685add0439f271ab76f14b8d5fa18",
+  "path": [
+    "42fadfb415c5b1655c78cbf6d12d4d538d6b7a564a723e9dd725df8d3302dc99",
+    "bd4fe23f36928fd001b6dfa2e3844b1f49f05daac3d43c6e5488732d31ba4abb",
+    "f417869484c2e9774d1eedf78918c1cec2de0ba7eac71a18d83642647bf1d57a"
+  ],
+  "root": "5f4fd29f99888d5912e6770006587b9f8ab28874e76edac9d540336e8955501f",
+  "anchor": {
+    "tx_hash": "ef92025eaf942225b0ba3df9fc60c5829711258333d7148de83177fed97ea993",
+    "ledger": 5872649,
+    "timestamp": 1795386886
+  }
+}

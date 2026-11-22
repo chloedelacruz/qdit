@@ -1,0 +1,24 @@
+{
+  "format": "qdit-inclusion-proof/v2",
+  "network": "testnet",
+  "contract_id": "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB",
+  "project_id": "e43e0a89-20a9-477a-ad17-6460d712f6fc",
+  "batch_id": "approved",
+  "milestone_id": "milestone-3",
+  "version": 1,
+  "proof_hash": "dd4af5e8123ead4d2de1a5587aab3a6f3538433a222071d13a70768bee8b18d1",
+  "index": 2,
+  "leaf_count": 5,
+  "leaf": "26dbaee370f56660799e1121b26c6f9124cccd52d82f97262059c637c89b3eed",
+  "path": [
+    "8640cb8772d4a0b1253299042e82d322dc6623eec4f5ce77a0e8c8ef5017be0e",
+    "2ae5a411993bfd36d00e93853c460797c2fdd9c4029cf8dd750391678f9b20b0",
+    "40459cac97ff7751285f6a19db996cab149933c424012709e8904e175d03d2b0"
+  ],
+  "root": "8f5be5cff714fd8d9d766767a75933bfdba7187fa2afb873843c1eb122fa5204",
+  "anchor": {
+    "tx_hash": "7163ebeee5d88c92459e8c53b8e96b694444966ba82dcf1be302502f5b51ee2b",
+    "ledger": 5872641,
+    "timestamp": 1795386846
+  }
+}
