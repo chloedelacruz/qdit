@@ -54,6 +54,11 @@ docs/*
 !docs/merkle/
 !docs/evidence/
 !docs/security/
+# docs/deliverables/ holds the SOW, which stays out of this public repository;
+# only its evidence/ folder, the evidence pack for the reviewer, is tracked.
+!docs/deliverables/
+docs/deliverables/*
+!docs/deliverables/evidence/
 docs/qdit-pitch-deck.pptx
 docs/qdit-pitch-deck.pdf
 
