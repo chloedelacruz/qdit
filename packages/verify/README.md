@@ -5,8 +5,8 @@ Check a qdit record on Stellar testnet without trusting qdit's app or database
 It reads the `milestone_proof_v2` contract through Soroban RPC simulation, so it
 needs no key and pays no fee.
 
-`0.1.0-dev`: the core library only. The `replay` command, the CLI and the npm
-release are the rest of v0.1. MIT licensed.
+`0.1.0-dev`: the library (`verifyMilestone`, `verifyInclusion`, `replay`). The CLI
+and the npm release are the rest of v0.1. MIT licensed.
 
 ```ts
 import { verifyMilestone, verifyInclusion } from "@qdit/verify";
@@ -53,6 +53,38 @@ project's value now and an approved milestone can show fewer approvers than it.
   version. A pass means a Submitter of the project anchored this exact milestone,
   version and proof hash. It says nothing about approval: use `verifyMilestone` for
   that.
+
+**`replay`** rebuilds the contract's state from its events alone, without reading
+storage, and **`compareWithContract`** checks the result against the getters.
+
+```ts
+import { replay, compareWithContract } from "@qdit/verify";
+
+const snapshot = await replay({ contractId: "CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB" });
+snapshot.projects;  // owner, threshold, members, milestones (status, version, approvers), batches
+snapshot.complete;  // false when some events could no longer be read (see below)
+snapshot.gaps;      // what is missing, in plain words
+
+const check = await compareWithContract(snapshot);
+check.ok;    // every replayed entry matches get_project, get_members, get_milestone_status and get_batch
+check.diffs; // each mismatch, when there is one
+```
+
+Every v2 write emits one event, so the events are the whole history. `replay` reads them
+with RPC `getEvents` from the deploy ledger (`KNOWN_V2_DEPLOY_LEDGERS`, or
+`startLedger`) to the latest ledger (or `endLedger`), and folds them in order:
+`create`, `transfer`, `add_member`, `remove_member`, `threshold`, `submit` (a new
+version, approvals cleared), `approve`, `reject` and `batch`. An event it doesn't
+know stops the replay rather than produce a wrong state.
+
+**Retention.** Soroban RPC keeps events for a limited window: about 7 days (120,960
+ledgers) on the public testnet RPC. Events older than the window are gone from that RPC.
+`replay` never passes off a partial history as a whole one: when the window starts after
+`startLedger`, the snapshot has `complete: false` and says which ledgers are missing,
+and a project whose creation fell outside the window is marked `complete: false` and is
+not compared. A project with no event left in the window doesn't appear at all. To keep
+a full history, run `replay` within a week of the writes and keep the snapshot, or point
+`rpcUrl` at an RPC with a longer retention.
 
 ## Which contract
 
