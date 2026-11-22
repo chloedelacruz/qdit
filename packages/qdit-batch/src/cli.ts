@@ -3,13 +3,24 @@
 // transaction, and write a portable inclusion-proof file per milestone.
 // The scheme is docs/merkle/SPEC.md.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { Keypair } from "@stellar/stellar-sdk";
-import { checkProofFile, equal, fromHex, parseProofFile, toHex } from "@qdit/merkle";
+import {
+  checkProofFile,
+  equal,
+  extractCertificateProof,
+  fromHex,
+  looksLikeHtml,
+  parseProofFile,
+  toHex,
+  type InclusionProofFile,
+} from "@qdit/merkle";
 
 import { buildTree, checkId, parseInput, writeBatch } from "./batch.ts";
+import { writeCertificates, writeCertificatesForFiles } from "./certificate.ts";
 import { CURRENT_CONTRACT, Client, TESTNET, sc, toBatchRecord, type Network } from "./soroban.ts";
 
 const USAGE = `qdit-batch: Merkle batch anchoring for milestone_proof_v2
@@ -17,21 +28,29 @@ const USAGE = `qdit-batch: Merkle batch anchoring for milestone_proof_v2
 Usage:
   qdit-batch build  --input <file> --batch-id <id> [--out <dir>] [--contract <C...>]
   qdit-batch anchor --input <file> --batch-id <id> --contract <C...> [--out <dir>]
-  qdit-batch verify <proof.json>... [--contract <C...>] [--offline]
+  qdit-batch certificates <batch-dir | proof.json...> [--out <dir>]
+  qdit-batch verify <proof.json | certificate.html>... [--contract <C...>] [--offline]
 
   build    Build the tree and write batch.json and proofs/ without anchoring.
   anchor   Build, anchor the root with one anchor_batch transaction, read the
            stored batch back, and write the files with the anchor recorded.
            Signs with the key in QDIT_SECRET_KEY, which must hold the Submitter
            role in the project.
-  verify   Check each proof file against the root stored on chain (get_batch)
-           and with the contract's own verify_inclusion. --offline checks only
-           that the file agrees with itself.
+  certificates
+           Write one self-contained HTML certificate per milestone of an
+           anchored batch (default <batch-dir>/certificates/), or for each
+           named proof file (default ./certificates/). Each carries its
+           proof file, so verify reads a certificate like a proof file.
+  verify   Check each proof file (or certificate) against the root stored on
+           chain (get_batch) and with the contract's own verify_inclusion.
+           --offline checks only that the file agrees with itself.
 
 Options:
   --input <file>        { "project_id": "...", "milestones": [ { "milestone_id": "...", "version": 1, "proof_hash": "<64 hex>" } ] }
   --batch-id <id>       Unique per project, at most 64 bytes.
-  --out <dir>           Output directory (default: ./batch-<batch-id>).
+  --out <dir>           Output directory (default: ./batch-<batch-id>, or
+                        <batch-dir>/certificates or ./certificates for
+                        certificates).
   --contract <C...>     milestone_proof_v2 contract id. verify defaults to the
                         current deployment and refuses a file naming another.
   --network <name>      testnet (default), or any name with --rpc-url and --passphrase.
@@ -131,7 +150,7 @@ async function cmdVerify(values: Record<string, unknown>, files: string[]): Prom
   let allOk = true;
 
   for (const path of files) {
-    const file = parseProofFile(readFileSync(path, "utf8"));
+    const file = readProofOrCertificate(path);
     const label = `${file.batch_id}/${file.milestone_id}`;
 
     if (offline) {
@@ -183,6 +202,22 @@ async function cmdVerify(values: Record<string, unknown>, files: string[]): Prom
   return allOk;
 }
 
+function cmdCertificates(values: Record<string, unknown>, paths: string[]): void {
+  if (paths.length === 0) throw new Error("name a batch directory, as qdit-batch anchor wrote it, or proof files");
+  const isDir = paths.length === 1 && statSync(paths[0]!).isDirectory();
+  const out = (values.out as string | undefined) ?? (isDir ? join(paths[0]!, "certificates") : "certificates");
+  const written = isDir
+    ? writeCertificates(paths[0]!, out, new Date())
+    : writeCertificatesForFiles(paths, out, new Date());
+  console.log(`wrote       ${written.length} certificates to ${out}`);
+}
+
+/** A proof file, or the proof file a certificate carries. */
+function readProofOrCertificate(path: string): InclusionProofFile {
+  const text = readFileSync(path, "utf8");
+  return looksLikeHtml(text) ? extractCertificateProof(text) : parseProofFile(text);
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -210,6 +245,9 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "anchor":
       await cmdAnchor(values);
+      return 0;
+    case "certificates":
+      cmdCertificates(values, rest);
       return 0;
     case "verify":
       return (await cmdVerify(values, rest)) ? 0 : 1;

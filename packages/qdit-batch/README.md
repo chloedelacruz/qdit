@@ -79,6 +79,31 @@ anchor any root there, so the file doesn't get to choose where its root comes fr
 `--offline` checks only that the file agrees with itself. It never trusts the file's
 `root` field as proof of anything.
 
+`verify` also takes certificates (below) and checks the proof file each one carries.
+
+### `certificates`: one offline certificate per milestone
+
+```sh
+qdit-batch certificates batch-sprint-12                 # writes batch-sprint-12/certificates/
+qdit-batch certificates proofs/00003-m.json --out certs # or from proof files you hold
+qdit-batch verify batch-sprint-12/certificates/*.html
+```
+
+For a batch that `anchor` wrote, each milestone gets a self-contained HTML page:
+project, milestone, version, proof hash, root, position, the anchor transaction on
+stellar.expert, ledger and time, and how to verify. It makes no external request, so it
+opens offline and prints to PDF. Attach it to the record it certifies.
+
+The page carries its `qdit-inclusion-proof/v2` file in one
+`<script type="application/json" id="qdit-inclusion-proof">` block, and only that block is
+checked: `qdit-batch verify` and `@qdit/merkle`'s `extractCertificateProof` read it back
+out. The visible text is a rendering of it and proves nothing on its own. A batch that was
+never anchored, or a proof file that does not agree with itself or with `batch.json`, is
+refused before any page is written.
+
+This is batch mode with per-milestone inclusion proofs in certificates (SOW 5.1, week 3),
+done in the CLI. The web app is not changed (SOW 3.8).
+
 ## Output
 
 ```
@@ -87,6 +112,8 @@ batch-sprint-12/
   proofs/
     00000-<milestone>.json   qdit-inclusion-proof/v2, one per milestone
     00001-<milestone>.json
+  certificates/              after qdit-batch certificates
+    00000-<milestone>.html   one per milestone, carrying its proof file
 ```
 
 A proof file is everything a third party needs: project, batch, milestone, proof hash,

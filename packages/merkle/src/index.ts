@@ -6,3 +6,4 @@
 
 export * from "./tree.ts";
 export * from "./proof-file.ts";
+export * from "./certificate.ts";
