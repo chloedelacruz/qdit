@@ -222,7 +222,8 @@ export class FakeChain {
     const op = tx.operations[0] as unknown as { func: xdr.HostFunction };
     const call = op.func.invokeContract();
     const fn = call.functionName().toString();
-    const args = call.args().map((a) => scValToNative(a));
+    // Over XDR a string arrives as bytes; the contract sees a string.
+    const args = call.args().map((a) => (a.switch() === xdr.ScValType.scvString() ? a.str().toString() : scValToNative(a)));
     this.calls.push(fn);
     try {
       return { transactionData: {}, minResourceFee: "0", result: { auth: [], retval: this.answer(fn, args) } };

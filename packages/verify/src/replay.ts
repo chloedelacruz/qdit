@@ -98,7 +98,7 @@ export interface ReplaySnapshot {
 }
 
 /** The RPC calls replay makes, beyond the verifier's reads. */
-export type EventRpcLike = RpcLike & Pick<rpc.Server, "getEvents" | "getLatestLedger" | "getHealth">;
+export type EventRpcLike = RpcLike & Pick<rpc.Server, "getEvents" | "getHealth">;
 
 export interface ReplayOptions extends Omit<ChainOptions, "server"> {
   contractId: string;
@@ -312,13 +312,13 @@ export async function replay(options: ReplayOptions): Promise<ReplaySnapshot> {
   }
 
   let health: Awaited<ReturnType<EventRpcLike["getHealth"]>>;
-  let latest: number;
   try {
-    [health, latest] = await Promise.all([server.getHealth(), server.getLatestLedger().then((l) => l.sequence)]);
+    health = await server.getHealth();
   } catch (cause) {
-    rpcFail("reading the RPC's ledger range", cause);
+    rpcFail("reading the RPC's ledger range (getHealth)", cause);
   }
   const oldest = Number(health.oldestLedger);
+  const latest = Number(health.latestLedger);
   const toLedger = options.endLedger ?? latest;
   if (!Number.isSafeInteger(toLedger) || toLedger < requested) {
     throw new VerifyError("BAD_INPUT", `endLedger ${toLedger} is before startLedger ${requested}`);

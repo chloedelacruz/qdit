@@ -10,6 +10,9 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "qdit-verify": "dist/cli.js"
+  },
   "files": [
     "dist",
     "LICENSE"

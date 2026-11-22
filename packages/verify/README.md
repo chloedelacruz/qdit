@@ -5,8 +5,8 @@ Check a qdit record on Stellar testnet without trusting qdit's app or database
 It reads the `milestone_proof_v2` contract through Soroban RPC simulation, so it
 needs no key and pays no fee.
 
-`0.1.0-dev`: the library (`verifyMilestone`, `verifyInclusion`, `replay`). The CLI
-and the npm release are the rest of v0.1. MIT licensed.
+`0.1.0-dev`: the library (`verifyMilestone`, `verifyInclusion`, `replay`) and the
+`qdit-verify` command. The npm release is the rest of v0.1. MIT licensed.
 
 ```ts
 import { verifyMilestone, verifyInclusion } from "@qdit/verify";
@@ -27,6 +27,35 @@ const p = await verifyInclusion(proofFileJson, { onChain: true });
 p.ok;                  // path leads to the stored root, and the contract agrees
 p.batch?.contractSays; // the contract's own verify_inclusion
 ```
+
+## Command line
+
+```sh
+npx @qdit/verify milestone --project 817745fb-e68a-497b-bd7a-b7d3fc1e4556 --milestone milestone-1
+npx @qdit/verify proof inclusion-proof.json --on-chain     # or a qdit-batch certificate (.html)
+npx @qdit/verify replay --compare --out snapshot.json
+```
+
+| Command | Checks |
+| --- | --- |
+| `milestone --project <id> --milestone <id> [--hash <hex>] [--version <n>]` | `verifyMilestone`: Approved on chain, at this hash and version when given |
+| `proof <file> [--on-chain]` | `verifyInclusion` on a proof file, or the one a `qdit-batch` certificate carries. Without `--on-chain` it only checks that the file agrees with itself |
+| `replay [--from-ledger <n>] [--to-ledger <n>] [--out <file>] [--compare]` | `replay`, and with `--compare` also `compareWithContract` |
+
+Every command takes `--contract <C…>` (default: the current qdit deployment,
+`CAIBMWYDR37HTGITV64BNHWMCFY5Z2UNGA7LTE2JAEKL4PTHGJ7BBFNB`; a contract you name is
+trusted, but must still run a known v2 build), `--rpc-url <url>` and `--network testnet`
+(any other network is refused).
+
+The result is JSON on stdout, always. A check that can't run prints
+`{ "ok": false, "error": { "code": "...", "message": "..." } }`.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Verified (for `replay` without `--compare`: the snapshot was written; check `complete`) |
+| 1 | Not verified: the check ran and failed, or `--compare` found a difference |
+| 2 | Usage error: bad arguments, a malformed file, another network, or a contract that isn't a known v2 deployment |
+| 3 | Network or RPC error |
 
 ## What each check means
 
