@@ -48,14 +48,14 @@ vi.mock("@stellar/stellar-sdk", () => {
     queue[Math.min(index, queue.length - 1)];
 
   class Server {
-    constructor(_url: string) {}
-    async sendTransaction(_tx: unknown) {
+    constructor() {}
+    async sendTransaction() {
       const value = dequeue(ctl.send, ctl.sendCalls);
       ctl.sendCalls += 1;
       if (value instanceof Error) throw value;
       return value;
     }
-    async getTransaction(_hash: string) {
+    async getTransaction() {
       const value = dequeue(ctl.get, ctl.getCalls);
       ctl.getCalls += 1;
       if (value instanceof Error) throw value;

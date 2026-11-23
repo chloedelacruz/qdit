@@ -18,7 +18,6 @@ import { FOOTER_NAV, HELP_NAV, WORKSPACE_NAV, projectNav } from "./nav-items";
 import { ProjectSwitcher, type ProjectOption } from "./project-switcher";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
-import { ICON } from "@/lib/icons";
 
 /** The project slug the current route is scoped to, if any. */
 function useActiveSlug(): string | undefined {
