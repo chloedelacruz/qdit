@@ -143,7 +143,14 @@ for job in "${jobs[@]}"; do
     exit 2 ;;
   esac
   echo "── ci-local: $job"
-  if ( "job_$job" ); then
+  # Not `if ( "job_$job" )`: bash ignores `set -e` inside an if condition, even
+  # in a subshell, so a failing lint or test step would not stop the job and
+  # only its last command would decide the result.
+  set +e
+  ( set -e; "job_$job" )
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
     echo "── ci-local: $job passed"
   else
     echo "── ci-local: $job FAILED" >&2

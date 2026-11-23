@@ -338,7 +338,8 @@ describe("participant copy", () => {
     const guide = readFileSync(
       fileURLToPath(new URL("../../app/user-guide/page.tsx", import.meta.url)),
       "utf8",
-    );
+      // A Windows checkout has CRLF line endings; the section end below is LF.
+    ).replace(/\r\n/g, "\n");
     const start = guide.indexOf('id: "hackathon"');
     expect(start).toBeGreaterThan(0);
     const section = guide.slice(start, guide.indexOf("\n  },\n", start));
